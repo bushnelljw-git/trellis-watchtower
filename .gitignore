@@ -1,0 +1,43 @@
+# Environment (production secrets)
+.env.production
+
+# Docker volumes (local data)
+data/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temp
+*.bak
+*.tmp
+
+# Screenshots and large binaries
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Docker build artifacts
+*.tar
+*.tar.gz
+
+# Logs
+*.log
+
+# Local secrets (DSNs, Fly token)
+.env
+
+# Scrub-test replay directory (scripts/scrub_check.sh)
+.fixtures-run/

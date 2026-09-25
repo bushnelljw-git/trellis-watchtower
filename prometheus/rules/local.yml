@@ -1,0 +1,71 @@
+# Local alert rules. Visual only (no Alertmanager locally).
+#
+# "Not running" versus "down" (docs/SPEC.md W1): a stack counts as running
+# when at least one of its probes succeeded in the last hour. A stack with no
+# successful probe in the last hour is "not running" and raises nothing, so a
+# repo that simply is not started today never reads as an outage. A stack
+# that was running and then fails alerts for up to an hour, then drops to
+# "not running".
+#
+# Tested by tests/prometheus/rules_test.yml (`make check`).
+
+groups:
+  - name: stack-state
+    rules:
+      # 1 = running, 0 = not running (per stack). For dashboards.
+      - record: stack:probe_success:max_over_time1h
+        expr: max by (stack) (max_over_time(probe_success{job="blackbox"}[1h]))
+
+  - name: probes
+    rules:
+      # A probe fails on a running stack. Excludes db probes that still got a
+      # 2xx: those are DatabaseReportedDown, not an outage of the endpoint.
+      - alert: ProbeDown
+        expr: |
+          (
+            probe_success{job="blackbox"} == 0
+            unless on (instance, probe)
+              (probe_http_status_code{job="blackbox", probe="db"} >= 200 < 300)
+          )
+          and on (stack)
+            (max by (stack) (max_over_time(probe_success{job="blackbox"}[1h])) == 1)
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.stack }}/{{ $labels.service }}: {{ $labels.probe }} probe failing"
+          description: "The {{ $labels.probe }} probe of {{ $labels.service }} has failed for 2 minutes while the {{ $labels.stack }} stack is running."
+
+      # The endpoint answers 2xx but its body says the database is not OK
+      # (the "200 while the database is down" case, SPEC constraint 5).
+      - alert: DatabaseReportedDown
+        expr: |
+          (
+            probe_success{job="blackbox", probe="db"} == 0
+            and on (instance, probe)
+              (probe_http_status_code{job="blackbox", probe="db"} >= 200 < 300)
+          )
+          and on (stack)
+            (max by (stack) (max_over_time(probe_success{job="blackbox"}[1h])) == 1)
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.stack }}/{{ $labels.service }}: health answers 2xx but reports its database down"
+          description: "The health body of {{ $labels.service }} no longer matches the database-OK pattern while the endpoint still returns 2xx."
+
+  - name: postgres
+    rules:
+      # postgres_exporter cannot reach its database, and it could within the
+      # last hour (so a database that is simply not started stays quiet).
+      - alert: PostgresDown
+        expr: |
+          pg_up{job="postgres"} == 0
+          and on (db)
+            (max_over_time(pg_up{job="postgres"}[1h]) == 1)
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "postgres {{ $labels.db }}: exporter cannot connect"
+          description: "pg_up is 0 for the {{ $labels.db }} database, which was reachable within the last hour."

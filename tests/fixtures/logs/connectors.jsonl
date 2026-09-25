@@ -1,0 +1,5 @@
+{"ts":"2026-09-24T10:04:00.000Z","level":"INFO","service":"connectors","message":"connectors_deliveries_total=2 connectors_delivered_total=2 connectors_duplicate_total=0 connectors_retried_total=0 connectors_dead_total=0 connectors_claim_empty_total=5 connectors_destination_refused_total=0 connectors_envelope_unsigned_total=0 connectors_paused_skipped_total=0","outcome":"pass"}
+{"ts":"2026-09-24T10:04:01.000Z","level":"INFO","service":"connectors","message":"delivery lane=sms destination=clicksend row=01J9ZFXROW0000000000000001 subject=member sequence=4","tid":"tnt-fx-0001","outcome":"delivered","status":200,"duration_ms":310}
+{"ts":"2026-09-24T10:04:02.000Z","severity":"WARN","service":"connectors","message":"a pulse stamp could not be read","outcome":"unparsed"}
+{"ts":"2026-09-24T10:04:03.000Z","severity":"CRITICAL","service":"connectors","message":"delivery loop stopped","outcome":"stopped","exc":{"class":"RuntimeError"}}
+{"ts":"2026-09-24T10:04:04.000Z","level":"debug","service":"connectors","message":"claim returned no rows"}

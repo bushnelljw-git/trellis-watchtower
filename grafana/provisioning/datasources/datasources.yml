@@ -1,0 +1,50 @@
+# Datasource uids are part of the dashboards contract (docs/SPEC.md):
+# prometheus, loki, fly. Values in ${...} are Grafana env interpolation from
+# the container environment (compose.yml passes them from .env); unset is
+# fine, the Fly datasource then just fails its queries.
+
+apiVersion: 1
+
+deleteDatasources:
+  - name: Tempo
+    orgId: 1
+  - name: Alertmanager
+    orgId: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://tw-prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 30s
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://tw-loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+
+  # Fly's hosted Prometheus, read-only. FLY_PROM_TOKEN is the WHOLE
+  # Authorization header value: `fly tokens create readonly` prints a token
+  # used as "FlyV1 fm2_..." (Fly docs); a `fly auth token` would be
+  # "Bearer <token>".
+  - name: Fly Prometheus
+    type: prometheus
+    uid: fly
+    access: proxy
+    url: https://api.fly.io/prometheus/${FLY_ORG}/
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 60s
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: ${FLY_PROM_TOKEN}

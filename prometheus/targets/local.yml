@@ -1,0 +1,36 @@
+# Local probe targets, reached from tw-blackbox via host.docker.internal
+# (Docker Desktop forwards it to the Mac's loopback, where these bind).
+# Labels per docs/SPEC.md "Naming rules": stack, service, probe.
+# `__param_module` picks the blackbox module (blackbox/blackbox.yml).
+
+# ---- tpa (compose project `tpa`, the :4310 stack) ----
+- targets: ["https://host.docker.internal:4310/tpa/release.json"]
+  labels: {stack: tpa, service: trellis, probe: release, __param_module: http_release_4310}
+- targets: ["host.docker.internal:4310"]
+  labels: {stack: tpa, service: web-tls, probe: tls, __param_module: tls_4310}
+- targets: ["http://host.docker.internal:8230/health"]
+  labels: {stack: tpa, service: tpa-api, probe: health, __param_module: http_ready}
+- targets: ["http://host.docker.internal:8230/ready"]
+  labels: {stack: tpa, service: tpa-api, probe: ready, __param_module: http_ready}
+- targets: ["http://host.docker.internal:8210/ready"]
+  labels: {stack: tpa, service: auth, probe: ready, __param_module: http_ready}
+- targets: ["http://host.docker.internal:8220/ready"]
+  labels: {stack: tpa, service: records, probe: ready, __param_module: http_ready}
+
+# ---- network (host process :8100) ----
+- targets: ["http://host.docker.internal:8100/api/v1/health"]
+  labels: {stack: network, service: network-engine, probe: db, __param_module: http_json_db_ok}
+- targets: ["http://host.docker.internal:8100/tpa/health"]
+  labels: {stack: network, service: network-tpa, probe: db, __param_module: http_json_db_ok}
+
+# ---- forge (host process :8000) ----
+- targets: ["http://host.docker.internal:8000/api/v1/health"]
+  labels: {stack: forge, service: forge-engine, probe: db, __param_module: http_json_db_ok_forge}
+
+# ---- enroll (host process :8400) ----
+- targets: ["http://host.docker.internal:8400/api/v1/health"]
+  labels: {stack: enroll, service: enroll-engine, probe: db, __param_module: http_json_db_ok_enroll}
+
+# ---- feed-ingest (host process, console :8099) ----
+- targets: ["http://host.docker.internal:8099/healthz"]
+  labels: {stack: feed-ingest, service: feed-ingest, probe: health, __param_module: http_ready}

@@ -1,0 +1,17 @@
+{
+  "uid": "tw-good",
+  "title": "Good fixture: near misses the lint must allow",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Tenants not ok",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [
+        {"refId": "A", "datasource": {"type": "loki", "uid": "loki"},
+         "expr": "sum by (job) (sum_over_time({service=\"tpa-jobs-drains\"} | json n=\"tenants_failed\" | unwrap n [5m]))",
+         "legendFormat": "{{job}} sidecar"}
+      ]
+    }
+  ],
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}}]}
+}

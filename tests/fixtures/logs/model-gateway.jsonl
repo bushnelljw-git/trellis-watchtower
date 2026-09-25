@@ -1,0 +1,2 @@
+{"ts":"2026-09-24T10:05:00.000Z","severity":"INFO","logger":"anthropic._base_client","message":"Request options: {'method': 'post', 'url': '/v1/messages', 'json_data': {'model': 'fixture', 'messages': [{'role': 'user', 'content': 'synthetic member question'}]}}"}
+{"ts":"2026-09-24T10:05:01.000Z","severity":"INFO","logger":"model_gateway","message":"answered","status":200}

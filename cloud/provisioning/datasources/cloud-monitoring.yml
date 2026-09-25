@@ -1,0 +1,41 @@
+# Cloud Monitoring (Grafana's core `stackdriver` datasource) for the three TPA projects, read with the identity
+# attached to the Cloud Run service (sa-watchtower, roles/monitoring.viewer on each project). No key file, no secret:
+# authenticationType gce uses the metadata server.
+#
+# Project ids come from the service's environment (Grafana interpolates ${VAR} in provisioning files):
+#   TPA_APP_PROJECT_ID, TPA_CRM_PROJECT_ID, TPA_PHI_PROJECT_ID
+#
+# The uids below are part of the dashboard contract: scripts/dashboard_lint.py reads them from this file.
+apiVersion: 1
+
+datasources:
+  - name: Cloud Monitoring (app)
+    type: stackdriver
+    uid: cloud-app
+    access: proxy
+    editable: false
+    isDefault: true
+    jsonData:
+      authenticationType: gce
+      defaultProject: ${TPA_APP_PROJECT_ID}
+
+  - name: Cloud Monitoring (crm)
+    type: stackdriver
+    uid: cloud-crm
+    access: proxy
+    editable: false
+    jsonData:
+      authenticationType: gce
+      defaultProject: ${TPA_CRM_PROJECT_ID}
+
+  # The PHI project's Monitoring API sits inside the VPC-SC perimeter. This datasource only works once the class 3
+  # `ing-watch` ingress rule admits sa-watchtower to the PHI project's Monitoring read methods (and nothing else).
+  # Until then its queries are refused at the perimeter, which is the intended failure.
+  - name: Cloud Monitoring (phi)
+    type: stackdriver
+    uid: cloud-phi
+    access: proxy
+    editable: false
+    jsonData:
+      authenticationType: gce
+      defaultProject: ${TPA_PHI_PROJECT_ID}

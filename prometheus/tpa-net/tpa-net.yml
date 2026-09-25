@@ -1,0 +1,10 @@
+# Internal-only tpa ports. Mounted ONLY by compose.tpa-net.yml (manual
+# opt-in, `make up TPA_NET=1`); without it Prometheus sees an empty directory
+# and these targets do not exist. Names resolve through tpa-net's aliases.
+
+- targets: ["http://web:8240/ready"]
+  labels: {stack: tpa, service: web, probe: ready, __param_module: http_ready}
+- targets: ["http://connectors:8080/health"]
+  labels: {stack: tpa, service: connectors, probe: health, __param_module: http_ready}
+- targets: ["http://tpa-jobs-drains:8080/health"]
+  labels: {stack: tpa, service: tpa-jobs-drains, probe: health, __param_module: http_ready}

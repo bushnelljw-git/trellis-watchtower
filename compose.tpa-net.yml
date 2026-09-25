@@ -1,0 +1,28 @@
+# OPT-IN ONLY: `make up TPA_NET=1`. `make up` never adds this file.
+#
+# WARNING: while tw-blackbox is attached to tpa-net, the :4310 stack's own
+# `docker compose down` cannot remove tpa-net ("network has active endpoints")
+# and exits with an error. Peer sessions chain `make down && ...`, so leaving
+# this attached can break their window protocol. Attach for a short check,
+# then run `make up` again (without TPA_NET) to detach.
+#
+# What it adds: tw-blackbox joins tpa-net to probe the three internal-only
+# ports (web:8240 /ready, connectors:8080 /health, tpa-jobs-drains:8080
+# /health), and Prometheus mounts their target file. Without this file those
+# targets do not exist at all, so they never read as an outage. By default
+# connectors and drains are watched from Loki (their pass / run-summary lines)
+# and web through the :4310 edge probes.
+
+services:
+  blackbox:
+    networks: [tw-net, tpa-net]
+
+  prometheus:
+    volumes:
+      # Same target path as the empty volume in compose.yml; compose merges
+      # volumes by target, so this replaces it.
+      - ./prometheus/tpa-net:/etc/prometheus/tpa-net:ro
+
+networks:
+  tpa-net:
+    external: true

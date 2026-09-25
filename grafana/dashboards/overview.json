@@ -1,0 +1,1159 @@
+{
+  "uid": "tw-overview",
+  "title": "Stack overview",
+  "description": "Home: every watched stack (running, degraded, down, not running), TPA background work read from the logs, and error groups.",
+  "tags": [
+    "trellis-watchtower",
+    "overview"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "version": 1,
+  "timezone": "browser",
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "weekStart": "",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Stack overview",
+      "type": "link",
+      "url": "/d/tw-overview",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "tags": [],
+      "asDropdown": false,
+      "tooltip": ""
+    },
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "trellis-watchtower"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link",
+      "url": "",
+      "tooltip": ""
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Stacks",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1
+    },
+    {
+      "type": "table",
+      "title": "Stacks",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(((stack:probe_success:max_over_time1h == 0)\nor\n  (1 + 0 * count by (stack) (\n      probe_success{job=\"blackbox\"} == 0\n      unless on (instance, probe) (probe_http_status_code{job=\"blackbox\", probe=\"db\"} >= 200 < 300)\n  ))\nor\n  (2 + 0 * count by (stack) (probe_success{job=\"blackbox\"} == 0))\nor\n  (3 + 0 * stack:probe_success:max_over_time1h)), \"dashboard\", \"tw-tpa-edge-api\", \"stack\", \"tpa\"), \"dashboard\", \"tw-crm-network\", \"stack\", \"network\"), \"dashboard\", \"tw-forge\", \"stack\", \"forge\"), \"dashboard\", \"tw-enroll\", \"stack\", \"enroll\"), \"dashboard\", \"tw-feed-ingest\", \"stack\", \"feed-ingest\"), \"dashboard\", \"tw-fly-production\", \"stack\", \"fly\")",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (stack) (probe_success{job=\"blackbox\"})",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "count by (stack) (probe_success{job=\"blackbox\"})",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "description": "One row per stack. running: every probe passes. degraded: a health endpoint answers 2xx but its body reports the database down. down: a probe gets no answer or a non-2xx while the stack has been up in the last hour. not running: no probe of the stack passed in the last hour (a repo not started today, not an outage). Click a stack to open its dashboard.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "State"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "not running",
+                        "color": "text",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "down",
+                        "color": "red",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "degraded",
+                        "color": "orange",
+                        "index": 2
+                      },
+                      "3": {
+                        "text": "running",
+                        "color": "green",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 160
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "dashboard"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Stack"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open ${__data.fields.Stack}",
+                    "url": "/d/${__data.fields.dashboard}?${__url_time_range}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Stack",
+            "desc": false
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {},
+            "indexByName": {}
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "renameByName": {
+              "stack": "Stack",
+              "Value #A": "State",
+              "Value #B": "Probes up",
+              "Value #C": "Probes"
+            },
+            "indexByName": {
+              "Stack": 0,
+              "State": 1,
+              "Probes up": 2,
+              "Probes": 3
+            }
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2
+    },
+    {
+      "type": "state-timeline",
+      "title": "Probe history",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max by (stack, service, probe) (probe_success{job=\"blackbox\"})",
+          "legendFormat": "{{stack}} / {{service}} {{probe}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "description": "Every blackbox probe over the time range (green up, red down).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "down",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "up",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0,
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.85,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "id": 3
+    },
+    {
+      "type": "row",
+      "title": "TPA background work (from logs) and errors",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "connectors: since last pass",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "min(min_over_time({stack=\"tpa\", service=\"connectors\"} | outcome=\"pass\" | label_format age_s=`{{ sub (unixEpoch now) (unixEpoch __timestamp__) }}` | unwrap age_s [1h])) or vector(3600)",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "Seconds since connectors last logged outcome=pass. A pass runs at least every 20 s.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 120
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 3600,
+                "to": null,
+                "result": {
+                  "text": "none in the last hour",
+                  "color": "red",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "links": [
+        {
+          "title": "Jobs and connectors",
+          "url": "/d/tw-jobs-connectors?${__url_time_range}",
+          "targetBlank": false,
+          "tooltip": ""
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 11
+      },
+      "id": 5
+    },
+    {
+      "type": "stat",
+      "title": "tpa-jobs-drains: since last run summary",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "min(min_over_time({stack=\"tpa\", service=\"tpa-jobs-drains\"} |= `\"tenants_total\"` | label_format age_s=`{{ sub (unixEpoch now) (unixEpoch __timestamp__) }}` | unwrap age_s [1h])) or vector(3600)",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "Seconds since a drain logged its run summary. The drains tick every 30 to 60 s.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 90
+              },
+              {
+                "color": "red",
+                "value": 180
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 3600,
+                "to": null,
+                "result": {
+                  "text": "none in the last hour",
+                  "color": "red",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "links": [
+        {
+          "title": "Jobs and connectors",
+          "url": "/d/tw-jobs-connectors?${__url_time_range}",
+          "targetBlank": false,
+          "tooltip": ""
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 11
+      },
+      "id": 6
+    },
+    {
+      "type": "stat",
+      "title": "auth-publisher: since last line",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "min(min_over_time({stack=\"tpa\", service=\"auth-publisher\"} | label_format age_s=`{{ sub (unixEpoch now) (unixEpoch __timestamp__) }}` | unwrap age_s [1h])) or vector(3600)",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "Seconds since auth-publisher printed its counts line (one per 50 s loop). It has no probe, and a crashed container stops shipping, so silence is the signal.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 150
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 3600,
+                "to": null,
+                "result": {
+                  "text": "none in the last hour",
+                  "color": "red",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "links": [
+        {
+          "title": "auth-notary",
+          "url": "/d/tw-auth?${__url_time_range}",
+          "targetBlank": false,
+          "tooltip": ""
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 11
+      },
+      "id": 7
+    },
+    {
+      "type": "stat",
+      "title": "auth-sweeper: since last line",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "min(min_over_time({stack=\"tpa\", service=\"auth-sweeper\"} | label_format age_s=`{{ sub (unixEpoch now) (unixEpoch __timestamp__) }}` | unwrap age_s [1h])) or vector(3600)",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "Seconds since auth-sweeper printed its line (one per 300 s tick). It has no probe, so silence is the signal.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 450
+              },
+              {
+                "color": "red",
+                "value": 900
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 3600,
+                "to": null,
+                "result": {
+                  "text": "none in the last hour",
+                  "color": "red",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "links": [
+        {
+          "title": "auth-notary",
+          "url": "/d/tw-auth?${__url_time_range}",
+          "targetBlank": false,
+          "tooltip": ""
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 11
+      },
+      "id": 8
+    },
+    {
+      "type": "stat",
+      "title": "ERROR lines, last hour",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({stack=~\".+\"} | level=\"ERROR\" [1h])) or vector(0)",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "ERROR lines shipped by Alloy in the last hour, all stacks.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "links": [
+        {
+          "title": "Errors",
+          "url": "/d/tw-errors?${__url_time_range}",
+          "targetBlank": false,
+          "tooltip": ""
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 11
+      },
+      "id": 9
+    },
+    {
+      "type": "stat",
+      "title": "New error groups, last 24 h",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "count(sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\".+\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [24h])) unless sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\".+\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [6d] offset 1d))) or vector(0)",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "Error groups (service, exception class, operation or route, SQLSTATE) seen in the last 24 h and not in the 6 days before.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "links": [
+        {
+          "title": "Errors",
+          "url": "/d/tw-errors?${__url_time_range}",
+          "targetBlank": false,
+          "tooltip": ""
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 11
+      },
+      "id": 10
+    },
+    {
+      "type": "row",
+      "title": "Probes",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 11
+    },
+    {
+      "type": "table",
+      "title": "Every probe",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max by (stack, service, probe) (probe_success{job=\"blackbox\"})",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max by (stack, service, probe) (probe_http_status_code{job=\"blackbox\"})",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max by (stack, service, probe) (probe_duration_seconds{job=\"blackbox\"})",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "description": "HTTP status is absent for the TLS probe and 0 when nothing answered.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Up"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "down",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "up",
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Duration"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HTTP status"
+            },
+            "properties": [
+              {
+                "id": "noValue",
+                "value": "-"
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Stack",
+            "desc": false
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {},
+            "indexByName": {}
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "renameByName": {
+              "stack": "Stack",
+              "service": "Service",
+              "probe": "Probe",
+              "Value #A": "Up",
+              "Value #B": "HTTP status",
+              "Value #C": "Duration"
+            },
+            "indexByName": {
+              "Stack": 0,
+              "Service": 1,
+              "Probe": 2,
+              "Up": 3,
+              "HTTP status": 4,
+              "Duration": 5
+            }
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 12
+    }
+  ]
+}

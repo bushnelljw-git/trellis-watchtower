@@ -1,0 +1,16 @@
+# Dashboards are baked into the image from cloud/dashboards/ and cannot be changed in the UI.
+# The cloud dashboards come later, once tpa-platform's monitoring metric names are final (cloud/README.md).
+apiVersion: 1
+
+providers:
+  - name: trellis-watchtower
+    orgId: 1
+    folder: trellis-watchtower
+    type: file
+    disableDeletion: false
+    editable: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 300
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

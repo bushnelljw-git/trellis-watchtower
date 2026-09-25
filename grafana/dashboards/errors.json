@@ -1,0 +1,906 @@
+{
+  "uid": "tw-errors",
+  "title": "Errors",
+  "description": "Error groups from the logs (service, exception class, operation or route, SQLSTATE): count, first and last seen, new in 24 h, spikes, and a trend per service.",
+  "tags": [
+    "trellis-watchtower",
+    "errors"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "version": 1,
+  "timezone": "browser",
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "weekStart": "",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Stack overview",
+      "type": "link",
+      "url": "/d/tw-overview",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "tags": [],
+      "asDropdown": false,
+      "tooltip": ""
+    },
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "trellis-watchtower"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link",
+      "url": "",
+      "tooltip": ""
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "stack",
+        "label": "stack",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "definition": "label_values(stack)",
+        "query": {
+          "type": 1,
+          "label": "stack",
+          "stream": "",
+          "refId": "LokiVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "regex": ""
+      },
+      {
+        "name": "service",
+        "label": "service",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "definition": "label_values({stack=~\"$stack\"}, service)",
+        "query": {
+          "type": 1,
+          "label": "service",
+          "stream": "{stack=~\"$stack\"}",
+          "refId": "LokiVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "regex": ""
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Summary",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "Error groups in range",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "count(sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [$__range]))) or vector(0)",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "Distinct groups with at least one ERROR line in the time range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "ERROR lines in range",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "sum(count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" [$__range])) or vector(0)",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "New groups, last 24 h",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "count(sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [24h])) unless sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [6d] offset 1d))) or vector(0)",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "Seen in the last 24 h and not in the 6 days before (Loki keeps 7 days).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "Spiking groups",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "count((sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [1h])) > 10) and (sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [1h])) > 5 * sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [7d])) / 168)) or vector(0)",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "Last hour's count over 10 and over 5x the group's 7-day hourly average. The same rule as the production spike alert.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "id": 5
+    },
+    {
+      "type": "row",
+      "title": "Groups",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 6
+    },
+    {
+      "type": "table",
+      "title": "Error groups",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [$__range]))",
+          "legendFormat": "",
+          "queryType": "instant"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "min_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` | label_format seen_ms=`{{ unixEpochMillis __timestamp__ }}` | unwrap seen_ms [$__range]) by (service, exc_class, where, sqlstate)",
+          "legendFormat": "",
+          "queryType": "instant"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "topk by (service, exc_class, where, sqlstate) (1, max_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` | json release=\"revision\" | label_format seen_ms=`{{ unixEpochMillis __timestamp__ }}` | unwrap seen_ms [$__range]) by (service, exc_class, where, sqlstate, release))",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "One row per error group: service, exception class, operation (or route template) and SQLSTATE, over lines with level=ERROR. Count, first seen and last seen are within the time range. Release comes from the newest line and is filled only where a service logs one (auth's revision). Lines carry the class only: no message, no stack trace (docs/SPEC.md).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "First seen"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last seen"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeFromNow"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Count"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Count",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {},
+            "indexByName": {}
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "renameByName": {
+              "service": "Service",
+              "exc_class": "Exception class",
+              "where": "Operation or route",
+              "sqlstate": "SQLSTATE",
+              "release": "Release",
+              "Value #A": "Count",
+              "Value #B": "First seen",
+              "Value #C": "Last seen"
+            },
+            "indexByName": {
+              "Service": 0,
+              "Exception class": 1,
+              "Operation or route": 2,
+              "SQLSTATE": 3,
+              "Count": 4,
+              "First seen": 5,
+              "Last seen": 6,
+              "Release": 7
+            }
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "id": 7
+    },
+    {
+      "type": "table",
+      "title": "New in the last 24 h",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [24h])) unless sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [6d] offset 1d))",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "Groups seen in the last 24 h that are absent from the 6 days before: `\u2026 unless \u2026 offset 1d`.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Count (24 h)",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "service": "Service",
+              "exc_class": "Exception class",
+              "where": "Operation or route",
+              "sqlstate": "SQLSTATE",
+              "release": "Release",
+              "Value #A": "Count (24 h)"
+            },
+            "indexByName": {
+              "Service": 0,
+              "Exception class": 1,
+              "Operation or route": 2,
+              "SQLSTATE": 3,
+              "Count (24 h)": 4
+            }
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 8
+    },
+    {
+      "type": "table",
+      "title": "Spiking now",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "(sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [1h])) > 10) and (sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [1h])) > 5 * sum by (service, exc_class, where, sqlstate) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" | label_format where=`{{ or .operation .route }}` [7d])) / 168)",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "description": "Last hour's count, for groups over 10 and over 5x their 7-day hourly average.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Last hour",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "service": "Service",
+              "exc_class": "Exception class",
+              "where": "Operation or route",
+              "sqlstate": "SQLSTATE",
+              "release": "Release",
+              "Value #A": "Last hour"
+            },
+            "indexByName": {
+              "Service": 0,
+              "Exception class": 1,
+              "Operation or route": 2,
+              "SQLSTATE": 3,
+              "Last hour": 4
+            }
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 9
+    },
+    {
+      "type": "row",
+      "title": "Trend",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "ERROR lines per service",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "sum by (service) (count_over_time({stack=~\"$stack\", service=~\"$service\"} | level=\"ERROR\" [$__auto]))",
+          "legendFormat": "{{service}}",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "id": 11
+    },
+    {
+      "type": "text",
+      "title": "Coverage",
+      "options": {
+        "mode": "markdown",
+        "content": "Covered: the tpa compose services Alloy ships (web, web-tls, tpa-api, tpa-jobs-drains, connectors, auth and its workers, records), plus replayed fixtures (`stack=\"fixture\"`). Not covered yet: network, forge and enroll (host-process logs, shipped once each is shown clean), the portal in the browser (no client-errors route yet) and Fly production. An exception's location is not logged yet; see the `where` requests in docs/REQUESTS.md.",
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        }
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "id": 12
+    }
+  ]
+}

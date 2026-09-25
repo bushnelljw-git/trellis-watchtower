@@ -1,0 +1,16 @@
+# The dashboards are files in grafana/dashboards/ (mounted at /var/lib/grafana/dashboards). The files are the truth:
+# UI edits are not saved back, so change a dashboard by editing its JSON and running scripts/dashboard_lint.py.
+apiVersion: 1
+
+providers:
+  - name: trellis-watchtower
+    orgId: 1
+    folder: trellis-watchtower
+    type: file
+    disableDeletion: false
+    editable: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

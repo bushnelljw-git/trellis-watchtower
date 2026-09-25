@@ -1,0 +1,83 @@
+# Probe modules. Each body match was checked against the service's real
+# response on 2026-09-24 (curl, read-only). A db module exists because these
+# health endpoints answer 200 while their database is down (SPEC constraint 5):
+# the status code alone would read green.
+
+modules:
+  # Any 2xx. tpa-api /health and /ready, auth /ready, records /ready,
+  # feed-ingest /healthz, web /ready (overlay), connectors and drains /health
+  # (overlay), the Fly portal.
+  http_ready:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      follow_redirects: false
+
+  # network /api/v1/health -> {"status":"ok","database":true,"version":"2.0.0"}
+  # network /tpa/health    -> {"ok":true,"service":"tpa-engine","database":true,...}
+  # Fly bodyf1rst-network  -> same body as the first.
+  http_json_db_ok:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      follow_redirects: false
+      fail_if_body_not_matches_regexp:
+        - '"database"\s*:\s*true'
+
+  # enroll /api/v1/health -> {"ok":true,"db":true}
+  http_json_db_ok_enroll:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      follow_redirects: false
+      fail_if_body_not_matches_regexp:
+        - '"db"\s*:\s*true'
+
+  # forge /api/v1/health, anonymous -> {"status":"ok"} or {"status":"degraded"}
+  http_json_db_ok_forge:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      follow_redirects: false
+      fail_if_body_not_matches_regexp:
+        - '"status"\s*:\s*"ok"'
+
+  # https://localhost:4310/tpa/release.json -> {"release":"<id>","configuration":"local"}
+  # web-tls serves the site `https://localhost:4310` only, so the probe sends
+  # SNI and Host for localhost even though it dials host.docker.internal.
+  # The certificate is mkcert's (local CA), hence skip-verify.
+  http_release_4310:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      follow_redirects: false
+      fail_if_not_ssl: true
+      headers:
+        Host: "localhost:4310"
+      tls_config:
+        insecure_skip_verify: true
+        server_name: localhost
+      fail_if_body_not_matches_regexp:
+        - '"release"\s*:\s*"[0-9A-Za-z._-]+"'
+
+  # TLS handshake on :4310. Skip-verify for success, but the probe still
+  # exports probe_ssl_earliest_cert_expiry from the served certificate.
+  tls_4310:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: ip4
+      tls: true
+      tls_config:
+        insecure_skip_verify: true
+        server_name: localhost

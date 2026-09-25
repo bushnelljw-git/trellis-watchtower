@@ -1,0 +1,137 @@
+# promtool test rules: the "running versus not running" semantics.
+# Run by `make check`.
+
+rule_files:
+  - ../../prometheus/rules/local.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A running stack loses one probe: ProbeDown fires. A stack that never
+  # answered, and one that stopped answering over an hour ago, stay quiet.
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="blackbox",instance="t1",stack="tpa",service="tpa-api",probe="ready"}'
+        values: '1x29 0x90'
+      - series: 'probe_success{job="blackbox",instance="t2",stack="tpa",service="auth",probe="ready"}'
+        values: '1x119'
+      - series: 'probe_success{job="blackbox",instance="f1",stack="forge",service="forge-engine",probe="db"}'
+        values: '0x119'
+      - series: 'probe_http_status_code{job="blackbox",instance="f1",stack="forge",service="forge-engine",probe="db"}'
+        values: '0x119'
+      - series: 'probe_success{job="blackbox",instance="e1",stack="enroll",service="enroll-engine",probe="db"}'
+        values: '1x9 0x110'
+      - series: 'probe_http_status_code{job="blackbox",instance="e1",stack="enroll",service="enroll-engine",probe="db"}'
+        values: '200x9 0x110'
+    alert_rule_test:
+      # tpa-api failed at 30m: still pending (for: 2m). enroll failed at 10m.
+      - eval_time: 31m
+        alertname: ProbeDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: blackbox
+              instance: e1
+              stack: enroll
+              service: enroll-engine
+              probe: db
+            exp_annotations:
+              summary: "enroll/enroll-engine: db probe failing"
+              description: "The db probe of enroll-engine has failed for 2 minutes while the enroll stack is running."
+      - eval_time: 40m
+        alertname: ProbeDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: blackbox
+              instance: t1
+              stack: tpa
+              service: tpa-api
+              probe: ready
+            exp_annotations:
+              summary: "tpa/tpa-api: ready probe failing"
+              description: "The ready probe of tpa-api has failed for 2 minutes while the tpa stack is running."
+          # enroll went down at 10m: 30 minutes ago, still inside the hour.
+          - exp_labels:
+              severity: page
+              job: blackbox
+              instance: e1
+              stack: enroll
+              service: enroll-engine
+              probe: db
+            exp_annotations:
+              summary: "enroll/enroll-engine: db probe failing"
+              description: "The db probe of enroll-engine has failed for 2 minutes while the enroll stack is running."
+      # enroll's last success was at 9m; at 100m it is "not running".
+      - eval_time: 100m
+        alertname: ProbeDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: blackbox
+              instance: t1
+              stack: tpa
+              service: tpa-api
+              probe: ready
+            exp_annotations:
+              summary: "tpa/tpa-api: ready probe failing"
+              description: "The ready probe of tpa-api has failed for 2 minutes while the tpa stack is running."
+    promql_expr_test:
+      - expr: stack:probe_success:max_over_time1h
+        eval_time: 100m
+        exp_samples:
+          - labels: 'stack:probe_success:max_over_time1h{stack="tpa"}'
+            value: 1
+          - labels: 'stack:probe_success:max_over_time1h{stack="forge"}'
+            value: 0
+          - labels: 'stack:probe_success:max_over_time1h{stack="enroll"}'
+            value: 0
+
+  # 200 with "database": false -> DatabaseReportedDown, and not ProbeDown.
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="blackbox",instance="n1",stack="network",service="network-engine",probe="db"}'
+        values: '1x40'
+      - series: 'probe_http_status_code{job="blackbox",instance="n1",stack="network",service="network-engine",probe="db"}'
+        values: '200x40'
+      - series: 'probe_success{job="blackbox",instance="n2",stack="network",service="network-tpa",probe="db"}'
+        values: '0x40'
+      - series: 'probe_http_status_code{job="blackbox",instance="n2",stack="network",service="network-tpa",probe="db"}'
+        values: '200x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: ProbeDown
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: DatabaseReportedDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: blackbox
+              instance: n2
+              stack: network
+              service: network-tpa
+              probe: db
+            exp_annotations:
+              summary: "network/network-tpa: health answers 2xx but reports its database down"
+              description: "The health body of network-tpa no longer matches the database-OK pattern while the endpoint still returns 2xx."
+
+  # pg_up drops to 0 after being up: PostgresDown. Never up: quiet.
+  - interval: 1m
+    input_series:
+      - series: 'pg_up{job="postgres",instance="x1",db="forge"}'
+        values: '1x10 0x20'
+      - series: 'pg_up{job="postgres",instance="x2",db="network"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: PostgresDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: postgres
+              instance: x1
+              db: forge
+            exp_annotations:
+              summary: "postgres forge: exporter cannot connect"
+              description: "pg_up is 0 for the forge database, which was reachable within the last hour."

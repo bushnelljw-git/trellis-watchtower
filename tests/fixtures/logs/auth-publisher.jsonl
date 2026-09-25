@@ -1,0 +1,4 @@
+publisher: 3 items, metrics {'published': 3, 'failed': 0}
+Traceback (most recent call last):
+  File "/app/auth/workers/publisher.py", line 88, in run_once
+ValueError: synthetic fixture failure for fx-member-0001

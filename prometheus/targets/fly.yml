@@ -1,0 +1,8 @@
+# Fly production, probed from this laptop. Both apps keep one machine running
+# (min_machines_running = 1 in their fly.toml), so a probe adds no wake-up
+# cost. Certificates are real, so TLS is verified. Delete this file to stop.
+
+- targets: ["https://bodyf1rst-network.fly.dev/api/v1/health"]
+  labels: {stack: fly, service: fly-network, probe: db, __param_module: http_json_db_ok}
+- targets: ["https://bodyf1rst-portal.fly.dev/index.html"]
+  labels: {stack: fly, service: fly-portal, probe: health, __param_module: http_ready}

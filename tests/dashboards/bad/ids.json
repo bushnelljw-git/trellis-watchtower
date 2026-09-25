@@ -1,0 +1,24 @@
+{
+  "uid": "tw-bad",
+  "title": "Bad fixture: ids and an unknown datasource",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Requests by tenant",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [
+        {"refId": "A", "datasource": {"type": "loki", "uid": "loki"},
+         "expr": "sum by (tenant_id) (count_over_time({stack=\"tpa\"} [5m]))", "legendFormat": "{{request_id}}"}
+      ],
+      "transformations": [{"id": "organize", "options": {"renameByName": {"uri": "Path"}}}]
+    },
+    {
+      "type": "stat",
+      "title": "Somewhere else",
+      "datasource": {"type": "prometheus", "uid": "mystery"},
+      "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "mystery"}, "expr": "up"}]
+    }
+  ],
+  "templating": {"list": [{"name": "who", "type": "query", "datasource": {"type": "loki", "uid": "loki"},
+                           "definition": "label_values(sid)", "query": "label_values(sid)"}]}
+}

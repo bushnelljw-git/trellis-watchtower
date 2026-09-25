@@ -1,0 +1,323 @@
+// trellis-watchtower: log shipping (docs/SPEC.md W2).
+//
+// Nothing ships by default. Two sources feed ONE scrub pipeline:
+//   1. Docker logs of an allowlist of the :4310 stack's compose services.
+//   2. The scrub test's fixture files (scripts/scrub_check.sh), so the test
+//      exercises exactly the pipeline real lines go through.
+//
+// Stream labels: stack and service only. Everything else a dashboard needs
+// is structured metadata (docs/SPEC.md "Loki structured metadata"), absent
+// when the source line lacks the field.
+
+// ---------------------------------------------------------------------------
+// Source 1: Docker, through the GET-only socket proxy (never docker.sock).
+// ---------------------------------------------------------------------------
+
+discovery.docker "local" {
+	host             = "tcp://tw-socket-proxy:2375"
+	refresh_interval = "15s"
+}
+
+discovery.relabel "tpa" {
+	targets = discovery.docker.local.targets
+
+	// `docker compose run` one-offs never ship.
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_oneoff"]
+		regex         = "False"
+		action        = "keep"
+	}
+
+	// THE ALLOWLIST. project/service. Never: model-gateway, dev-vendor-sink
+	// (sign-in codes), any database, minio, gotenberg, anything unlisted.
+	// records runs in project `tpa` today; `records/records` covers its solo file.
+	rule {
+		source_labels = [
+			"__meta_docker_container_label_com_docker_compose_project",
+			"__meta_docker_container_label_com_docker_compose_service",
+		]
+		separator = "/"
+		regex     = "tpa/(web|web-tls|tpa-api|tpa-jobs-drains|connectors|auth|auth-outbox-publisher|auth-publisher|auth-sweeper|records)|records/records"
+		action    = "keep"
+	}
+
+	rule {
+		target_label = "stack"
+		replacement  = "tpa"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "service"
+	}
+}
+
+loki.source.docker "tpa" {
+	host       = "tcp://tw-socket-proxy:2375"
+	targets    = discovery.relabel.tpa.output
+	forward_to = [loki.process.scrub.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// Source 2: fixture replay. stack="fixture", service from the file name
+// (`<service>.jsonl` or `<service>--<run>.jsonl`).
+// ---------------------------------------------------------------------------
+
+local.file_match "fixtures" {
+	path_targets = [{
+		"__path__" = "/fixtures-run/*.jsonl",
+		"stack"    = "fixture",
+	}]
+	sync_period = "2s"
+}
+
+loki.source.file "fixtures" {
+	targets    = local.file_match.fixtures.targets
+	forward_to = [loki.relabel.fixtures.receiver]
+}
+
+loki.relabel "fixtures" {
+	forward_to = [loki.process.scrub.receiver]
+
+	rule {
+		source_labels = ["filename"]
+		regex         = ".*/([a-z0-9-]+?)(--[^/]*)?\\.jsonl"
+		target_label  = "service"
+	}
+
+	rule {
+		action = "labeldrop"
+		regex  = "filename"
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The scrub pipeline. Order matters; each block says why it is where it is.
+// ---------------------------------------------------------------------------
+
+loki.process "scrub" {
+	forward_to = [loki.write.local.receiver]
+
+	// 1. Never-ship services, a second time (the allowlist above is the first
+	//    layer). Also stops a fixture file named after one of them.
+	stage.match {
+		selector            = `{service=~"model-gateway|dev-vendor-sink|minio|gotenberg|db|.*-db"}`
+		action              = "drop"
+		drop_counter_reason = "never_ship_service"
+	}
+
+	// 2. Model request/response bodies (Anthropic/OpenAI SDK debug output can
+	//    carry PHI), from whatever service. Before any parsing.
+	stage.drop {
+		expression          = `json_data|Request options`
+		drop_counter_reason = "model_body"
+	}
+
+	// 3. Non-JSON lines never ship (tracebacks, stray prints), except the auth
+	//    workers' count prints (auth-notary auth/cli.py: publisher, sweeper,
+	//    messenger), which carry counts only.
+	stage.match {
+		selector            = `{stack=~".+"} !~ "^\\s*\\{" !~ "^(publisher|sweeper|messenger): "`
+		action              = "drop"
+		drop_counter_reason = "not_json"
+	}
+
+	// 4. Caddy (web, web-tls): REBUILD the line from an allowlist. Headers,
+	//    resp_headers, remote/client ip, tls and error are gone; the path
+	//    loses its query string and id-like segments become `:id`.
+	stage.match {
+		selector = `{service=~"web|web-tls"}`
+
+		stage.json {
+			expressions = {
+				c_ts       = "ts",
+				c_level    = "level",
+				c_logger   = "logger",
+				c_msg      = "msg",
+				c_method   = "request.method",
+				c_host     = "request.host",
+				c_uri      = "request.uri",
+				c_status   = "status",
+				c_duration = "duration",
+				c_size     = "size",
+			}
+			drop_malformed = true
+		}
+
+		// A segment is an id when it is all digits, a UUID, 12+ hex chars,
+		// 16+ chars containing a digit (ULIDs, prefixed ids, tokens), or
+		// carries an address (@ or %40).
+		stage.template {
+			source   = "c_path"
+			template = `{{- with .c_uri -}}{{- $out := list -}}{{- range $seg := splitList "/" (regexReplaceAll "[?#].*$" . "") -}}{{- if or (regexMatch "^[0-9]+$" $seg) (regexMatch "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" $seg) (regexMatch "^[0-9a-fA-F]{12,}$" $seg) (and (ge (len $seg) 16) (regexMatch "[0-9]" $seg)) (regexMatch "@|%40" $seg) -}}{{- $out = append $out ":id" -}}{{- else -}}{{- $out = append $out $seg -}}{{- end -}}{{- end -}}{{- join "/" $out -}}{{- end -}}`
+		}
+
+		stage.template {
+			source   = "c_line"
+			template = `{{- $d := dict -}}{{- with .c_ts }}{{ $_ := set $d "ts" (float64 .) }}{{ end -}}{{- with .c_level }}{{ $_ := set $d "level" . }}{{ end -}}{{- with .c_logger }}{{ $_ := set $d "logger" . }}{{ end -}}{{- with .c_msg }}{{ $_ := set $d "msg" . }}{{ end -}}{{- with .c_method }}{{ $_ := set $d "method" . }}{{ end -}}{{- with .c_host }}{{ $_ := set $d "host" . }}{{ end -}}{{- with .c_path }}{{ $_ := set $d "path" . }}{{ end -}}{{- with .c_status }}{{ $_ := set $d "status" (atoi .) }}{{ end -}}{{- with .c_duration }}{{ $_ := set $d "duration" (float64 .) }}{{ end -}}{{- with .c_size }}{{ $_ := set $d "size" (atoi .) }}{{ end -}}{{- toJson $d -}}`
+		}
+
+		stage.output {
+			source = "c_line"
+		}
+	}
+
+	// 5. Read the fields the metadata and the drops need. Services disagree
+	//    on names: tpa_common/records write `message`, auth writes `msg`;
+	//    records writes `op` for the operation; model-gateway-style lines
+	//    write `severity`. auth's `error` is the traceback's last line,
+	//    "pkg.Class: message".
+	stage.json {
+		expressions = {
+			level_raw     = "level || severity",
+			logger_raw    = "logger",
+			msg_raw       = "message || msg",
+			exc_class_raw = "exc.class",
+			error_raw     = "error",
+			sqlstate_raw  = "exc.sqlstate",
+			operation_raw = "operation || op",
+			route_raw     = "route",
+			outcome_raw   = "outcome",
+			status_raw    = "status",
+			job_raw       = "job",
+		}
+	}
+
+	// connectors' delivery line names its lane in the message text.
+	stage.regex {
+		source     = "msg_raw"
+		expression = `(?:^|\s)lane=(?P<lane_raw>[A-Za-z0-9_-]+)`
+	}
+
+	// 6. The contract's metadata keys. Each is written only when non-empty
+	//    and shape-checked, so free text never becomes metadata.
+	stage.template {
+		source   = "level"
+		template = `{{- with .level_raw -}}{{- $l := ToUpper . -}}{{- if or (eq $l "WARN") (eq $l "WARNING") -}}WARNING{{- else if or (eq $l "ERROR") (eq $l "CRITICAL") (eq $l "FATAL") (eq $l "PANIC") (eq $l "DPANIC") (eq $l "ALERT") (eq $l "EMERGENCY") -}}ERROR{{- else if or (eq $l "INFO") (eq $l "NOTICE") -}}INFO{{- else if or (eq $l "DEBUG") (eq $l "TRACE") -}}DEBUG{{- end -}}{{- end -}}`
+	}
+
+	// exc_class: tpa_common and records put it in exc.class; auth's `error`
+	// gives it as the text before the first colon (last dotted segment).
+	stage.template {
+		source   = "exc_class"
+		template = `{{- if .exc_class_raw -}}{{- if regexMatch "^[A-Za-z_][A-Za-z0-9_]{0,99}$" .exc_class_raw -}}{{ .exc_class_raw }}{{- end -}}{{- else if .error_raw -}}{{- $head := regexFind "^([A-Za-z_][A-Za-z0-9_]*\\.)*[A-Za-z_][A-Za-z0-9_]*(:|$)" .error_raw -}}{{- $cls := regexReplaceAll ":$" $head "" | splitList "." | last -}}{{- if regexMatch "^[A-Z][A-Za-z0-9_]{0,99}$" $cls -}}{{ $cls }}{{- end -}}{{- end -}}`
+	}
+
+	stage.template {
+		source   = "sqlstate"
+		template = `{{- with .sqlstate_raw -}}{{- if regexMatch "^[0-9A-Z]{5}$" . -}}{{ . }}{{- end -}}{{- end -}}`
+	}
+
+	stage.template {
+		source   = "operation"
+		template = `{{- with .operation_raw -}}{{- if regexMatch "^[A-Za-z0-9_.:-]{1,80}$" . -}}{{ . }}{{- end -}}{{- end -}}`
+	}
+
+	// A route template only ("/v1/members/{member_id}", auth's "POST /auth/..."),
+	// with the same id-segment scrub as Caddy paths as a second guard.
+	stage.template {
+		source   = "route"
+		template = `{{- with .route_raw -}}{{- if regexMatch "^([A-Z]{3,7} )?/[A-Za-z0-9_{}./:-]{0,200}$" . -}}{{- $out := list -}}{{- range $seg := splitList "/" . -}}{{- if or (regexMatch "^[0-9]+$" $seg) (regexMatch "^[0-9a-fA-F]{12,}$" $seg) (and (ge (len $seg) 16) (regexMatch "[0-9]" $seg)) -}}{{- $out = append $out ":id" -}}{{- else -}}{{- $out = append $out $seg -}}{{- end -}}{{- end -}}{{- join "/" $out -}}{{- end -}}{{- end -}}`
+	}
+
+	stage.template {
+		source   = "outcome"
+		template = `{{- with .outcome_raw -}}{{- if regexMatch "^[A-Za-z0-9_.:-]{1,40}$" . -}}{{ . }}{{- end -}}{{- end -}}`
+	}
+
+	stage.template {
+		source   = "status"
+		template = `{{- with .status_raw -}}{{- if regexMatch "^[1-5][0-9][0-9]$" . -}}{{ . }}{{- end -}}{{- end -}}`
+	}
+
+	stage.template {
+		source   = "job"
+		template = `{{- with .job_raw -}}{{- if regexMatch "^[A-Za-z0-9_.:-]{1,80}$" . -}}{{ . }}{{- end -}}{{- end -}}`
+	}
+
+	stage.template {
+		source   = "lane"
+		template = `{{- with .lane_raw -}}{{- if regexMatch "^[A-Za-z0-9_-]{1,40}$" . -}}{{ . }}{{- end -}}{{- end -}}`
+	}
+
+	// 7. Drops: DEBUG, the HTTP client loggers, and httpx's request line
+	//    (tpa_common lines carry no logger name, so it is caught by text).
+	stage.drop {
+		source              = "level"
+		value               = "DEBUG"
+		drop_counter_reason = "debug"
+	}
+
+	stage.drop {
+		source              = "logger_raw"
+		expression          = `^(anthropic.*|httpx(\..*)?|httpcore(\..*)?)$`
+		drop_counter_reason = "http_client_logger"
+	}
+
+	stage.drop {
+		source              = "msg_raw"
+		expression          = `^HTTP Request:`
+		drop_counter_reason = "http_client_request"
+	}
+
+	// 8. Strip fields the monitoring does not need and that identify a
+	//    person, tenant, session or token: tid, sid, sub (auth), act/act_sub,
+	//    principal_id, tenant_id, jti, elevation_id (records), detail (the
+	//    tpa-jobs alert's org/principal ids) and auth's `error` (its message
+	//    part can carry values; the class is kept as exc_class above).
+	//    request_id stays. First `,"k":v` anywhere (nested objects and list
+	//    items included), then a field that opens an object `{"k":v,`.
+	stage.replace {
+		expression = `(,"(?:tid|sid|sub|act|act_sub|principal_id|tenant_id|jti|elevation_id|detail|error)":(?:"(?:[^"\\]|\\.)*"|-?[0-9][0-9.eE+-]*|true|false|null|\{[^{}]*\}|\[[^\[\]]*\]))`
+		replace    = ""
+	}
+
+	stage.replace {
+		expression = `\{("(?:tid|sid|sub|act|act_sub|principal_id|tenant_id|jti|elevation_id|detail|error)":(?:"(?:[^"\\]|\\.)*"|-?[0-9][0-9.eE+-]*|true|false|null|\{[^{}]*\}|\[[^\[\]]*\]),?)`
+		replace    = ""
+	}
+
+	// connectors writes the outbox row id into its delivery message.
+	stage.replace {
+		expression = `(?:^|[\s"])row=([^\s"]+)`
+		replace    = ":id"
+	}
+
+	// Any query string left anywhere in the line.
+	stage.replace {
+		expression = `(\?[A-Za-z_][A-Za-z0-9_.\-]*=[^\s"]*)`
+		replace    = ""
+	}
+
+	// 9. Fail closed: a line that still carries any of these after the
+	//    scrub is dropped whole rather than shipped.
+	stage.drop {
+		expression          = `"(?:tid|sid|sub|act|act_sub|principal_id|tenant_id|jti|elevation_id|detail|error|headers|resp_headers)"\s*:|\?[A-Za-z_]+=|Cookie|Authorization`
+		drop_counter_reason = "scrub_fail_closed"
+	}
+
+	// 10. Metadata out; only stack and service stay as stream labels.
+	stage.structured_metadata {
+		values = {
+			level     = "",
+			exc_class = "",
+			sqlstate  = "",
+			operation = "",
+			route     = "",
+			outcome   = "",
+			status    = "",
+			job       = "",
+			lane      = "",
+		}
+	}
+
+	stage.label_keep {
+		values = ["stack", "service"]
+	}
+}
+
+loki.write "local" {
+	endpoint {
+		url = "http://tw-loki:3100/loki/api/v1/push"
+	}
+}
