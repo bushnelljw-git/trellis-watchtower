@@ -113,10 +113,10 @@ PHI, docs/REQUESTS.md asks the TPA repos for a fourth exception fact: the innerm
   (applied 2026-10-11). `scripts/pagerduty/gcp_channels.py` makes each project's `pagerduty` notification channel,
   run by a person with Monitoring rights there. See [docs/PAGERDUTY.md](docs/PAGERDUTY.md).
 - **Hosted Grafana.** [cloud/](cloud/) is the production image: Grafana 12 pinned by digest, signed in only by the
-  IAP assertion on `watch.${domain}` for `grp-platform`, reading Cloud Monitoring for the app, crm and phi projects.
-  It stays a laptop artifact until the owner rules on the class 3 request
-  `trellis-security/requests/2026-09-24-watchtower-to-tpa-platform-hosted-grafana-iap.md`. See
-  [cloud/README.md](cloud/README.md).
+  IAP assertion on `watch.${domain}` for `grp-platform`, reading Cloud Monitoring for the app, CRM, PHI and
+  call-centre projects, with nine dashboards checked against tpa-platform's metric catalogue. The owner ruled yes on
+  2026-10-11 ("Yes, everything"); the cloud half is tpa-platform's, being built. `make cloud-image-check` builds and
+  checks it offline. See [cloud/README.md](cloud/README.md).
 
 ## Fly paging
 

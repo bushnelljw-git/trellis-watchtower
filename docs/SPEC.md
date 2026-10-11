@@ -30,6 +30,17 @@ The research found five constraints that shape the design:
     still holds no key, no Terraform and no deploy identity. The design's details were decided by the orchestrating
     session, by delegation.
   - The PagerDuty account is the TPA's. BodyF1rst's Fly checks in `bodyf1rst-prod` never page through it.
+- **Hosted dashboard (2026-10-11):** asked "Do you want a private monitoring website (watch.<your domain>, behind
+  Google sign-in) showing charts for the whole system? Alerts work the same either way; today you'd use Google's own
+  console", the owner chose **"Yes, everything"**: *"Charts for the app, CRM, call centre AND health numbers
+  (traffic, errors, uptime) for the member-records area. Never member data. Needs a narrow read-only opening into the
+  protected member-records area."*
+  - It rules P3's class 3 question (the IAP exception for `watch.${domain}`, `sa-watchtower`, the read into the PHI
+    project's monitoring) and reverses tpa-platform D-92 ("No hosted dashboard yet").
+  - trellis-watchtower builds the image: four datasources (`cloud-cc` added for beta's call-centre project) and nine
+    dashboards over the catalogue's metrics, checked against a vendored, pinned copy of tpa-platform's
+    `infra/monitoring.yml` ([cloud/README.md](../cloud/README.md)). tpa-platform's lane builds the cloud half after
+    its alert-gaps branch lands. Still no Terraform, deploy identity or image push here.
 
 ## Design decisions (stated, not asked)
 - **Clone with history** as asked. Rename `origin` to `upstream` with push disabled, and stop tracking `.env`. Put the new GitHub remote under `bushnelljw-git`, with the other TPA repos, created only on the owner's OK after a secret scan of history. The old watchtower is untouched and keeps watching BodyF1rst.
@@ -183,7 +194,8 @@ The research found five constraints that shape the design:
 - Without it, nobody can see PHI metrics or alerts once the perimeter is enforced.
 - Update `docs/infra/network-and-perimeter.md` §5.4 and §8.
 
-**P3: hosted Grafana, the production form of trellis-watchtower** (written; **class 3 ruling before apply**)
+**P3: hosted Grafana, the production form of trellis-watchtower** (written; the owner ruled yes on 2026-10-11, see
+"Owner decisions"; the cloud half is tpa-platform's)
 - **trellis-watchtower `cloud/`:**
   - `Dockerfile`: Grafana 12 pinned, provisioning baked in, no plugins;
   - `grafana.ini`: `[auth.jwt]` on the IAP assertion header, login form off, no initial admin, anonymous off;
@@ -250,7 +262,7 @@ The research found five constraints that shape the design:
 ## Owner-gated (not done without the owner's word)
 - Applying P1, P2 or P3 to any cloud (class 3; no GCP organization exists yet).
 - Who holds `monitoring.editor`.
-- The IAP exception and the contract revision.
+- ~~The IAP exception and the contract revision.~~ Ruled yes by the owner, 2026-10-11 (the hosted dashboard).
 - Creating the GitHub remote.
 - Running the Fly script in `bodyf1rst-prod`.
 - Rebuilding `tpa-model-gateway` (the Member Ask session's container).

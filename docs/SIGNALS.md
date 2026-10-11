@@ -148,13 +148,34 @@ that is missing configuration, not an outage, and the dashboard says so. The two
 forge is private on Fly (flycast only), so Fly metrics are its only production signal. Fly production errors are not
 covered (SPEC.md, "Requests to other repos").
 
-## Production TPA signals (planned, not built here)
+## Production TPA signals (cloud: the hosted dashboards)
 
-The TPA projects' production alerts are Cloud Monitoring alert policies in tpa-platform's
-`infra/modules/monitoring/` (SPEC.md P1, written but not applied): missed runs, job failures, connectors, auth, the
-release canary, the audit chain, the perimeter, outage uptime checks and the error-group alerts. Their catalogue is
-the "Alert catalogue (production)" in SPEC.md, and tpa-platform's `docs/infra/monitoring.md` once P1 lands. The
-hosted dashboards that read them come from `cloud/` after the owner's class 3 ruling.
+The TPA projects' production alerts are Cloud Monitoring alert policies in tpa-platform's `infra/modules/monitoring/`
+and its catalogue `infra/monitoring.yml` (docs/infra/monitoring.md there). The hosted Grafana in [cloud/](../cloud/)
+charts the same metrics: nine dashboards, read-only, over four datasources (`cloud-app`, `cloud-crm`, `cloud-phi`,
+`cloud-cc`). The owner ruled it yes on 2026-10-11; it is live once tpa-platform builds the cloud half. **Source** below
+is the Cloud Monitoring metric (`logging.googleapis.com/user/<name>` for a log-based one). A red triangle on a panel is
+a failed query, not a reading (on `cloud-phi`, most often the perimeter rule missing), and its "no value" text means
+nothing.
+
+| Signal (dashboard) | Source | Red means | First check | Who fixes |
+|---|---|---|---|---|
+| Uptime checks passing (overview, Portal & API, CRM) | `monitoring.googleapis.com/uptime_check/check_passed` by host | Under 95% in 24 h. Behind IAP a pass is Google's sign-in page: it proves the edge and IAP, never the service | The 5xx and instance panels for the service behind the host | tpa-platform (edge) |
+| Scheduled runs (overview, Jobs) | `run.googleapis.com/job/completed_execution_count`, `result="succeeded"`, within each job's deadline | MISSED: no success within 1.5 cadences (`missed run (<job>)`). Beta's paused sweeps (O143) read MISSED on purpose | Failed executions, then the schedule's failures (Jobs) | the job's repository (tpa-platform, auth-notary, records-service) |
+| Requests, 5xx (every area) | `run.googleapis.com/request_count` by service and `response_code_class` | 5xx in the last hour (`canary-5xx` at 0.1% and five; the urgent only-5xx liveness policies) | The service's ERROR lines (Errors), then start-up failures | the service's repository |
+| p95 (every area) | `run.googleapis.com/request_latencies` (ALIGN_PERCENTILE_95); tpa-api's own `tpa_api_latency` | Over 2 s (`canary-latency`, `tpa-api-latency`). web's and tpa-api's Cloud Run p95 counts the desk's 40-second streams | records' latency, then auth's | tpa-platform, records-service, auth-notary |
+| Error groups (overview, Errors) | `errors` (app, PHI, call centre), `auth_errors`, the CRM's `crm_errors` (beta) or `errors` | A group in 24 h (orange); new groups and spikes page as `new error group` and `error spike` | The group's service or job, class, operation or event, code, SQLSTATE (Errors) | the group's service's repository |
+| Database up and disk (overview, Databases) | `cloudsql.googleapis.com/database/up`, `database/disk/utilization` for auth-db, tpa-db, crm-db, cc-db | DOWN (urgent `<instance>-down`), disk over 85% (`<instance>-disk`). No value: stopped on purpose between test sessions, or not built | The instance's operations in the console | tpa-platform |
+| Failed jobs and schedules (overview, Jobs, area pages) | `job/completed_execution_count` `result="failed"`; `scheduler_failures` by schedule and status | Any in 24 h (`jobs-failed`, `scheduler-failed`; `audit-chain` for the audit jobs, urgent) | The execution's own lines; PERMISSION_DENIED is an invoker binding | the job's repository |
+| Sign-in: refused, lockouts, not ready, unhandled (Sign-in) | `auth_login_failures`, `auth_lockouts`, `auth_not_ready` by check, `auth_errors` `operation="unhandled"` | Lockouts over 20 in 5 min; `not_ready` for `database` (urgent); any unhandled | auth's lines; auth-db | auth-notary |
+| Sign-in messages waiting (Sign-in) | `auth_messages_outbox_lag` (p99) and the messenger's instance count | Over 30 s for two minutes, or no instance (`auth-messages-lag`; texts and emails alike) | The vendor, the NAT path, the allowlist | auth-notary |
+| Audit and credentials (Sign-in) | `auth_audit_break`, `auth_audit_reconciled`, `auth_audit_reconcile_findings`, `auth_audit_chain_breaks_new`, `auth_credential_tag_invalid` | Any break, finding or tag failure, or the reconcile silent for 90 min (all urgent) | auth-notary runbooks 7.12, 7.17, 04 §5.5 | auth-notary |
+| Gateway (Member records, `cloud-phi` only) | `records_refusals` by gate, code, operation; `records_rate_limited`; `records_critical`; `records_mirror_problems`; `errors` SQLSTATE 08 | `audit flush failed` or `database unreachable` (urgent); an unexpected gate or code | tpa-db, then the refusals around the time | records-service |
+| Chain head (Member records) | `records-chain-head` executions and schedule; `records_chain_head_exists` | A failure (urgent `audit-chain`); a head already in the vault (normal) | Who ran the job and when | records-service |
+| Connectors (Member records) | `connectors_passes`, `connectors_deliveries` by lane, outcome, code; `connectors_dead_letters` | No pass for 5 min; a dead letter; a refused destination; an unsigned envelope | connectors.md §7.3 | tpa-platform (records-service for unsigned) |
+| Perimeter and alert changes (Member records) | `perimeter_violations` by reason, service, dry run; `monitoring_changes` by method | Any violation; any policy, channel or snooze change (D-137) | network-and-perimeter.md §5.5; the Admin Activity entry | tpa-platform |
+| tpa-jobs (Portal & API, Jobs) | `tpa_jobs_runs`, `tpa_jobs_alerts` by job and alert, `tpa_jobs_drain_raised`, `tpa_jobs_accumulator_backlog` | A paging alert (`anomaly_freeze`, `crm_signature_failure`, `member_access_mass_end`); a drain tick that raised; the backlog growing | The run's own summary line | tpa-platform |
+| Call centre, CRM (their pages) | Cloud Run request, latency and instance metrics, `errors`, `run_system_errors`, `sql_proxy_errors`, job executions | `voice-down` (urgent), a failed migration, cc-db or crm-db down | The service's system log | call-center; the CRM |
 
 **Paging (2026-10-11).** Every policy in a TPA project notifies that project's `pagerduty` channel. The channel
 pages one PagerDuty service: "TPA beta · Portal & API" for the app project, "· Member records" for PHI, and
