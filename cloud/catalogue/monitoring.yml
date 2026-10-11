@@ -1,0 +1,1620 @@
+# The monitoring catalogue, as data. Every environment root with services reads
+# this one file (its main.tf, `yamldecode`) and hands each project's half to its
+# `monitoring` module call, so beta and production cannot drift. The prose,
+# the routing and the reasons are docs/infra/monitoring.md; the module is
+# modules/monitoring.
+#
+# Rules this file keeps, refused at plan by the module and read back by
+# tests/infra/test_monitoring_shape.py:
+#
+# - A metric lives in the project that RECEIVES the logs it counts: records,
+#   connectors and the protected jobs in `phi`; auth, tpa-api, tpa-jobs,
+#   model-gateway (D-70, 2026-09-27) and web in `app`; the CRM's engine in
+#   `crm`; beta's call-centre services and job in `cc` (2026-10-11, read by
+#   beta's callcentre.tf alone: production-full has no call-centre project).
+#   Nothing crosses the perimeter.
+# - A label is one of service, operation, gate, code, outcome, status_class,
+#   job, lane, class, sqlstate, and no extractor reads a tenant, request,
+#   session, principal, member, row, address or URL field.
+# - Filters match on the formatters' own field names, which differ by repo:
+#   this repository's lines carry `service`, `message`, `operation`, `reason`
+#   and `exc.class` (tpa_common/logging.py); the gateway's carry `service`,
+#   `message`, `op`, `gate`, `code` and `exc.{class,sqlstate}`
+#   (records-service records/logging.py); the issuer's carry `logger`, `msg`,
+#   `route`, `status`, `reason` and `error` (auth-notary auth/logging.py).
+#   Every one writes its level as `level`, which Cloud Logging leaves in
+#   jsonPayload rather than mapping to severity, so no filter here reads
+#   `severity` for one of their lines. Two writers name `severity` itself,
+#   which Cloud Logging does map: the Cloud SQL Auth Proxy sidecar
+#   (`--structured-logs`) and call-center's services (services/privacy/
+#   log_setup.py); only their filters read it.
+# - A PromQL condition is alone in its policy (Google's rule).
+# - `urgent: true` is the one routing fact. The module derives the policy's
+#   channels, its severity (CRITICAL, else WARNING; PagerDuty reads it as
+#   urgency) and its routing label from it, so they never disagree.
+# - No condition copies a log line into a notification: every condition is a
+#   threshold, an absence or PromQL over a counter or a distribution (never a
+#   log-match condition), and no documentation names a label or a value with
+#   Cloud Monitoring's ${...} variables.
+
+# Added to every project's own lists below.
+shared:
+  log_metrics:
+    run_system_errors:
+      description: >-
+        Cloud Run's own system log at ERROR or above: a failed startup or
+        liveness probe, a container that exited, a memory limit exceeded.
+        Written by the platform, not by a service, so it holds no application
+        field.
+      filter: |
+        (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
+        AND log_id("run.googleapis.com/varlog/system")
+        AND severity>=ERROR
+
+    # 2026-10-11 (the alert-gaps review): every database client here dials
+    # through the Cloud SQL Auth Proxy sidecar (`--psc --auto-iam-authn
+    # --structured-logs`, modules/run-service and run-job; auth through its
+    # own connector), so Cloud Run's built-in Cloud SQL path, and the
+    # connection_refused_count `canary-sql` used to read, is never used and
+    # that count stays at zero. The proxy's own refusals are the signal.
+    sql_proxy_errors:
+      description: >-
+        The Cloud SQL Auth Proxy sidecar's own lines at ERROR or above: it
+        could not dial an instance or log in to it as the service's IAM user.
+        Its structured line names its severity (`--structured-logs`), which
+        Cloud Logging maps, and its message opens with the instance's
+        connection name in brackets; only that shape is matched, and nothing
+        of the line is extracted.
+      filter: |
+        (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
+        AND severity>=ERROR
+        AND jsonPayload.message=~"^\\[[a-z][a-z0-9-]*:[a-z0-9-]+:[a-z][a-z0-9-]*\\] "
+
+  alert_policies:
+    canary-5xx:
+      display_name: "5xx above 0.1% of requests"
+      documentation: >-
+        A Cloud Run service answered more than 0.1 percent of its requests with
+        a 5xx over five minutes (and at least five of them). The release canary
+        holds a new revision to the same bar (docs/pipeline.md §5.1). During a
+        release: roll back (§6). Otherwise read the service's ERROR lines.
+      conditions:
+        - name: "5xx over 0.1% for five minutes"
+          promql:
+            query: >-
+              sum by (service_name) (rate(run_googleapis_com:request_count{monitored_resource="cloud_run_revision", response_code_class="5xx"}[5m]))
+              > 0.001 * sum by (service_name) (rate(run_googleapis_com:request_count{monitored_resource="cloud_run_revision"}[5m]))
+              and sum by (service_name) (increase(run_googleapis_com:request_count{monitored_resource="cloud_run_revision", response_code_class="5xx"}[5m])) >= 5
+            duration: "300s"
+            evaluation_interval: "60s"
+
+    canary-latency:
+      display_name: "p95 latency above 2 s"
+      documentation: >-
+        A Cloud Run service's 95th percentile request latency stayed above two
+        seconds for ten minutes. The canary compares a new revision with the
+        old one (1.5 times its p95); this standing policy is the absolute
+        floor. Check the database first, then the hop to records.
+      conditions:
+        - name: "p95 above 2000 ms for ten minutes"
+          promql:
+            query: >-
+              histogram_quantile(0.95, sum by (service_name, le) (rate(run_googleapis_com:request_latencies_bucket{monitored_resource="cloud_run_revision"}[5m]))) > 2000
+            duration: "600s"
+            evaluation_interval: "60s"
+
+    canary-startup:
+      display_name: "container startup or runtime failure"
+      documentation: >-
+        Cloud Run's system log reported a failed probe, an exit or a memory
+        limit. A startup probe failure means `/ready` did not answer within
+        its budget; read the revision's own lines for its `not_ready` reason.
+      conditions:
+        - name: "a service's system log at ERROR"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/run_system_errors" AND resource.type = "cloud_run_revision"
+            group_by_fields: ["resource.label.service_name"]
+        - name: "a job's system log at ERROR"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/run_system_errors" AND resource.type = "cloud_run_job"
+            group_by_fields: ["resource.label.job_name"]
+
+    # In every project with a database client (2026-10-11): it replaces the
+    # app and PHI projects' `canary-sql`, whose Cloud Run Cloud SQL count could
+    # never fire. A database that is down is also its own urgent policy
+    # (`<instance>-down`, per project below).
+    canary-sql:
+      display_name: "database connection errors"
+      documentation: >-
+        The Cloud SQL Auth Proxy beside a service or a job could not reach its
+        database or log in to it. The canary's "Cloud SQL connection errors:
+        zero" (docs/pipeline.md §5.1). Check the instance (its own
+        `<instance>-down` policy), then its Private Service Connect endpoint
+        and the network's 3307 rule, then the IAM login.
+      conditions:
+        - name: "the proxy beside a service refused a connection"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/sql_proxy_errors" AND resource.type = "cloud_run_revision"
+            group_by_fields: ["resource.label.service_name"]
+        - name: "the proxy beside a job refused a connection"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/sql_proxy_errors" AND resource.type = "cloud_run_job"
+            group_by_fields: ["resource.label.job_name"]
+
+projects:
+  # ---------------------------------------------------------------------------
+  # The app project: web, auth and its jobs, tpa-api, tpa-jobs and its drains,
+  # and (D-70, 2026-09-27) model-gateway. The gateway's lines carry `level`
+  # beside `severity` (model_gateway/cli.py), so `errors` counts them with the
+  # rest of this repository's; `auth_errors` leaves them out by name, because
+  # the gateway's lines also carry a `logger` and uvicorn's is `uvicorn.*`.
+  # ---------------------------------------------------------------------------
+  app:
+    log_metrics:
+      errors:
+        description: >-
+          ERROR lines of the services this repository builds (tpa-api,
+          tpa-jobs, tpa-jobs-drains, and model-gateway since D-70), one per
+          line. The error group of docs/infra/monitoring.md §4: the
+          formatter's service, the exception
+          class, the operation and the reason code (which is where these
+          services put a caught exception's class).
+        filter: |
+          (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
+          AND jsonPayload.service:*
+          AND jsonPayload.level="ERROR"
+        labels:
+          service: 'EXTRACT(jsonPayload.service)'
+          class: 'EXTRACT(jsonPayload.exc.class)'
+          operation: 'EXTRACT(jsonPayload.operation)'
+          code: 'EXTRACT(jsonPayload.reason)'
+
+      # Pinned to auth's own two services and its jobs (2026-10-11): the
+      # project also runs the CRM's engine, whose uvicorn lines carry a
+      # `logger` too (beta's CRM shares it, R282), and model-gateway, whose
+      # uvicorn lines do. Its jobs are `migrate-auth` and `auth-*`.
+      auth_errors:
+        description: >-
+          ERROR lines of auth, its messenger and its jobs, whose formatter is
+          the issuer's own: the event is `msg`, the exception is the last line
+          of `error`, of which only the leading class name is read.
+        filter: |
+          ((resource.type="cloud_run_revision" AND resource.labels.service_name=~"^auth(-outbox-publisher)?$")
+            OR (resource.type="cloud_run_job" AND resource.labels.job_name=~"^(migrate-auth|auth-[a-z-]+)$"))
+          AND jsonPayload.logger=~"^(auth|uvicorn)"
+          AND jsonPayload.level="ERROR"
+        labels:
+          class: 'REGEXP_EXTRACT(jsonPayload.error, "^([A-Za-z_][A-Za-z0-9_.]*)")'
+          operation: 'EXTRACT(jsonPayload.msg)'
+          code: 'EXTRACT(jsonPayload.reason)'
+
+      tpa_api_requests:
+        description: >-
+          tpa-api's one line per request (tpa-api.md §5.3): the operation the
+          route called, the outcome and the status class. Never the route's
+          filled path, the tenant or the session.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="tpa-api"
+          AND jsonPayload.service="tpa-api"
+          AND jsonPayload.message="request"
+        labels:
+          operation: 'EXTRACT(jsonPayload.operation)'
+          outcome: 'EXTRACT(jsonPayload.outcome)'
+          status_class: 'REGEXP_EXTRACT(jsonPayload.status, "^([1-5])[0-9][0-9]$")'
+
+      # 2026-10-11: beta leaves tpa-api out of `canary-latency` (the module's
+      # latency_excluded_services), because Cloud Run's request metric cannot
+      # tell the desk's 40-second streams from a slow request. tpa-api's own
+      # request line can: it carries the route's template and the time to the
+      # response's first byte. The streams (the live lane, the three Ask
+      # lanes), the file transfers and the model-backed document rows, whose
+      # time is the model's by design, are left out by route and operation.
+      # The route on a real request line is the template under the API's
+      # mount (`/live/queue/stream`), never `/tpa/api/v1/...`: until the review
+      # of 2026-10-11 (findings 6 and 7) the filter named the prefix and so
+      # left nothing out. tests/tpa_api/test_latency_metric_lines.py drives
+      # the real app's lines through it.
+      tpa_api_latency:
+        description: >-
+          The time tpa-api took to start each answer (`duration_ms` on its
+          `request` line, tpa-api.md §5.3), as a distribution in
+          milliseconds, without the live lane, the member, staff and employer
+          Ask lanes, uploads, downloads, the rows that embed a document in
+          tpa-api's own process (D-69, D-76) and the plan-document rows that
+          wait on the model. No label: the route and the operation select, and
+          are never read into a series.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="tpa-api"
+          AND jsonPayload.service="tpa-api"
+          AND jsonPayload.message="request"
+          AND NOT jsonPayload.route=~"^/(live|assist|staff-ask|employer-ask|uploads|downloads)/"
+          AND NOT jsonPayload.route=~"^(/knowledge/documents|/plan-years/\\{plan_year_id\\}/(plan-documents|published-documents)(/reembed)?)$"
+          AND NOT jsonPayload.operation=~"^(plans\\.document_ai_begin|plan_templates\\.design_ai_begin|plans\\.add_document|plans\\.add_published_document|knowledge\\.ingest|plans\\.reembed_documents)$"
+        value_extractor: 'EXTRACT(jsonPayload.duration_ms)'
+        unit: "ms"
+        bounds: [25, 50, 100, 250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]
+
+      tpa_jobs_runs:
+        description: >-
+          One per run summary (tpa-jobs.md §6): every scheduled run and every
+          drain tick, by job.
+        filter: |
+          (resource.type="cloud_run_job" OR resource.type="cloud_run_revision")
+          AND jsonPayload.run_id:*
+          AND jsonPayload.tenants_total:*
+        labels:
+          job: 'EXTRACT(jsonPayload.job)'
+
+      tpa_jobs_alerts:
+        description: >-
+          One per alert record a run raises (tpa-jobs.md §6; tpa_jobs/summary.py
+          SummaryWriter): the job and the registry's alert name. The record's
+          tenant and detail are never read.
+        filter: |
+          (resource.type="cloud_run_job" OR resource.type="cloud_run_revision")
+          AND jsonPayload.run_id:*
+          AND jsonPayload.alert:*
+          AND jsonPayload.category:*
+        labels:
+          job: 'EXTRACT(jsonPayload.job)'
+          code: 'EXTRACT(jsonPayload.alert)'
+
+      # tpa-jobs.md §5.5: "an outstanding-reconciliation count that grows".
+      # accumulator_reconcile raises `accumulator_backlog_growing` with the
+      # tenant's open count after every run that leaves one open; its value is
+      # the count, so the policy can compare one night with the night before.
+      tpa_jobs_accumulator_backlog:
+        description: >-
+          The outstanding reconciliations a run of accumulator_reconcile left
+          open, one point per tenant per run (the record's `count`), by job.
+          The record's tenant and detail are never read.
+        filter: |
+          (resource.type="cloud_run_job" OR resource.type="cloud_run_revision")
+          AND jsonPayload.run_id:*
+          AND jsonPayload.alert="accumulator_backlog_growing"
+        labels:
+          job: 'EXTRACT(jsonPayload.job)'
+        value_extractor: 'EXTRACT(jsonPayload.count)'
+        unit: "1"
+        bounds: [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
+
+      tpa_jobs_drain_raised:
+        description: >-
+          A drain tick that raised (tpa_jobs/drain.py): the drain and the
+          exception class. The loop carries on; the tick did nothing.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="tpa-jobs"
+          AND jsonPayload.message="a drain tick raised"
+        labels:
+          job: 'EXTRACT(jsonPayload.operation)'
+          class: 'EXTRACT(jsonPayload.reason)'
+
+      auth_login_failures:
+        description: >-
+          A refused password sign-in: auth's request line for POST /auth/login
+          answering 401. For the door dashboard; the surge alert auth's 04 §5.5
+          describes needs a seven-day baseline Google does not keep for a log
+          metric's alerts.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="auth"
+          AND jsonPayload.msg="request"
+          AND jsonPayload.route="POST /auth/login"
+          AND jsonPayload.status=401
+
+      auth_lockouts:
+        description: >-
+          Every answer of `423 locked` from auth (CONTRACT §7: the sign-in
+          family answers 423, never 429).
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="auth"
+          AND jsonPayload.msg="request"
+          AND jsonPayload.status=423
+
+      auth_not_ready:
+        description: >-
+          auth's `/ready` refusing, by the first check that failed (signer,
+          factor_cipher, audit_key, breach_corpus, database, clock, …). auth's
+          service alone (2026-10-11): another service's `not_ready` line must
+          never open the urgent `auth-database`.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="auth"
+          AND jsonPayload.msg="not_ready"
+        labels:
+          code: 'EXTRACT(jsonPayload.reason)'
+
+      # R187's header check (2026-10-05, the IAP review's F3): auth's and
+      # tpa-api's refusals of an assertion signed by a key the image's pinned
+      # set lacks, and the image's own warning that its pinned keys are stale.
+      # Either means Google rotated IAP's keys past the image: every browser
+      # request would be refused once the old key leaves the set. Both
+      # services write the event as `reason` (the header builder, 2026-10-05);
+      # the message differs (auth's `msg`, tpa-api's `message`, "iap_refused"
+      # for a refusal), so only `reason` and the service are read.
+      iap_unknown_key:
+        description: >-
+          A browser request auth or tpa-api refused because IAP's assertion
+          names a key the image's pinned set does not hold (`reason`
+          `iap_unknown_key`). Nothing of the request is read.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND (resource.labels.service_name="auth" OR resource.labels.service_name="tpa-api")
+          AND jsonPayload.reason="iap_unknown_key"
+
+      iap_pinned_keys_stale:
+        description: >-
+          auth's or tpa-api's own warning that the IAP keys pinned in its image
+          are stale (`reason` `iap_pinned_keys_stale`).
+        filter: |
+          resource.type="cloud_run_revision"
+          AND (resource.labels.service_name="auth" OR resource.labels.service_name="tpa-api")
+          AND jsonPayload.reason="iap_pinned_keys_stale"
+
+      auth_messages_outbox_lag:
+        description: >-
+          The age in seconds of the oldest unsent messages_outbox row, text or
+          email, as the messenger reads it (auth's 04 §5.4: how long a person
+          has waited for a sign-in message). auth's messenger writes it every
+          five seconds while a message waits, even a batch that sent nothing.
+          Empty until auth-notary's workers configure the JSON logger
+          (docs/infra/monitoring.md §6).
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="auth-outbox-publisher"
+          AND jsonPayload.msg="messages_drained"
+        value_extractor: 'EXTRACT(jsonPayload.lag)'
+        unit: "s"
+        bounds: [1, 5, 10, 30, 60, 120, 300, 600]
+
+      auth_audit_break:
+        description: >-
+          `auth audit verify` printing a break (auth/cli.py: "audit verify:
+          BREAK on <day> seq <n> …") on stderr. Only the prefix is matched;
+          nothing of the line is extracted.
+        filter: |
+          resource.type="cloud_run_job"
+          AND textPayload=~"^audit verify: BREAK on "
+
+      auth_audit_reconciled:
+        description: >-
+          The membership reconcile's heartbeat (auth-notary 04 §5.4): one
+          `audit_reconciled` line per run of the auth-sweeper job, whatever it
+          found. Unlabelled on purpose: its absence is the "not run" page, and
+          absence is judged per time series, so a label a finding could move
+          would page "not run" while findings stood.
+        filter: |
+          resource.type="cloud_run_job"
+          AND resource.labels.job_name="auth-sweeper"
+          AND jsonPayload.logger="auth.domain.reconcile"
+          AND jsonPayload.msg="audit_reconciled"
+
+      auth_audit_reconcile_outcomes:
+        description: >-
+          The same heartbeat, for the runs that were not clean, by result
+          (`findings`, `chain_broken`). A dashboard, never a page: a break
+          already paged stays `chain_broken` on every run.
+        filter: |
+          resource.type="cloud_run_job"
+          AND resource.labels.job_name="auth-sweeper"
+          AND jsonPayload.logger="auth.domain.reconcile"
+          AND jsonPayload.msg="audit_reconciled"
+          AND jsonPayload.reason!="clean"
+        labels:
+          code: 'EXTRACT(jsonPayload.reason)'
+
+      auth_audit_reconcile_findings:
+        description: >-
+          One `audit_reconcile_finding` line per finding: a membership or a
+          principal the audit chain doesn't explain, a person holding a desk
+          role beside a `door_internal` role or, since R156 (auth 7c784ac),
+          beside `compliance_officer` (`roles_never_together`), a forged
+          known-break row, or, since I-240 unit 4, a live credential, workload
+          or workload key with no tag or one under an unpublished key id
+          (`credential_tag_missing`). By kind.
+        filter: |
+          resource.type="cloud_run_job"
+          AND resource.labels.job_name="auth-sweeper"
+          AND jsonPayload.logger="auth.domain.reconcile"
+          AND jsonPayload.msg="audit_reconcile_finding"
+        labels:
+          code: 'EXTRACT(jsonPayload.reason)'
+
+      auth_audit_chain_breaks_new:
+        description: >-
+          One `audit_chain_break_new` line per audit-chain break the reconcile
+          has not paged before; the sweeper then records it as known, so each
+          break pages once. By check.
+        filter: |
+          resource.type="cloud_run_job"
+          AND resource.labels.job_name="auth-sweeper"
+          AND jsonPayload.logger="auth.domain.reconcile"
+          AND jsonPayload.msg="audit_chain_break_new"
+        labels:
+          code: 'EXTRACT(jsonPayload.reason)'
+
+      auth_credential_tag_invalid:
+        description: >-
+          A stored factor, workload or workload key whose tag under the bearer
+          key was NULL, didn't verify, or named a key outside {current,
+          previous}, met by a door about to use it: `credential_tag_invalid`
+          (a factor) or `workload_tag_invalid` (a workload or its key) from
+          logger `auth.domain.tags` (auth-notary 04 §5.4's
+          `auth_credential_tag_invalid_total`, I-240 unit 4), and since unit 5
+          (auth-notary 117127a) `bearer_key_invalid`: an open invitation, reset
+          or texted code under a key id no key holds. By the row's `kind` (as
+          `code`) and the `door` (as `gate`), under the catalogue's own label
+          names (docs/infra/monitoring.md §2). From `auth`'s request container
+          and from auth's jobs: `auth retag-bearer-key` (04 §7.7a) runs as a
+          job and logs its refusals at the door `retag`.
+        filter: |
+          ((resource.type="cloud_run_revision" AND resource.labels.service_name="auth")
+            OR resource.type="cloud_run_job")
+          AND jsonPayload.logger="auth.domain.tags"
+          AND jsonPayload.metric="credential_tag_invalid"
+        labels:
+          code: 'EXTRACT(jsonPayload.kind)'
+          gate: 'EXTRACT(jsonPayload.door)'
+
+      scheduler_failures:
+        description: >-
+          A Cloud Scheduler attempt that finished in error: the job could not
+          be started. By the attempt's status code (PERMISSION_DENIED,
+          NOT_FOUND, …); the scheduler job is the resource's job_id.
+        filter: |
+          resource.type="cloud_scheduler_job"
+          AND jsonPayload."@type"="type.googleapis.com/google.cloud.scheduler.logging.AttemptFinished"
+          AND severity>=ERROR
+        labels:
+          code: 'EXTRACT(jsonPayload.status)'
+
+    error_metrics:
+      errors:
+        group_by: [service, class, operation, code]
+        resource_types: [cloud_run_revision, cloud_run_job]
+      auth_errors:
+        group_by: [class, operation, code]
+        resource_types: [cloud_run_revision, cloud_run_job]
+
+    alert_policies:
+      audit-chain:
+        display_name: "URGENT audit chain (auth)"
+        urgent: true
+        documentation: >-
+          The issuer's audit chain did not verify, or the job that verifies or
+          heads it could not run. A break is never assumed to be tampering or a
+          bug: auth-notary runbook 7.12 tells them apart. Notify the compliance
+          owner.
+        conditions:
+          - name: "audit verify printed BREAK"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_audit_break" AND resource.type = "cloud_run_job"
+              group_by_fields: ["resource.label.job_name"]
+          - name: "an audit job's execution failed"
+            threshold:
+              filter: >-
+                metric.type = "run.googleapis.com/job/completed_execution_count" AND resource.type = "cloud_run_job"
+                AND metric.labels.result = "failed"
+                AND resource.labels.job_name = one_of("auth-audit-head", "auth-audit-verify", "auth-audit-verify-monthly")
+              group_by_fields: ["resource.label.job_name"]
+          - name: "an audit job's schedule could not start it"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/scheduler_failures" AND resource.type = "cloud_scheduler_job"
+                AND resource.labels.job_id = one_of("auth-audit-head", "auth-audit-verify", "auth-audit-verify-monthly")
+              group_by_fields: ["resource.label.job_id"]
+
+      audit-reconcile:
+        display_name: "URGENT membership reconcile (auth)"
+        urgent: true
+        documentation: >-
+          The issuer's membership reconcile found an audit-chain break it had
+          not paged before, found a membership or principal the chain doesn't
+          explain or, since I-240 unit 4, a live credential, workload or
+          workload key with no tag or one under an unpublished key id, or has
+          not run for 90 minutes. Notify the compliance owner.
+          A new break: auth-notary runbook 7.12 (a break is never assumed to
+          be tampering or a bug). A finding: runbook 7.17; it pages every run
+          while it stands. A `credential_tag_missing` finding right after a
+          pin: runbook 04 §7.22 — the tag job was run out of order. Not run:
+          the auth-sweeper job isn't being started, can't finish its tick, or
+          can't read the audit key; its failed executions and its ERROR lines
+          say which. Until it runs again, nothing is watching the memberships.
+        conditions:
+          - name: "a new audit-chain break"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_audit_chain_breaks_new" AND resource.type = "cloud_run_job"
+              group_by_fields: ["metric.label.code"]
+          - name: "the membership reconcile found something"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_audit_reconcile_findings" AND resource.type = "cloud_run_job"
+              group_by_fields: ["metric.label.code"]
+          - name: "the membership reconcile has not run for 90 minutes"
+            absent:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_audit_reconciled" AND resource.type = "cloud_run_job"
+                AND resource.labels.job_name = "auth-sweeper"
+              duration: "5400s"
+
+      audit-credential-tag:
+        display_name: "URGENT credential or workload tag invalid (auth)"
+        urgent: true
+        documentation: >-
+          A stored factor, workload or key failed its tag at use, meaning a
+          writer without the bearer key: a swapped password, a copied row, an
+          inserted passkey or recovery code, a widened or re-pointed workload,
+          or a swapped key (forgery or tampering). Read `sub`, `kind`, the row
+          and `door` from the line; revoke it as the runbook says (auth-notary
+          04 §5.5, I-240) and treat the runtime role's credentials as leaked.
+          `untagged: true` in the first minutes after a pin is most likely a
+          row the tag job hadn't reached (§7.22 run out of order); anywhere
+          else, treat it as above.
+        conditions:
+          - name: "any increase of auth_credential_tag_invalid"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_credential_tag_invalid" AND resource.type = "cloud_run_revision"
+              group_by_fields: ["metric.label.code"]
+          - name: "any increase of auth_credential_tag_invalid in an auth job"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_credential_tag_invalid" AND resource.type = "cloud_run_job"
+              group_by_fields: ["resource.label.job_name", "metric.label.code"]
+
+      auth-database:
+        display_name: "URGENT auth cannot reach its database"
+        urgent: true
+        documentation: >-
+          auth's readiness check found auth-db unreachable (`not_ready`, reason
+          `database`): nobody can sign in. Check the instance, then the Private
+          Service Connect endpoint, then the IAM login.
+        conditions:
+          - name: "not_ready for database"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_not_ready" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = "database"
+              group_by_fields: ["resource.label.service_name"]
+
+      # 2026-10-11 (the auth reviewer, through the orchestrator): the lag is
+      # the oldest unsent row of either kind, texts and emails alike, and is
+      # written every five seconds while one waits, so one email on its retry
+      # ladder (beta's `recipients_unavailable`, about five minutes) opens
+      # this. Watching texts alone needs auth to write their lag apart
+      # (docs/infra/monitoring.md §10; the request is in the lane's
+      # trellis-security text). Off in beta while the publisher is.
+      auth-messages-lag:
+        display_name: "sign-in messages (texts and emails) waiting"
+        documentation: >-
+          A person is waiting for a sign-in message, a text code or an email
+          (an invitation, a reset, a code): the oldest unsent messages_outbox
+          row, of either kind, is older than 30 s, or the sender has no
+          instance. An email retrying after a vendor or recipients-list refusal
+          opens it too. Check the vendor, the NAT path and the allowlist
+          (auth-notary 04 §5.5), then the row's channel.
+        conditions:
+          - name: "messages_outbox lag above 30 s for two minutes"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_messages_outbox_lag" AND resource.type = "cloud_run_revision"
+              threshold_value: 30
+              duration: "120s"
+              alignment_period: "60s"
+              per_series_aligner: "ALIGN_PERCENTILE_99"
+              cross_series_reducer: "REDUCE_MAX"
+          - name: "the sender has no instance"
+            threshold:
+              filter: >-
+                metric.type = "run.googleapis.com/container/instance_count" AND resource.type = "cloud_run_revision"
+                AND resource.labels.service_name = "auth-outbox-publisher"
+              comparison: "COMPARISON_LT"
+              threshold_value: 1
+              duration: "120s"
+              alignment_period: "60s"
+              per_series_aligner: "ALIGN_MAX"
+              cross_series_reducer: "REDUCE_SUM"
+          # Summed over the service's revisions (2026-10-10): per revision,
+          # every deploy ended the old revision's series and opened this for
+          # good (beta: two incidents, one per instance state, still open
+          # hours after auth-outbox-publisher-00002 took the traffic). By
+          # service it still opens when no revision reports at all.
+          - name: "the sender reports no instance count at all"
+            absent:
+              filter: >-
+                metric.type = "run.googleapis.com/container/instance_count" AND resource.type = "cloud_run_revision"
+                AND resource.labels.service_name = "auth-outbox-publisher"
+              duration: "300s"
+              cross_series_reducer: "REDUCE_SUM"
+              group_by_fields: ["resource.label.service_name"]
+
+      iap-unknown-key:
+        display_name: "URGENT IAP assertion under a key the image does not pin (auth, tpa-api)"
+        # An outage of the browser's way in, the owner's first urgent kind: once
+        # Google retires the old key every portal request is refused (the
+        # re-check, 2026-10-05).
+        urgent: true
+        documentation: >-
+          auth or tpa-api refused a browser request because IAP's assertion
+          was signed by a key missing from the set pinned in its image
+          (R187's header check). Google has most likely rotated IAP's keys:
+          rebuild both images with the current set and deploy them, or the
+          portals stop answering once the old key is retired. A refusal with
+          no rotation behind it is a forged or replayed assertion: read the
+          service's lines. Silent while an environment runs with the header
+          check off (beta's iap_header_check_enabled = false, R302): nothing
+          verifies an assertion then (TP-145).
+        conditions:
+          - name: "any iap_unknown_key refusal"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/iap_unknown_key" AND resource.type = "cloud_run_revision"
+              group_by_fields: ["resource.label.service_name"]
+
+      iap-pinned-keys-stale:
+        display_name: "IAP keys pinned in an image are stale (auth, tpa-api)"
+        documentation: >-
+          auth or tpa-api warned that the IAP keys pinned in its image are
+          stale (R187's header check). Rebuild both images with the current
+          key set and deploy them before Google retires the old key, or every
+          browser request is refused. Silent while the header check is off
+          (beta, R302; TP-145).
+        conditions:
+          - name: "any iap_pinned_keys_stale"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/iap_pinned_keys_stale" AND resource.type = "cloud_run_revision"
+              group_by_fields: ["resource.label.service_name"]
+
+      auth-lockouts:
+        display_name: "sign-in lockouts"
+        documentation: >-
+          More than 20 `423 locked` answers in five minutes: credential
+          stuffing, most often. Look at the refused sign-ins by address in
+          auth's own lines.
+        conditions:
+          - name: "more than 20 lockouts in five minutes"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_lockouts" AND resource.type = "cloud_run_revision"
+              threshold_value: 20
+
+      auth-unhandled:
+        display_name: "auth answered 500 (unhandled)"
+        documentation: >-
+          An exception reached auth's catch-all handler (`unhandled`). The line
+          names the class; the error-tracking policies say whether it is new.
+        conditions:
+          - name: "any unhandled"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_errors" AND resource.type = "cloud_run_revision"
+                AND metric.labels.operation = "unhandled"
+              group_by_fields: ["metric.label.class"]
+
+      jobs-failed:
+        display_name: "a job execution failed"
+        documentation: >-
+          A Cloud Run job's execution failed after its retries. For tpa-jobs a
+          failed run is any tenant not `ok` (tpa-jobs.md §3): its alert records
+          say which. auth's three attended jobs (auth-bootstrap,
+          auth-tag-credentials, auth-retag-bearer-key; a person runs each,
+          R176) are here too (2026-10-11): their person is told on the
+          console, and whoever is on call learns the same. The audit jobs are
+          in the urgent audit-chain policy.
+        conditions:
+          - name: "a failed execution"
+            threshold:
+              filter: >-
+                metric.type = "run.googleapis.com/job/completed_execution_count" AND resource.type = "cloud_run_job"
+                AND metric.labels.result = "failed"
+                AND resource.labels.job_name = one_of("migrate-auth", "auth-publisher", "auth-sweeper", "auth-bootstrap", "auth-tag-credentials", "auth-retag-bearer-key", "tpa-jobs-erisa-clocks", "tpa-jobs-nightly-anomalies", "tpa-jobs-stoploss-surveillance", "tpa-jobs-accumulator-reconcile", "tpa-jobs-workload-audit", "tpa-jobs-member-access")
+              group_by_fields: ["resource.label.job_name"]
+
+      scheduler-failed:
+        display_name: "a schedule could not start its job"
+        documentation: >-
+          Cloud Scheduler's attempt to start a job finished in error. The
+          status code says why; PERMISSION_DENIED means row 8 or row 74 of the
+          inventory is not what the gate thinks it is.
+        conditions:
+          - name: "a failed attempt"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/scheduler_failures" AND resource.type = "cloud_scheduler_job"
+                AND resource.labels.job_id = one_of("erisa-clocks", "nightly-anomalies", "stoploss-surveillance", "accumulator-reconcile", "workload-audit", "member-access", "auth-publish", "auth-sweep")
+              group_by_fields: ["resource.label.job_id", "metric.label.code"]
+
+      jobs-alerts:
+        display_name: "a job raised an alert"
+        documentation: >-
+          A tpa-jobs run raised one of its registry's alerts (tpa_jobs/registry.py):
+          a failed or skipped tenant, a dead letter, a lag, a breach count, an
+          orphan. The incident's labels are the job and the alert's name; the
+          run's own line carries the rest, never a body. Compliance alerts
+          (breach count, orphan) have no channel of their own yet.
+        conditions:
+          - name: "from a scheduled run"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/tpa_jobs_alerts" AND resource.type = "cloud_run_job"
+                AND metric.labels.code = one_of("tenants_failed", "tenants_skipped", "mirror_stale_run", "erisa_breach_count", "outbox_dead_letter", "outbox_lag", "crm_transition_dead", "crm_transition_lag", "workload_orphan", "member_access_swept", "member_access_dry_run")
+              group_by_fields: ["metric.label.job", "metric.label.code"]
+          - name: "from a drain tick"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/tpa_jobs_alerts" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = one_of("tenants_failed", "tenants_skipped", "mirror_stale_run", "erisa_breach_count", "outbox_dead_letter", "outbox_lag", "crm_transition_dead", "crm_transition_lag", "workload_orphan", "member_access_swept", "member_access_dry_run")
+              group_by_fields: ["metric.label.job", "metric.label.code"]
+
+      jobs-alerts-paging:
+        display_name: "URGENT a job raised a paging alert"
+        urgent: true
+        documentation: >-
+          A tpa-jobs alert whose registry entry pages: an anomaly at the
+          `freeze` level (a security freeze), a CRM lane signature failure (a
+          key rotation went wrong), or more logins to hold in one tenant than the
+          member-access sweep may, so none were held. tpa-jobs.md §5.2, §5.6, §5.8.
+        conditions:
+          - name: "from a scheduled run"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/tpa_jobs_alerts" AND resource.type = "cloud_run_job"
+                AND metric.labels.code = one_of("anomaly_freeze", "crm_signature_failure", "member_access_mass_end")
+              group_by_fields: ["metric.label.job", "metric.label.code"]
+          - name: "from a drain tick"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/tpa_jobs_alerts" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = one_of("anomaly_freeze", "crm_signature_failure", "member_access_mass_end")
+              group_by_fields: ["metric.label.job", "metric.label.code"]
+
+      jobs-partial-recurring:
+        display_name: "a job ran partial twice"
+        documentation: >-
+          A job reported `partial` tenants twice within a day and a half hour
+          (tpa-jobs.md §6: one slow run is a slow run, two is a capacity
+          problem). The window is 24 h 30 min, inside the 25 hours Google
+          alerts over for a log metric, so a daily job's two consecutive
+          nights (24 hours apart) are both in it when the second ends: for
+          stoploss_surveillance this is `stoploss_partial_recurring`, the
+          tenant outgrowing its window (§5.3), told for the job, since no
+          label may name the tenant. A sub-daily job opens on any two partial
+          runs in the window.
+        conditions:
+          - name: "two partial runs in 24 hours 30 minutes"
+            promql:
+              query: >-
+                sum by (job) (increase(logging_googleapis_com:user_tpa_jobs_alerts{monitored_resource="cloud_run_job", code="tenants_partial"}[24h30m])) >= 2
+                or sum by (job) (increase(logging_googleapis_com:user_tpa_jobs_alerts{monitored_resource="cloud_run_revision", code="tenants_partial"}[24h30m])) >= 2
+              evaluation_interval: "300s"
+
+      drain-raised:
+        display_name: "a drain tick raised"
+        documentation: >-
+          A tick of tpa-jobs-drains raised instead of finishing: most often a
+          scope never granted or an address that answers nothing. The loop
+          keeps ticking and delivers nothing until it is fixed.
+        conditions:
+          - name: "any tick raised"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/tpa_jobs_drain_raised" AND resource.type = "cloud_run_revision"
+              group_by_fields: ["metric.label.job", "metric.label.class"]
+
+      # tpa-jobs.md §5.5's "grows on three consecutive days" needs two days
+      # of history; Google alerts on 25 hours of a log metric. So the night
+      # is compared with the night before: the total open count the run left
+      # above yesterday's. One night of growth, not three (docs/infra/
+      # monitoring.md §6). Windows of 90 minutes around each run, offset 23
+      # hours: 24 h 30 min of lookback in all.
+      accumulator-backlog-growing:
+        display_name: "accumulator reconciliations outstanding grew"
+        documentation: >-
+          accumulator_reconcile left more reconciliations open tonight than
+          it did the night before (the sum of every tenant's open count).
+          tpa-jobs.md §5.5 asks for growth on three consecutive days; Google
+          keeps 25 hours of a log metric for alerting, so this compares two
+          nights and opens on the first night of growth. Read the run's
+          summary and the reconciliations in the operations portal. Quiet
+          while an environment pauses the sweep's schedule.
+        conditions:
+          - name: "tonight's open count above last night's"
+            promql:
+              query: >-
+                sum by (job) (increase(logging_googleapis_com:user_tpa_jobs_accumulator_backlog_sum{monitored_resource="cloud_run_job"}[90m]))
+                > sum by (job) (increase(logging_googleapis_com:user_tpa_jobs_accumulator_backlog_sum{monitored_resource="cloud_run_job"}[90m] offset 23h))
+              evaluation_interval: "300s"
+
+      # 2026-10-11: the uptime checks on the IAP hosts end on Google's sign-in
+      # page and never reach web, and `canary-5xx` needs five errors in five
+      # minutes. At beta's traffic a service can be down for an hour with
+      # neither opening. This opens when everything a core service answered
+      # for ten minutes was a 5xx, whatever the volume (two at least). A
+      # scale-to-zero service with no traffic at all is down for nobody; a
+      # warm one is the module's `no_instance` policy (warm_services).
+      backend-down:
+        display_name: "URGENT a core service answered only errors (web, auth, tpa-api)"
+        urgent: true
+        documentation: >-
+          Every request web, auth or tpa-api answered in the last ten minutes
+          was a 5xx (two or more, none answered otherwise): the service is
+          down for whoever is using it, however few they are. Read the
+          service's system log (`canary-startup`) and its ERROR lines; a
+          502 or 504 from tpa-api is most often records or auth behind it
+          (their own policies). The uptime checks cannot see this: behind IAP
+          they end on Google's sign-in page.
+        conditions:
+          - name: "only 5xx for ten minutes, at least two"
+            promql:
+              query: >-
+                sum by (service_name) (increase(run_googleapis_com:request_count{monitored_resource="cloud_run_revision", service_name=~"web|auth|tpa-api", response_code_class="5xx"}[10m])) >= 2
+                unless sum by (service_name) (increase(run_googleapis_com:request_count{monitored_resource="cloud_run_revision", service_name=~"web|auth|tpa-api", response_code_class!="5xx"}[10m])) > 0
+              evaluation_interval: "60s"
+
+      tpa-api-latency:
+        display_name: "tpa-api p95 latency above 2 s (its own request line)"
+        documentation: >-
+          tpa-api's 95th percentile time to answer stayed above two seconds
+          for ten minutes, read from its own request line without the streams,
+          the file transfers and the rows that wait on the model
+          (`tpa_api_latency`). `canary-latency` cannot see tpa-api in beta,
+          which leaves it out for its streams. Check records' latency and the
+          hop to it, then auth's exchange.
+        conditions:
+          - name: "p95 above 2000 ms for ten minutes"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/tpa_api_latency" AND resource.type = "cloud_run_revision"
+              threshold_value: 2000
+              duration: "600s"
+              alignment_period: "300s"
+              per_series_aligner: "ALIGN_PERCENTILE_95"
+              cross_series_reducer: "REDUCE_MAX"
+              group_by_fields: ["resource.label.service_name"]
+
+      # 2026-10-11: Cloud SQL's own signals for auth-db (none were read
+      # before). The instance by name, so a scratch instance never opens it.
+      # Beta drops the down policy while the instance is stopped on purpose
+      # (database_activation_policy NEVER, B8).
+      auth-db-down:
+        display_name: "URGENT auth-db is down"
+        urgent: true
+        documentation: >-
+          Cloud SQL reported auth-db not up for five minutes: nobody can sign
+          in. Check the instance in the console (a maintenance or a failed
+          restart), then its operations. auth's own `auth-database` opens
+          beside it once auth's readiness check fails.
+        conditions:
+          - name: "database/up below 1 for five minutes"
+            threshold:
+              filter: >-
+                metric.type = "cloudsql.googleapis.com/database/up" AND resource.type = "cloudsql_database"
+                AND resource.labels.database_id = ends_with(":auth-db")
+              comparison: "COMPARISON_LT"
+              threshold_value: 1
+              duration: "300s"
+              alignment_period: "60s"
+              per_series_aligner: "ALIGN_MAX"
+              cross_series_reducer: "REDUCE_MAX"
+              group_by_fields: ["resource.label.database_id"]
+
+      auth-db-disk:
+        display_name: "auth-db disk above 85%"
+        documentation: >-
+          auth-db's disk has stayed above 85 percent full for ten minutes.
+          Automatic growth stops at the instance's disk_autoresize_limit
+          (var.sizing); raise the limit or the disk before it fills, when the
+          instance stops taking writes.
+        conditions:
+          - name: "disk/utilization above 0.85 for ten minutes"
+            threshold:
+              filter: >-
+                metric.type = "cloudsql.googleapis.com/database/disk/utilization" AND resource.type = "cloudsql_database"
+                AND resource.labels.database_id = ends_with(":auth-db")
+              threshold_value: 0.85
+              duration: "600s"
+              alignment_period: "300s"
+              per_series_aligner: "ALIGN_MEAN"
+              cross_series_reducer: "REDUCE_MAX"
+              group_by_fields: ["resource.label.database_id"]
+
+  # ---------------------------------------------------------------------------
+  # The PHI project: records and its jobs, connectors. Inside the perimeter, so
+  # everything about them is made here and read here (docs/infra/monitoring.md
+  # §1). No other project's scope includes this one.
+  # ---------------------------------------------------------------------------
+  phi:
+    log_metrics:
+      errors:
+        description: >-
+          ERROR lines of records, its jobs and connectors, one per line. The
+          error group: service, exception class, catalogue operation, the
+          CONTRACT §7 code and the SQLSTATE, the three exception facts the
+          gateway permits and no fourth (records-service docs/04 §5.2).
+        filter: |
+          (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
+          AND jsonPayload.service:*
+          AND jsonPayload.level="ERROR"
+        labels:
+          service: 'EXTRACT(jsonPayload.service)'
+          class: 'EXTRACT(jsonPayload.exc.class)'
+          operation: 'EXTRACT(jsonPayload.op)'
+          code: 'EXTRACT(jsonPayload.code)'
+          sqlstate: 'EXTRACT(jsonPayload.exc.sqlstate)'
+
+      records_refusals:
+        description: >-
+          Every refusal the gateway answers (records/gates `refused`): which
+          gate, which CONTRACT §7 code, which operation. The canary's "gate
+          failures that are not 403 denied or 401 token_expired" is this
+          metric (docs/pipeline.md §5.1).
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="records"
+          AND jsonPayload.message="refused"
+        labels:
+          gate: 'EXTRACT(jsonPayload.gate)'
+          code: 'EXTRACT(jsonPayload.code)'
+          operation: 'EXTRACT(jsonPayload.op)'
+
+      records_rate_limited:
+        description: >-
+          Gate 8's rate limiter refusing a call (`rate limited`), by operation.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="records"
+          AND jsonPayload.message="rate limited"
+        labels:
+          operation: 'EXTRACT(jsonPayload.op)'
+
+      records_critical:
+        description: >-
+          The two lines that mean the gateway is failing its promise: a
+          refusal's audit rows did not land (`audit flush failed`) or the
+          database did not answer (`database unreachable`). URGENT.
+        filter: |
+          (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
+          AND jsonPayload.service="records"
+          AND jsonPayload.message=~"^(audit flush failed|database unreachable)$"
+        labels:
+          code: 'REGEXP_EXTRACT(jsonPayload.message, "^(audit flush failed|database unreachable)$")'
+
+      records_mirror_problems:
+        description: >-
+          The mirror's warnings and errors: the JWKS fetch (gate 2), the event
+          feed and the revocation feed (gate 3). For the "is it current"
+          dashboard; the lag gauges records-service docs/04 §5.3 lists are not
+          on any line yet.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="records"
+          AND (jsonPayload.level="WARNING" OR jsonPayload.level="ERROR")
+          AND (jsonPayload.gate=2 OR jsonPayload.gate=3)
+          AND NOT jsonPayload.message="refused"
+        labels:
+          gate: 'EXTRACT(jsonPayload.gate)'
+
+      # O137, RS-330, I-510: records' chain-head job logs `chain_head_exists`
+      # at WARNING when the latest closed day's head was already in the vault
+      # on the job's first attempt: somebody wrote it before this run
+      # (records/audit/chain_head.py `_publish`, on records master since
+      # 97f03648). Records writes its level as `level`, never `severity`, so
+      # the filter reads jsonPayload.level, as RS-330 says it must. The
+      # tenant on the line is never read.
+      records_chain_head_exists:
+        description: >-
+          A chain head found already in the vault for the latest closed day on
+          the records-chain-head job's first attempt (`code`
+          `chain_head_exists` at `level` WARNING; the same code at INFO, for an
+          earlier day, a retry or a backfill, is not counted).
+        filter: |
+          resource.type="cloud_run_job"
+          AND resource.labels.job_name="records-chain-head"
+          AND jsonPayload.code="chain_head_exists"
+          AND jsonPayload.level="WARNING"
+
+      connectors_passes:
+        description: >-
+          One per pass of the delivery loop: the line of pass counters
+          (connectors/loop.py LoopStats.metrics()), matched whole. It is the
+          loop's heartbeat, and the regex pins the line's format: a changed
+          format stops matching, which trips the stalled alert instead of
+          reading as zero (tests/connectors/test_monitoring_lines.py).
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="connectors"
+          AND jsonPayload.outcome="pass"
+          AND jsonPayload.message=~"^connectors_deliveries_total=[0-9]+ connectors_delivered_total=[0-9]+ connectors_duplicate_total=[0-9]+ connectors_retried_total=[0-9]+ connectors_dead_total=[0-9]+ connectors_claim_empty_total=[0-9]+ connectors_destination_refused_total=[0-9]+ connectors_envelope_unsigned_total=[0-9]+ connectors_paused_skipped_total=[0-9]+$"
+
+      connectors_deliveries:
+        description: >-
+          One per send attempt (connectors.md §6 `deliveries_total`), by lane,
+          outcome and error code. The destination label connectors.md lists is
+          not carried: it is not on the label allowlist. The pass counters are
+          cumulative since the process started, so the alerts count these
+          lines instead.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="connectors"
+          AND jsonPayload.message=~"^delivery lane=[a-z_]+ destination="
+        labels:
+          lane: 'REGEXP_EXTRACT(jsonPayload.message, "^delivery lane=([a-z_]+) ")'
+          outcome: 'EXTRACT(jsonPayload.outcome)'
+          code: 'EXTRACT(jsonPayload.reason)'
+
+      connectors_dead_letters:
+        description: >-
+          One per row settled dead (`dead letter row=… destination=…`), by
+          error code. The row and the destination on the line are never read.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="connectors"
+          AND jsonPayload.outcome="dead"
+          AND jsonPayload.message=~"^dead letter row="
+        labels:
+          code: 'EXTRACT(jsonPayload.reason)'
+
+      perimeter_violations:
+        description: >-
+          A VPC Service Controls violation logged in this project, dry run or
+          enforced: the reason, the service called and whether it was dry run.
+          The same entries the audit sink sends to the vault.
+        filter: |
+          protoPayload.metadata."@type"="type.googleapis.com/google.cloud.audit.VpcServiceControlAuditMetadata"
+        labels:
+          code: 'EXTRACT(protoPayload.metadata.violationReason)'
+          service: 'EXTRACT(protoPayload.serviceName)'
+          outcome: 'EXTRACT(protoPayload.metadata.dryRun)'
+
+      # D-137 (2026-10-11; TP-151): the PHI project's alert editors change and
+      # silence existing policies and make nothing new (tpaAlertEditor, row
+      # 168), and an edit of an existing policy is the residual: its condition
+      # can still be rewritten. So every change to a policy or a channel
+      # pages, from the Admin Activity audit log, which is always on, free and
+      # copied to the vault. The method names are the filter; the method is
+      # the one label (nine fixed strings), and who made the change, and
+      # what it was, stay in the entry: no principal, caller or request field
+      # is read (the module refuses them by name).
+      # A snooze counts too (the re-review, 2026-10-11): silencing is the
+      # step before an unseen edit, so a snooze made or changed pages, as
+      # the edit does. Snoozes have no delete: one ends by an update of its
+      # interval, UpdateSnooze. CreateSnooze and UpdateSnooze are Admin
+      # Activity entries (Cloud Monitoring's audit logging page); Get and
+      # List are Data Access, never read here.
+      monitoring_changes:
+        description: >-
+          A change to this project's alert policies, notification channels or
+          snoozes in the Admin Activity audit log: a policy created, updated
+          or deleted, a channel created, updated, deleted or verified, a
+          snooze created or updated (an update is also how one is ended). By
+          method alone; the entry says who and what.
+        filter: |
+          log_id("cloudaudit.googleapis.com/activity")
+          AND protoPayload.serviceName="monitoring.googleapis.com"
+          AND (protoPayload.methodName="google.monitoring.v3.AlertPolicyService.CreateAlertPolicy"
+            OR protoPayload.methodName="google.monitoring.v3.AlertPolicyService.UpdateAlertPolicy"
+            OR protoPayload.methodName="google.monitoring.v3.AlertPolicyService.DeleteAlertPolicy"
+            OR protoPayload.methodName="google.monitoring.v3.NotificationChannelService.CreateNotificationChannel"
+            OR protoPayload.methodName="google.monitoring.v3.NotificationChannelService.UpdateNotificationChannel"
+            OR protoPayload.methodName="google.monitoring.v3.NotificationChannelService.DeleteNotificationChannel"
+            OR protoPayload.methodName="google.monitoring.v3.NotificationChannelService.VerifyNotificationChannel"
+            OR protoPayload.methodName="google.monitoring.v3.SnoozeService.CreateSnooze"
+            OR protoPayload.methodName="google.monitoring.v3.SnoozeService.UpdateSnooze")
+        labels:
+          operation: 'EXTRACT(protoPayload.methodName)'
+
+      scheduler_failures:
+        description: >-
+          A Cloud Scheduler attempt in this project that finished in error, by
+          status code; the scheduler job is the resource's job_id.
+        filter: |
+          resource.type="cloud_scheduler_job"
+          AND jsonPayload."@type"="type.googleapis.com/google.cloud.scheduler.logging.AttemptFinished"
+          AND severity>=ERROR
+        labels:
+          code: 'EXTRACT(jsonPayload.status)'
+
+    error_metrics:
+      errors:
+        group_by: [service, class, operation, code, sqlstate]
+        resource_types: [cloud_run_revision, cloud_run_job]
+
+    alert_policies:
+      records-critical:
+        display_name: "URGENT records: audit flush failed or database unreachable"
+        urgent: true
+        documentation: >-
+          The gateway logged `audit flush failed` (a refusal's audit rows did
+          not land: the chain has a hole) or `database unreachable` (tpa-db did
+          not answer). Check tpa-db, its Private Service Connect endpoint and
+          the IAM login; then the refusals around the time for the hole.
+        conditions:
+          - name: "from the service"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_critical" AND resource.type = "cloud_run_revision"
+              group_by_fields: ["metric.label.code"]
+          - name: "from a job"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_critical" AND resource.type = "cloud_run_job"
+              group_by_fields: ["metric.label.code", "resource.label.job_name"]
+
+      audit-chain:
+        display_name: "URGENT audit chain (records)"
+        urgent: true
+        documentation: >-
+          records-chain-head writes each tenant's closed-day chain head into
+          the vault, create-only (records-service docs/04 §6.1). It failed or
+          its schedule could not start it, so a closed day's head is not in
+          the vault, and nothing yet compares a head with the chain (RS-04).
+          The command is on records master since 97f03648; an image older
+          than that has no `chain-head` and fails every run. A head found
+          already there is `chain-head-exists` (normal), not this.
+        conditions:
+          - name: "the chain head's execution failed"
+            threshold:
+              filter: >-
+                metric.type = "run.googleapis.com/job/completed_execution_count" AND resource.type = "cloud_run_job"
+                AND metric.labels.result = "failed"
+                AND resource.labels.job_name = "records-chain-head"
+          - name: "its schedule could not start it"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/scheduler_failures" AND resource.type = "cloud_scheduler_job"
+                AND resource.labels.job_id = "records-chain-head"
+
+      # 2026-10-11 (the alert-gaps review, finding 3): out of the urgent
+      # audit-chain into a normal policy of its own. Records logs it at
+      # WARNING whenever a run's first attempt finds the latest closed day's
+      # head already written, which a person's rerun of the job without
+      # --date also does, for every tenant at once; urgent, that rerun paged.
+      chain-head-exists:
+        display_name: "a chain head was already in the vault"
+        documentation: >-
+          records-chain-head found the latest closed day's head already in the
+          vault on its first attempt (records' `chain_head_exists` at WARNING;
+          O137, RS-330). Either somebody wrote it before this run, which is
+          what O137 watches for, or a person reran the job (without --date it
+          finds every tenant's head it wrote that morning), or it is the
+          autumn clock change, when a Pacific-time tenant's latest closed day
+          repeats. Check who ran the job and when before treating it as
+          tampering; nothing yet compares a head with the chain (RS-04).
+        conditions:
+          - name: "the latest day's head was already in the vault"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_chain_head_exists" AND resource.type = "cloud_run_job"
+
+      jobs-failed:
+        display_name: "a protected job's execution failed"
+        documentation: >-
+          A Cloud Run job in the PHI project failed after its retries: the
+          migration, the nightly export or (beta) the restore drill, or beta's
+          seed of made-up data (`seed-tpa`, run by a person, 2026-10-11). The
+          chain head is in the urgent audit-chain policy.
+        conditions:
+          - name: "a failed execution"
+            threshold:
+              filter: >-
+                metric.type = "run.googleapis.com/job/completed_execution_count" AND resource.type = "cloud_run_job"
+                AND metric.labels.result = "failed"
+                AND resource.labels.job_name = one_of("migrate-tpa", "seed-tpa", "tpa-db-export", "restore-drill")
+              group_by_fields: ["resource.label.job_name"]
+
+      scheduler-failed:
+        display_name: "a protected schedule could not start its job"
+        documentation: >-
+          Cloud Scheduler's attempt to start a PHI-project job finished in
+          error. Cloud Scheduler is outside the perimeter's restricted services
+          (network-and-perimeter.md §5.5): a refusal here may be the perimeter.
+        conditions:
+          - name: "a failed attempt"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/scheduler_failures" AND resource.type = "cloud_scheduler_job"
+                AND resource.labels.job_id = one_of("tpa-db-export", "restore-drill")
+              group_by_fields: ["resource.label.job_id", "metric.label.code"]
+
+      connectors-dead-letters:
+        display_name: "connectors: a dead letter"
+        documentation: >-
+          A row was settled dead: it will never be sent. The code says why
+          (a lane mismatch or an unknown destination is a bug; a 4xx is the
+          destination's). Runbook: connectors.md §7.3, replay dead letters.
+        conditions:
+          - name: "any dead letter"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/connectors_dead_letters" AND resource.type = "cloud_run_revision"
+              group_by_fields: ["metric.label.code"]
+
+      connectors-destination-refused:
+        display_name: "connectors: a destination was refused"
+        documentation: >-
+          The egress client refused a destination that is not on the
+          allowlist: a configuration error, or something worse (connectors.md
+          §6). Nothing was sent.
+        conditions:
+          - name: "any refused destination"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/connectors_deliveries" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = "destination_refused"
+              group_by_fields: ["metric.label.lane"]
+
+      connectors-envelope-unsigned:
+        display_name: "connectors: an envelope arrived unsigned"
+        documentation: >-
+          A claimed row carried no signature header: a gateway bug, not a
+          network one. The row was settled dead unsent (connectors.md §6).
+        conditions:
+          - name: "any unsigned envelope"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/connectors_deliveries" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = "envelope_unsigned"
+              group_by_fields: ["metric.label.lane"]
+
+      connectors-stalled:
+        display_name: "connectors: no delivery pass for five minutes"
+        documentation: >-
+          The delivery loop wrote no pass line for five minutes: it is stuck,
+          down, or its pass line changed format. Nothing is being delivered, so
+          every row's lag is growing: this is the five-minute lag alert of
+          connectors.md §6 as far as the logs can tell it. The true lag (the
+          oldest unsettled row) is on no line yet (docs/infra/monitoring.md §6).
+        conditions:
+          # By service, not by revision: a deploy is not a stalled loop
+          # (2026-10-10, auth-messages-lag's lesson).
+          - name: "no pass line for five minutes"
+            absent:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/connectors_passes" AND resource.type = "cloud_run_revision"
+              duration: "300s"
+              cross_series_reducer: "REDUCE_SUM"
+              group_by_fields: ["resource.label.service_name"]
+
+      perimeter-violations:
+        display_name: "perimeter violation"
+        documentation: >-
+          VPC Service Controls logged a violation. In dry run nothing was
+          refused: read it against network-and-perimeter.md §5.5 before the
+          flip. Enforced, something was refused. The incident's labels are the
+          reason, the service and whether it was dry run.
+        conditions:
+          # VPC Service Controls writes its violation entries on the
+          # audited_resource type, and Google refuses an alert filter with no
+          # resource.type (the first beta apply, 2026-10-09).
+          - name: "any violation"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/perimeter_violations" AND resource.type = "audited_resource"
+              group_by_fields: ["metric.label.code", "metric.label.service", "metric.label.outcome"]
+
+      # D-137 (2026-10-11): the detective half of row 168's narrowing. Normal
+      # routing: a change is to be read, not an outage. An apply of this
+      # catalogue opens it too.
+      monitoring-changed:
+        display_name: "an alert policy or notification channel changed"
+        documentation: >-
+          An alert policy or a notification channel in the PHI project was
+          created, changed or deleted, a channel verified, or a snooze made or
+          changed (D-137). Its alert editors (row 168) may change and snooze
+          existing policies and make nothing new, and an apply of the
+          catalogue changes them too: beta's between-sessions stop and start
+          (staffed-apply.md S1, S2) delete and recreate policies here, so each
+          opens this once, as expected. Read the project's Admin Activity log
+          for the entry (the incident's label is the method): who made it and
+          what changed. A policy whose condition became a log match, a channel
+          that is not the catalogue's, a snooze nobody announced, or this
+          policy itself edited, snoozed or disabled is a finding; the next
+          apply puts Terraform's policies back.
+        conditions:
+          # Cloud Monitoring writes its audit entries on audited_resource, as
+          # VPC Service Controls does (UNVERIFIED until the first apply that
+          # changes a PHI policy: it should open this once).
+          - name: "a policy or channel change in the Admin Activity log"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/monitoring_changes" AND resource.type = "audited_resource"
+              group_by_fields: ["metric.label.operation"]
+
+      # Its own key since 2026-10-11, when `canary-sql` became the shared
+      # list's (the proxy's refusals, in every project): the same key here
+      # would replace the shared one in production-full's merge.
+      records-sql-errors:
+        display_name: "records: database connection errors"
+        documentation: >-
+          records logged an error whose SQLSTATE is a connection exception
+          (class 08): it reached the proxy and the connection still failed or
+          broke. The canary's "Cloud SQL connection errors: zero"
+          (docs/pipeline.md §5.1), beside the proxy's own refusals
+          (`canary-sql`). Check tpa-db (`tpa-db-down`), then the proxy's lines.
+        conditions:
+          - name: "SQLSTATE class 08 on a records line"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/errors" AND resource.type = "cloud_run_revision"
+                AND metric.labels.sqlstate = starts_with("08")
+              group_by_fields: ["metric.label.sqlstate"]
+
+      # 2026-10-11: records' liveness at low traffic, as `backend-down` is the
+      # app tier's. records answers tpa-api, the jobs and connectors only.
+      records-down:
+        display_name: "URGENT records answered only errors"
+        urgent: true
+        documentation: >-
+          Every request records answered in the last ten minutes was a 5xx
+          (two or more, none answered otherwise): the gateway is down for
+          tpa-api and the jobs. A refusal is a 4xx and never counts here. Read
+          records' system log (`canary-startup`), its `records-critical` lines
+          and tpa-db (`tpa-db-down`).
+        conditions:
+          - name: "only 5xx for ten minutes, at least two"
+            promql:
+              query: >-
+                sum by (service_name) (increase(run_googleapis_com:request_count{monitored_resource="cloud_run_revision", service_name="records", response_code_class="5xx"}[10m])) >= 2
+                unless sum by (service_name) (increase(run_googleapis_com:request_count{monitored_resource="cloud_run_revision", service_name="records", response_code_class!="5xx"}[10m])) > 0
+              evaluation_interval: "60s"
+
+      # Cloud SQL's own signals for tpa-db, by name, so the restore drill's
+      # scratch instances (tpa-db-drill-*) never open them. Beta drops the
+      # down policy while the instance is stopped on purpose (B8).
+      tpa-db-down:
+        display_name: "URGENT tpa-db is down"
+        urgent: true
+        documentation: >-
+          Cloud SQL reported tpa-db not up for five minutes: records cannot
+          answer, and its `database unreachable` (`records-critical`) opens
+          beside this. Check the instance in the console (a maintenance or a
+          failed restart), then its operations.
+        conditions:
+          - name: "database/up below 1 for five minutes"
+            threshold:
+              filter: >-
+                metric.type = "cloudsql.googleapis.com/database/up" AND resource.type = "cloudsql_database"
+                AND resource.labels.database_id = ends_with(":tpa-db")
+              comparison: "COMPARISON_LT"
+              threshold_value: 1
+              duration: "300s"
+              alignment_period: "60s"
+              per_series_aligner: "ALIGN_MAX"
+              cross_series_reducer: "REDUCE_MAX"
+              group_by_fields: ["resource.label.database_id"]
+
+      tpa-db-disk:
+        display_name: "tpa-db disk above 85%"
+        documentation: >-
+          tpa-db's disk has stayed above 85 percent full for ten minutes.
+          Automatic growth stops at the instance's disk_autoresize_limit
+          (var.sizing); raise the limit or the disk before it fills, when the
+          instance stops taking writes.
+        conditions:
+          - name: "disk/utilization above 0.85 for ten minutes"
+            threshold:
+              filter: >-
+                metric.type = "cloudsql.googleapis.com/database/disk/utilization" AND resource.type = "cloudsql_database"
+                AND resource.labels.database_id = ends_with(":tpa-db")
+              threshold_value: 0.85
+              duration: "600s"
+              alignment_period: "300s"
+              per_series_aligner: "ALIGN_MEAN"
+              cross_series_reducer: "REDUCE_MAX"
+              group_by_fields: ["resource.label.database_id"]
+
+  # ---------------------------------------------------------------------------
+  # The CRM project: the CRM's engine and its document renderer. The CRM is
+  # the other product; this is only what the TPA needs to see of it.
+  # ---------------------------------------------------------------------------
+  crm:
+    log_metrics:
+      errors:
+        description: >-
+          ERROR lines of the CRM's services. Their formatter writes the whole
+          formatted exception to `exc`, so only the class name at the start of
+          its last line is read, and nothing else of the line.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.logger:*
+          AND (jsonPayload.level="ERROR" OR jsonPayload.level="error")
+        labels:
+          class: 'REGEXP_EXTRACT(jsonPayload.exc, "([A-Za-z_][A-Za-z0-9_.]*)(?:: [[:print:]]*)?$")'
+
+    error_metrics:
+      errors:
+        group_by: [class]
+        resource_types: [cloud_run_revision]
+
+    alert_policies:
+      # 2026-10-11: the CRM's two jobs, each run by a person (beta's copy,
+      # crm.tf: migrate-crm and seed-crm). production-full's CRM jobs are its
+      # own repository's to deploy (row 14 keeps `migrate-crm` reserved), and
+      # a listed name no job carries never opens anything. In a project the
+      # CRM shares this takes its role's prefix (`crm-jobs-failed`), as the
+      # root's renaming does.
+      jobs-failed:
+        display_name: "a CRM job execution failed"
+        documentation: >-
+          One of the CRM's jobs failed: its migration (`migrate-crm`) or its
+          made-up data seed (`seed-crm`), each run by a person. Read the
+          execution's own lines.
+        conditions:
+          - name: "a failed execution"
+            threshold:
+              filter: >-
+                metric.type = "run.googleapis.com/job/completed_execution_count" AND resource.type = "cloud_run_job"
+                AND metric.labels.result = "failed"
+                AND resource.labels.job_name = one_of("migrate-crm", "seed-crm")
+              group_by_fields: ["resource.label.job_name"]
+
+      # crm-db exists whatever beta's crm_enabled says (main.tf, sql_crm), so
+      # its signals are read whether or not the copy runs. Beta drops the
+      # down policy while the instance is stopped on purpose (B8).
+      crm-db-down:
+        display_name: "URGENT crm-db is down"
+        urgent: true
+        documentation: >-
+          Cloud SQL reported crm-db not up for five minutes: the CRM cannot
+          read or write. Check the instance in the console (a maintenance or a
+          failed restart), then its operations.
+        conditions:
+          - name: "database/up below 1 for five minutes"
+            threshold:
+              filter: >-
+                metric.type = "cloudsql.googleapis.com/database/up" AND resource.type = "cloudsql_database"
+                AND resource.labels.database_id = ends_with(":crm-db")
+              comparison: "COMPARISON_LT"
+              threshold_value: 1
+              duration: "300s"
+              alignment_period: "60s"
+              per_series_aligner: "ALIGN_MAX"
+              cross_series_reducer: "REDUCE_MAX"
+              group_by_fields: ["resource.label.database_id"]
+
+      crm-db-disk:
+        display_name: "crm-db disk above 85%"
+        documentation: >-
+          crm-db's disk has stayed above 85 percent full for ten minutes.
+          Automatic growth stops at the instance's disk_autoresize_limit;
+          raise the limit or the disk before it fills.
+        conditions:
+          - name: "disk/utilization above 0.85 for ten minutes"
+            threshold:
+              filter: >-
+                metric.type = "cloudsql.googleapis.com/database/disk/utilization" AND resource.type = "cloudsql_database"
+                AND resource.labels.database_id = ends_with(":crm-db")
+              threshold_value: 0.85
+              duration: "600s"
+              alignment_period: "300s"
+              per_series_aligner: "ALIGN_MEAN"
+              cross_series_reducer: "REDUCE_MAX"
+              group_by_fields: ["resource.label.database_id"]
+
+  # ---------------------------------------------------------------------------
+  # Beta's call-centre project (2026-10-11; callcentre.tf's monitoring_cc, beta
+  # alone: production-full has no call-centre project and reads only app, phi
+  # and crm). svc-voice always; svc-ops, svc-twilio-rest, cc-db and migrate-cc
+  # with the staffed desk or the relay. call-center's lines write `severity`
+  # themselves (services/privacy/log_setup.py JsonLineFormatter: `severity`,
+  # `message`, `logger`, `exception`), which Cloud Logging maps, so its error
+  # counter reads severity; the relay writes only uvicorn's text, so its
+  # failures are its 5xx. No uptime check: armor-voice answers /health with
+  # 404 by design (R114), and opening it is a new ruling; svc-voice's liveness
+  # is Cloud Run's own (its instance count, while warm; its 5xx).
+  # ---------------------------------------------------------------------------
+  cc:
+    log_metrics:
+      errors:
+        description: >-
+          call-center's lines at ERROR or above (svc-voice, svc-ops,
+          migrate-cc), one per line. Its formatter writes the redacted
+          traceback to `exception`, so only the class name that a whole last
+          line opens with is read, and nothing else of the line. A last line
+          that is not `Class` or `Class: ...` (a message that runs onto a
+          second line, free text) gives no class rather than a word of it.
+        filter: |
+          (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
+          AND jsonPayload.logger:*
+          AND severity>=ERROR
+        labels:
+          # Anchored to a line's start (the alert-gaps review, finding 4): the
+          # unanchored form took the last word of any last line ("...\ncaller
+          # said Jane Doe" gave "Doe").
+          class: 'REGEXP_EXTRACT(jsonPayload.exception, "(?:^|\\n)([A-Za-z_][A-Za-z0-9_.]*)(?::[^\\n]*)?$")'
+
+    error_metrics:
+      errors:
+        group_by: [class]
+        resource_types: [cloud_run_revision, cloud_run_job]
+
+    alert_policies:
+      # The phone line's liveness when something calls it. Its warm instance
+      # is the module's `no_instance` (callcentre.tf passes svc-voice while
+      # its minimum is one or more).
+      voice-down:
+        display_name: "URGENT svc-voice answered only errors"
+        urgent: true
+        documentation: >-
+          Every request svc-voice answered in the last ten minutes was a 5xx
+          (two or more, none answered otherwise): calls to the test line fail.
+          A refused webhook signature is a 4xx and never counts here. Read
+          svc-voice's system log (`canary-startup`) and its ERROR lines. The
+          voice host has no uptime check: its edge answers `/health` with 404
+          on purpose (R114).
+        conditions:
+          - name: "only 5xx for ten minutes, at least two"
+            promql:
+              query: >-
+                sum by (service_name) (increase(run_googleapis_com:request_count{monitored_resource="cloud_run_revision", service_name="svc-voice", response_code_class="5xx"}[10m])) >= 2
+                unless sum by (service_name) (increase(run_googleapis_com:request_count{monitored_resource="cloud_run_revision", service_name="svc-voice", response_code_class!="5xx"}[10m])) > 0
+              evaluation_interval: "60s"
+
+      jobs-failed:
+        display_name: "a call-centre job execution failed"
+        documentation: >-
+          migrate-cc, cc-db's schema migration, failed (staffed desk only; a
+          person runs it, row 134). It is read, never retried: read the
+          execution's own lines before running it again.
+        conditions:
+          - name: "a failed execution"
+            threshold:
+              filter: >-
+                metric.type = "run.googleapis.com/job/completed_execution_count" AND resource.type = "cloud_run_job"
+                AND metric.labels.result = "failed"
+                AND resource.labels.job_name = one_of("migrate-cc")
+              group_by_fields: ["resource.label.job_name"]
+
+      # cc-db exists with the staffed desk alone; callcentre.tf drops both
+      # policies without it, and the down policy while the instance is
+      # stopped between sessions (database_activation_policy.cc_db NEVER).
+      cc-db-down:
+        display_name: "URGENT cc-db is down"
+        urgent: true
+        documentation: >-
+          Cloud SQL reported cc-db not up for five minutes: the staffed desk
+          and svc-voice's hand-off ledger cannot be read. Check the instance in
+          the console, then its operations.
+        conditions:
+          - name: "database/up below 1 for five minutes"
+            threshold:
+              filter: >-
+                metric.type = "cloudsql.googleapis.com/database/up" AND resource.type = "cloudsql_database"
+                AND resource.labels.database_id = ends_with(":cc-db")
+              comparison: "COMPARISON_LT"
+              threshold_value: 1
+              duration: "300s"
+              alignment_period: "60s"
+              per_series_aligner: "ALIGN_MAX"
+              cross_series_reducer: "REDUCE_MAX"
+              group_by_fields: ["resource.label.database_id"]
+
+      cc-db-disk:
+        display_name: "cc-db disk above 85%"
+        documentation: >-
+          cc-db's disk has stayed above 85 percent full for ten minutes.
+          Automatic growth stops at the instance's disk_autoresize_limit
+          (var.sizing); raise the limit or the disk before it fills.
+        conditions:
+          - name: "disk/utilization above 0.85 for ten minutes"
+            threshold:
+              filter: >-
+                metric.type = "cloudsql.googleapis.com/database/disk/utilization" AND resource.type = "cloudsql_database"
+                AND resource.labels.database_id = ends_with(":cc-db")
+              threshold_value: 0.85
+              duration: "600s"
+              alignment_period: "300s"
+              per_series_aligner: "ALIGN_MEAN"
+              cross_series_reducer: "REDUCE_MAX"
+              group_by_fields: ["resource.label.database_id"]

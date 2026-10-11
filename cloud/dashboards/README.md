@@ -1,8 +1,8 @@
-# Cloud dashboards (not written yet)
+# Cloud dashboards
 
-The production dashboards go here as `*.json`, baked into the image and loaded read-only by
-`provisioning/dashboards/dashboards.yml`. They come later, once the metric names in tpa-platform's monitoring module
-(`infra/modules/monitoring/`, docs/SPEC.md P1) are final, so that no dashboard is written against a guessed name.
+The production dashboards, baked into the image and loaded read-only. **Generated: do not edit the JSON.** Edit
+`scripts/cloud_dashboards.py`, run `make cloud-dashboards`, and commit both; `make lint` fails a hand edit.
 
-Rules they follow, the same as the local ones: uids `tw-<name>`, datasource uids `cloud-app`, `cloud-crm` and
-`cloud-phi` only, and `scripts/dashboard_lint.py` (which already scans this folder) must pass.
+Each query names its datasource's project as a placeholder (`__TPA_APP_PROJECT_ID__`, ...), which
+`cloud/render-dashboards.sh` fills in when the container starts. What the pages show, how the queries are written and
+the rules they keep are in [../README.md](../README.md#the-dashboards).

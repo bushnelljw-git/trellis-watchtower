@@ -1,11 +1,21 @@
-# Cloud Monitoring (Grafana's core `stackdriver` datasource) for the three TPA projects, read with the identity
+# Cloud Monitoring (Grafana's core `stackdriver` datasource) for the four TPA projects, read with the identity
 # attached to the Cloud Run service (sa-watchtower, roles/monitoring.viewer on each project). No key file, no secret:
 # authenticationType gce uses the metadata server.
 #
 # Project ids come from the service's environment (Grafana interpolates ${VAR} in provisioning files):
-#   TPA_APP_PROJECT_ID, TPA_CRM_PROJECT_ID, TPA_PHI_PROJECT_ID
+#   TPA_APP_PROJECT_ID, TPA_CRM_PROJECT_ID, TPA_PHI_PROJECT_ID, TPA_CC_PROJECT_ID
+# In beta the CRM runs inside the app project (tpa-platform R282), so there TPA_CRM_PROJECT_ID is the app project's
+# id. production-full has no call-centre project: TPA_CC_PROJECT_ID is empty there, and the call-centre panels stay
+# empty.
 #
-# The uids below are part of the dashboard contract: scripts/dashboard_lint.py reads them from this file.
+# Under gce authentication Grafana's browser side reads the default project from `gceDefaultProject` and ignores
+# `defaultProject` (cloud-monitoring datasource.ts getDefaultProject); without it every datasource would fall back to
+# the metadata server's project, the app project. So both are set, to the same id. The dashboards do not rely on
+# either: each query names its project, rendered in at start (cloud/render-dashboards.sh), because Grafana drops a
+# Cloud Monitoring query with no project name.
+#
+# The uids, and which variable each one reads, are part of the dashboard contract: scripts/dashboard_lint.py reads
+# both from this file (a query on `cloud-phi` must name the project `__TPA_PHI_PROJECT_ID__`, and so on).
 apiVersion: 1
 
 datasources:
@@ -18,7 +28,9 @@ datasources:
     jsonData:
       authenticationType: gce
       defaultProject: ${TPA_APP_PROJECT_ID}
+      gceDefaultProject: ${TPA_APP_PROJECT_ID}
 
+  # beta: the app project's id (R282); production-full: the CRM project's.
   - name: Cloud Monitoring (crm)
     type: stackdriver
     uid: cloud-crm
@@ -27,10 +39,11 @@ datasources:
     jsonData:
       authenticationType: gce
       defaultProject: ${TPA_CRM_PROJECT_ID}
+      gceDefaultProject: ${TPA_CRM_PROJECT_ID}
 
-  # The PHI project's Monitoring API sits inside the VPC-SC perimeter. This datasource only works once the class 3
-  # `ing-watch` ingress rule admits sa-watchtower to the PHI project's Monitoring read methods (and nothing else).
-  # Until then its queries are refused at the perimeter, which is the intended failure.
+  # The PHI project's Monitoring API sits inside the VPC-SC perimeter. This datasource only works once the perimeter
+  # rule (tpa-platform's `ing-watch`) admits sa-watchtower to the PHI project's Monitoring read methods (and nothing
+  # else). Until then its queries are refused at the perimeter, which is the intended failure.
   - name: Cloud Monitoring (phi)
     type: stackdriver
     uid: cloud-phi
@@ -39,3 +52,15 @@ datasources:
     jsonData:
       authenticationType: gce
       defaultProject: ${TPA_PHI_PROJECT_ID}
+      gceDefaultProject: ${TPA_PHI_PROJECT_ID}
+
+  # Beta's call-centre project (svc-voice, svc-ops, svc-twilio-rest, cc-db, migrate-cc). Outside the perimeter.
+  - name: Cloud Monitoring (call centre)
+    type: stackdriver
+    uid: cloud-cc
+    access: proxy
+    editable: false
+    jsonData:
+      authenticationType: gce
+      defaultProject: ${TPA_CC_PROJECT_ID}
+      gceDefaultProject: ${TPA_CC_PROJECT_ID}

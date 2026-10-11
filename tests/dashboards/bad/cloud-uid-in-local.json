@@ -1,0 +1,23 @@
+{
+  "uid": "tw-bad-cloud-in-local",
+  "title": "cloud uid in a local dashboard",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "x",
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          }
+        }
+      ]
+    }
+  ]
+}

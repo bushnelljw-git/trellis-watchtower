@@ -1,5 +1,6 @@
-# Dashboards are baked into the image from cloud/dashboards/ and cannot be changed in the UI.
-# The cloud dashboards come later, once tpa-platform's monitoring metric names are final (cloud/README.md).
+# Dashboards are baked into the image from cloud/dashboards/ and cannot be changed in the UI. At start,
+# render-dashboards.sh writes them here with this environment's project ids filled in (Grafana drops a Cloud
+# Monitoring query that names no project), then starts Grafana.
 apiVersion: 1
 
 providers:
@@ -12,5 +13,5 @@ providers:
     allowUiUpdates: false
     updateIntervalSeconds: 300
     options:
-      path: /etc/grafana/dashboards
+      path: /var/lib/grafana/dashboards
       foldersFromFilesStructure: false

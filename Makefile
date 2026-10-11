@@ -4,7 +4,12 @@
 #   make up TPA_NET=1  also attach tw-blackbox to tpa-net (MANUAL opt-in; read
 #                      the warning in compose.tpa-net.yml; `make up` detaches)
 #   make down          stop this project only (volumes kept)
-#   make check         validate every config with the pinned images
+#   make check         validate every config with the pinned images (and lint)
+#   make lint          dashboard lint, the cloud dashboards against the vendored
+#                      catalogue, the render script, the PagerDuty scripts
+#   make cloud-dashboards  regenerate cloud/dashboards/*.json
+#   make cloud-image-check build cloud/ under a throwaway tag, run it with no
+#                      network, check it, send every dashboard query, remove it
 #   make probe-check   probe_success per stack/service/probe
 #   make scrub-check   replay the log fixtures through Alloy, assert clean
 #   make stub-test     negative test of the database body-match probes
@@ -29,10 +34,10 @@ MIN_FREE_MB ?= 4096
 # The pinned image of a compose service, read from compose.yml (one source).
 img = $$($(CHECK_ENV) $(COMPOSE) -f compose.yml --profile db --profile test config --format json | jq -r '.services["$(1)"].image')
 
-.PHONY: help up down check lint probe-check scrub-check stub-test disk-guard pagerduty-test pagerduty-plan
+.PHONY: help up down check lint probe-check scrub-check stub-test disk-guard pagerduty-test pagerduty-plan cloud-dashboards cloud-image-check
 
 help:
-	@sed -n '3,13p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,18p' Makefile | sed 's/^# \{0,1\}//'
 
 disk-guard:
 	@free=$$(docker run --rm $(call img,stub) df -Pm / | awk 'NR==2{print $$4}'); \
@@ -65,15 +70,23 @@ check: disk-guard
 	@docker run --rm -v "$(CURDIR)/alloy:/etc/alloy:ro" $(call img,alloy) validate /etc/alloy/config.alloy && echo "   validate ok"
 	@echo "== loki -verify-config"
 	@docker run --rm -v "$(CURDIR)/loki:/etc/loki:ro" $(call img,loki) -config.file=/etc/loki/loki-config.yml -verify-config && echo "   ok"
-	@echo "== bash -n scripts"
-	@for s in scripts/*.sh; do bash -n "$$s" || exit 1; done && echo "   ok"
+	@echo "== bash -n scripts, sh -n cloud/render-dashboards.sh"
+	@for s in scripts/*.sh; do bash -n "$$s" || exit 1; done && sh -n cloud/render-dashboards.sh && echo "   ok"
 	@$(MAKE) --no-print-directory lint
 
 lint:
 	@echo "== dashboard lint"
 	@python3 scripts/dashboard_lint.py
 	@python3 -m unittest discover -s tests/dashboards -q
+	@echo "== cloud dashboards: the vendored catalogue, the datasources, the render script"
+	@python3 -m unittest discover -s tests/cloud -q
 	@$(MAKE) --no-print-directory pagerduty-test
+
+cloud-dashboards:
+	@python3 scripts/cloud_dashboards.py
+
+cloud-image-check: disk-guard
+	@./scripts/cloud_image_check.sh
 
 pagerduty-test:
 	@echo "== pagerduty scripts (local fakes only)"
