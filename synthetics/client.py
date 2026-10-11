@@ -14,8 +14,11 @@
   every write carries `Origin` and, when the session has one, auth's CSRF value
   (`__Host-tpa-csrf` into `X-CSRF-Token`, auth's double submit).
 - **Timeouts.** Each request has the smaller of its step timeout and what is
-  left of the run's deadline: the socket timeout bounds the connect and each
-  read, and the body is read against the same step deadline.
+  left of the run's deadline (a sign-out has its own budget instead: see
+  journeys.py). The socket timeout bounds the connect and the wait for the
+  headers; the body is read with `read1`, one socket read at a time, the
+  socket's timeout shrunk before each to what the step has left, so neither a
+  stall nor a server trickling a byte at a time can outlast the step.
 - **No proxy from the environment**, ever: `HTTP(S)_PROXY` is ignored.
 
 Nothing here logs. A transport failure becomes a `StepFailure` carrying a code
@@ -27,6 +30,7 @@ from __future__ import annotations
 import contextlib
 import http.client
 import json
+import socket
 import ssl
 import time
 import urllib.error
@@ -70,7 +74,7 @@ class Response:
         """The body as a JSON object, or a `shape` failure."""
         try:
             value = json.loads(self.body.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError):
+        except (UnicodeDecodeError, ValueError, RecursionError):  # RecursionError: nesting too deep
             raise StepFailure("shape", self.status) from None
         if not isinstance(value, dict):
             raise StepFailure("shape", self.status)
@@ -130,13 +134,35 @@ class Deadline:
         return self._end - self._clock()
 
 
-def _read_body(response: Any, step_end: float) -> bytes:
+def _socket_of(response: Any) -> socket.socket | None:
+    """The connection's socket under an http.client response, or None.
+
+    Best effort, through the buffered reader's raw `SocketIO` (CPython's layout
+    since 3.0). Without it, a stall is still bounded by the timeout the socket
+    was opened with (the step's), and a trickle by the check before each read.
+    """
+    sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    return sock if isinstance(sock, socket.socket) else None
+
+
+def _read_body(raw: Any, step_end: float) -> bytes:
+    """At most MAX_BODY bytes, one socket read at a time, never past the step's end."""
+    # urllib hands back the http.client response itself, or an HTTPError wrapping it in `fp`.
+    reader = raw.fp if isinstance(raw, urllib.error.HTTPError) else raw
+    if reader is None:
+        return b""
+    sock = _socket_of(reader)
     chunks: list[bytes] = []
     size = 0
     while size < MAX_BODY:
-        if time.monotonic() > step_end:
-            raise StepFailure("timeout", getattr(response, "status", None))
-        chunk = response.read(min(CHUNK, MAX_BODY - size))
+        left = step_end - time.monotonic()
+        if left <= 0:
+            raise StepFailure("timeout")
+        if sock is not None:
+            # A response read to its end has closed its socket already (EBADF): nothing to bound.
+            with contextlib.suppress(OSError):
+                sock.settimeout(left)
+        chunk = reader.read1(min(CHUNK, MAX_BODY - size))
         if not chunk:
             break
         chunks.append(chunk)
@@ -161,7 +187,7 @@ def send(
             raw = answered
         with raw:
             status = int(getattr(raw, "status", None) or raw.code)
-            body = _read_body(raw, step_end) if getattr(raw, "fp", True) is not None else b""
+            body = _read_body(raw, step_end)
             return Response(status=status, headers=raw.headers, body=body)
     except StepFailure:
         raise
@@ -275,7 +301,10 @@ class Session:
         accept: str = "application/json",
         bearer: str | None = None,
         csrf: bool = False,
+        timeout: float | None = None,
     ) -> Response:
+        """One request to this origin. `timeout` replaces the step's timeout and the
+        run's deadline with a budget of its own (the sign-out's)."""
         if not path.startswith("/") or path.startswith("//"):
             raise StepFailure("runner")
         headers = {
@@ -305,7 +334,7 @@ class Session:
                 raise StepFailure("csrf")
             headers["X-CSRF-Token"] = token
         request = urllib.request.Request(self.origin + path, data=data, headers=headers, method=method)
-        response = send(self._open, request, timeout=self._timeout())
+        response = send(self._open, request, timeout=self._timeout() if timeout is None else timeout)
         self.last_status = response.status
         self.cookies.take(response.headers, cookie_path)
         return response

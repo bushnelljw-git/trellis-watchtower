@@ -16,9 +16,14 @@
 
 Every journey is read-only past the sign-in: one password and one code per run,
 never retried (a TOTP step is accepted once, and a refused one is charged to the
-lockout budget); every run that got a session signs out, also when a later step
-failed. Nothing here reads more of a response than its status, the cookies
-auth sets, and the few fields a sign-in needs; nothing is printed.
+lockout budget). **Every run that got a session signs out**, whatever ends it:
+the moment auth's session cookie arrives (or the CRM's bearer is read) the
+session counts as signed in, and from then on any exception, a check's failure
+or a bug, sends the sign-out before it propagates. The sign-out has its own
+budget, `min(step timeout, 10 s)`, outside the run's deadline, so a run that
+spent its deadline on a hung step still ends its session. Nothing here reads
+more of a response than its status, the cookies auth sets, and the few fields a
+sign-in needs; nothing is printed.
 """
 
 from __future__ import annotations
@@ -26,9 +31,10 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import re
 import ssl
+import stat
 import time
+import urllib.parse
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -38,10 +44,13 @@ from synthetics.client import Response, Session, StepFailure
 
 TRUE = frozenset({"1", "true", "yes", "on"})
 DEFAULT_STEP_TIMEOUT_S = 15.0
-#: The job's task_timeout is 120 s (design §3, piece 5); the run ends well inside it.
-DEFAULT_DEADLINE_S = 100.0
+#: The job's task_timeout is 120 s (design §3, piece 5). The run's deadline (at
+#: most MOST_DEADLINE_S) plus the sign-out's own budget ends well inside it.
+DEFAULT_DEADLINE_S = 90.0
+MOST_DEADLINE_S = 100.0
+#: The sign-out's own budget: the smaller of this and the step timeout, never the deadline's.
+SIGN_OUT_BUDGET_S = 10.0
 MAX_CREDENTIALS_BYTES = 64 * 1024
-METADATA_HOST = re.compile(r"^[A-Za-z0-9.-]+(:[0-9]{1,5})?$")
 
 SESSION_COOKIE = "__Host-tpa-session"
 CSRF_COOKIE = client.CSRF_COOKIE
@@ -188,7 +197,7 @@ def load_config(env: Mapping[str, str], *, job: str, use_iap: bool) -> Config:
     audience = env.get("SYNTHETICS_IAP_AUDIENCE", "").strip()
     metadata_host = env.get("SYNTHETICS_METADATA_HOST", "").strip() or iap.METADATA_HOST
     if use_iap:
-        if not audience or not METADATA_HOST.match(metadata_host):
+        if not audience or not metadata_host_allowed(metadata_host):
             raise StepFailure("config")
     elif not all(client.is_loopback(url) for url in (base_url, portal) if url):
         # The local mode (no IAP) reaches this machine's own stack and nothing else.
@@ -204,26 +213,52 @@ def load_config(env: Mapping[str, str], *, job: str, use_iap: bool) -> Config:
         iap_audience=audience,
         metadata_host=metadata_host,
         step_timeout=_seconds(env, "SYNTHETICS_STEP_TIMEOUT_S", DEFAULT_STEP_TIMEOUT_S, most=60),
-        deadline=_seconds(env, "SYNTHETICS_DEADLINE_S", DEFAULT_DEADLINE_S, most=110),
+        deadline=_seconds(env, "SYNTHETICS_DEADLINE_S", DEFAULT_DEADLINE_S, most=MOST_DEADLINE_S),
         ca_file=ca_file,
     )
+
+
+def metadata_host_allowed(value: str) -> bool:
+    """Google's metadata server, or a loopback host (the tests' fake), and nothing else:
+    the token is minted there, so it is never asked of another host."""
+    if value == iap.METADATA_HOST:
+        return True
+    try:
+        parts = urllib.parse.urlsplit("//" + value)
+        _ = parts.port  # a malformed port raises
+    except ValueError:
+        return False
+    return (parts.hostname in client.LOOPBACK and not parts.path and not parts.query and not parts.fragment
+            and parts.username is None)
 
 
 def read_credentials(path: str) -> Credentials:
     """`{"password": ..., "totp_secret": ...}`, the mounted secret's one version.
 
-    Every failure is `config` with no detail: no path, no value, no parse error.
+    A regular file only (checked on the open descriptor, so a FIFO or a device
+    never blocks or streams). Every failure is `config` with no detail: no path,
+    no value, no parse error.
     """
     try:
-        with open(path, "rb") as handle:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0))
+    except OSError:
+        raise StepFailure("config") from None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise StepFailure("config")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
             raw = handle.read(MAX_CREDENTIALS_BYTES + 1)
     except OSError:
         raise StepFailure("config") from None
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
     if len(raw) > MAX_CREDENTIALS_BYTES:
         raise StepFailure("config")
     try:
         value = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, RecursionError):  # RecursionError: nesting too deep
         raise StepFailure("config") from None
     if not isinstance(value, dict):
         raise StepFailure("config")
@@ -320,9 +355,13 @@ def _auth_sign_in(run: Run, session: Session, email: str, credentials: Credentia
             raise StepFailure("shape", session.last_status)
 
 
-def _auth_sign_out(run: Run, session: Session) -> None:
+def _sign_out_budget(config: Config) -> float:
+    return min(config.step_timeout, SIGN_OUT_BUDGET_S)
+
+
+def _auth_sign_out(run: Run, session: Session, budget: float) -> None:
     with run.timed("logout"):
-        response = session.post(AUTH_LOGOUT, csrf=True)
+        response = session.post(AUTH_LOGOUT, csrf=True, timeout=budget)
         if response.status == 403 and not response.iap_generated():
             run.last_status = response.status
             raise StepFailure("csrf", response.status)
@@ -330,9 +369,31 @@ def _auth_sign_out(run: Run, session: Session) -> None:
 
 
 def _quiet_sign_out(session: Session, path: str, **kwargs: object) -> None:
-    """After a failure: end the session if possible, and change nothing about the result."""
-    with contextlib.suppress(StepFailure):
+    """After anything went wrong: end the session if possible, and change nothing about the result."""
+    with contextlib.suppress(Exception):
         session.post(path, **kwargs)  # type: ignore[arg-type]
+
+
+@contextmanager
+def _signed_in_to_auth(run: Run, session: Session, config: Config, credentials: Credentials,
+                       tools: Tools) -> Iterator[None]:
+    """Signed in to auth for the body, then the `logout` step.
+
+    Signed in means auth's session cookie is in the jar: it is taken there the
+    moment `/auth/mfa/verify` answers, before anything reads the body. From then
+    on, any exception (in the sign-in's own checks, in the body, or a bug) sends
+    the sign-out quietly before it propagates. The `logout` step runs only after
+    the body succeeded, and is never repeated.
+    """
+    budget = _sign_out_budget(config)
+    try:
+        _auth_sign_in(run, session, config.email, credentials, tools)
+        yield
+    except BaseException:
+        if session.cookies.value(SESSION_COOKIE):
+            _quiet_sign_out(session, AUTH_LOGOUT, csrf=True, timeout=budget)
+        raise
+    _auth_sign_out(run, session, budget)
 
 
 def _json_read(run: Run, session: Session, step: str, path: str, *, bearer: str | None = None) -> None:
@@ -349,14 +410,9 @@ def staff_sign_in(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Too
     _shell(run, ops, "ops_shell", OPS_SHELL, "/ops/")
     with run.timed("ops_release"):
         run.check(ops.get(OPS_RELEASE)).json_object()
-    _auth_sign_in(run, ops, config.email, credentials, tools)
-    try:
+    with _signed_in_to_auth(run, ops, config, credentials, tools):
         _json_read(run, ops, "me", AUTH_ME)
         _json_read(run, ops, "desk_version", DESK_VERSION)
-    except StepFailure:
-        _quiet_sign_out(ops, AUTH_LOGOUT, csrf=True)
-        raise
-    _auth_sign_out(run, ops)
     portal = _session(config.portal_base_url, config, token, context, deadline)
     _shell(run, portal, "portal_shell", PORTAL_SHELL, "/tpa/")
 
@@ -364,14 +420,9 @@ def staff_sign_in(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Too
 def ops_desk(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> None:
     config, credentials, token, context, deadline = _prepare(run, env, use_iap=use_iap)
     ops = _session(config.base_url, config, token, context, deadline)
-    _auth_sign_in(run, ops, config.email, credentials, tools)
-    try:
+    with _signed_in_to_auth(run, ops, config, credentials, tools):
         _json_read(run, ops, "live_queue", LIVE_QUEUE)
         _json_read(run, ops, "desk_version_employers", DESK_VERSION_EMPLOYERS)
-    except StepFailure:
-        _quiet_sign_out(ops, AUTH_LOGOUT, csrf=True)
-        raise
-    _auth_sign_out(run, ops)
 
 
 def crm(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> None:
@@ -380,30 +431,44 @@ def crm(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> Non
     config, credentials, token, context, deadline = _prepare(run, env, use_iap=use_iap)
     crm_host = _session(config.base_url, config, token, context, deadline)
     _shell(run, crm_host, "crm_shell", CRM_SHELL, "/")
-    with run.timed("login"):
-        answer = run.check(
-            crm_host.post(CRM_LOGIN, payload={"email": config.email, "password": credentials.password}),
-            sign_in=True,
-        ).json_object()
-        challenge = answer.get("challenge_id")
-        if answer.get("mfa_required") is not True or answer.get("method") != "totp" or not isinstance(challenge, str):
-            raise StepFailure("shape", crm_host.last_status)
-    code = totp.mint(credentials.totp_secret, now=tools.now, sleep=tools.sleep)
-    with run.timed("mfa_verify"):
-        verified = run.check(
-            crm_host.post(CRM_VERIFY, payload={"challenge_id": challenge, "code": code}),
-            sign_in=True,
-        ).json_object()
-        bearer = verified.get("token")
-        if not isinstance(bearer, str) or not bearer:
-            raise StepFailure("shape", crm_host.last_status)
-    try:
+    with _signed_in_to_crm(run, crm_host, config, credentials, tools) as bearer:
         _json_read(run, crm_host, "me", CRM_ME, bearer=bearer)
-    except StepFailure:
-        _quiet_sign_out(crm_host, CRM_LOGOUT, bearer=bearer)
+
+
+@contextmanager
+def _signed_in_to_crm(run: Run, session: Session, config: Config, credentials: Credentials,
+                      tools: Tools) -> Iterator[str]:
+    """Signed in to the CRM (its bearer read from `/api/v1/auth/mfa/verify`) for the body,
+    then the `logout` step; any exception once the bearer is held signs out quietly first."""
+    budget = _sign_out_budget(config)
+    bearer = ""
+    try:
+        with run.timed("login"):
+            answer = run.check(
+                session.post(CRM_LOGIN, payload={"email": config.email, "password": credentials.password}),
+                sign_in=True,
+            ).json_object()
+            challenge = answer.get("challenge_id")
+            if (answer.get("mfa_required") is not True or answer.get("method") != "totp"
+                    or not isinstance(challenge, str)):
+                raise StepFailure("shape", session.last_status)
+        code = totp.mint(credentials.totp_secret, now=tools.now, sleep=tools.sleep)
+        with run.timed("mfa_verify"):
+            verified = run.check(
+                session.post(CRM_VERIFY, payload={"challenge_id": challenge, "code": code}),
+                sign_in=True,
+            ).json_object()
+            token = verified.get("token")
+            if not isinstance(token, str) or not token:
+                raise StepFailure("shape", session.last_status)
+            bearer = token
+        yield bearer
+    except BaseException:
+        if bearer:
+            _quiet_sign_out(session, CRM_LOGOUT, bearer=bearer, timeout=budget)
         raise
     with run.timed("logout"):
-        run.check(crm_host.post(CRM_LOGOUT, bearer=bearer), ok=(200, 204))
+        run.check(session.post(CRM_LOGOUT, bearer=bearer, timeout=budget), ok=(200, 204))
 
 
 JOURNEYS: dict[str, Callable[..., None]] = {

@@ -3,6 +3,9 @@ reads it, so a change here is a change to that lane's contract and to synthetics
 
 from __future__ import annotations
 
+import os
+import re
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -70,17 +73,57 @@ class Golden(unittest.TestCase):
             for value in values:
                 self.assertIn(f"`{value}`", readme)
 
-    def test_labels_stay_on_tpa_platforms_closed_list(self):
-        # docs/infra/monitoring.md §2: a label is one of these. The metric's labels are job, outcome,
-        # code and status_class; step and steps_ms are fields, never labels.
-        closed = {"service", "operation", "gate", "code", "outcome", "status_class", "job", "lane", "class",
-                  "sqlstate"}
-        self.assertLessEqual({"job", "outcome", "code", "status_class"}, closed)
-
     def test_status_class(self):
         for status, expected in [(200, "2xx"), (204, "2xx"), (302, "3xx"), (401, "4xx"), (503, "5xx"),
                                  (None, "none"), (99, "none"), (600, "none")]:
             self.assertEqual(result.status_class(status), expected)
+
+
+LABELS_FILE = Path(__file__).resolve().parent / "tpa_metric_labels.txt"
+#: What tpa-platform's `synthetic_results` metric extracts as labels (design §3, piece 5).
+METRIC_LABELS = {"job", "outcome", "code", "status_class"}
+ALLOWLIST = re.compile(r'contains\(\[([^\]]*)\],\s*label\)')
+
+
+def vendored_labels() -> tuple[dict[str, str], list[str]]:
+    pins = dict(line.split("=", 1) for line in LABELS_FILE.read_text(encoding="utf-8").splitlines()
+                if line and not line.startswith("#"))
+    return pins, pins["labels"].split(",")
+
+
+def labels_in(variables_tf: str) -> list[str]:
+    found = ALLOWLIST.findall(variables_tf)
+    assert len(found) == 1, "exactly one label allowlist in variables.tf"
+    return re.findall(r'"([^"]+)"', found[0])
+
+
+class Labels(unittest.TestCase):
+    """The result line's labels against tpa-platform's own allowlist (docs/infra/monitoring.md §2)."""
+
+    def test_the_metric_labels_are_on_the_vendored_allowlist(self):
+        _pins, labels = vendored_labels()
+        self.assertLessEqual(METRIC_LABELS, set(labels))
+        self.assertNotIn("step", labels, "step is a field of the line, not a label (README)")
+
+    def test_the_vendored_allowlist_is_tpa_platforms(self):
+        sibling = Path(os.environ.get("TPA_PLATFORM_DIR") or ROOT.parent / "tpa-platform")
+        if not (sibling / ".git").exists():
+            self.skipTest(f"no tpa-platform checkout at {sibling}; the vendored list is used as pinned")
+        pins, labels = vendored_labels()
+
+        def git(*args: str) -> str:
+            return subprocess.run(["git", "-C", str(sibling), *args], capture_output=True, text=True,
+                                  check=True, timeout=30).stdout
+
+        spec = f"{pins['commit']}:{pins['path']}"
+        self.assertEqual(git("rev-parse", spec).strip(), pins["blob"], "the pinned blob")
+        self.assertEqual(labels_in(git("show", spec)), labels, "the vendored list is the pinned blob's")
+        try:
+            current = git("show", f"origin/master:{pins['path']}")
+        except subprocess.CalledProcessError:
+            self.skipTest("the sibling checkout has no origin/master")
+        self.assertEqual(labels_in(current), labels,
+                         "tpa-platform's label allowlist moved on origin/master: re-vendor tpa_metric_labels.txt")
 
 
 class Refusals(unittest.TestCase):
@@ -114,7 +157,7 @@ class Refusals(unittest.TestCase):
 
     def test_every_code_has_one_outcome(self):
         self.assertEqual(set(result.OUTCOME_OF), set(result.CODES))
-        self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "error"}, {"config", "runner"})
+        self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "error"}, {"config", "iap_token", "runner"})
         self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "pass"}, {"ok"})
         self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "skipped"}, {"paused", "not_configured"})
 

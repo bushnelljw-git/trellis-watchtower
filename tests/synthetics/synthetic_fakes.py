@@ -19,7 +19,9 @@ memory and recording every request. It models what the runner relies on:
 
 Every secret here is a sentinel the tests then look for in the runner's output.
 `fail` maps a route name to a behaviour: an int status; "hang" (no answer for
-`hang_s`); "slow_body" (headers, then nothing); "drop" (close the connection);
+`hang_s`); "slow_body" (headers, then nothing); "trickle" (headers, then one
+byte every 0.3 s for up to a minute); "deep_json" (the route's normal answer,
+cookies included, with a body nested 100,000 deep); "drop" (close the connection);
 "redirect_google"; "redirect_other"; "iap_refuse"; "not_json"; "no_base_href";
 "enrol"; "no_cookies".
 """
@@ -88,6 +90,7 @@ class Fake:
         self.clock = clock
         self.hang_s = hang_s
         self.requests: list[dict] = []
+        self.current = ""
         self.codes_received: list[str] = []
         self.lock = threading.Lock()
         fake = self
@@ -154,7 +157,10 @@ class Fake:
             h.wfile.write(body)
 
     def json(self, h, status: int, value: object, **kwargs) -> None:
-        self.reply(h, status, json.dumps(value).encode(), **kwargs)
+        body = json.dumps(value).encode()
+        if self.fail.get(self.current) == "deep_json" and status == 200:
+            body = b"[" * 100_000 + b"]" * 100_000
+        self.reply(h, status, body, **kwargs)
 
     def cookies(self, h) -> dict[str, str]:
         jar = {}
@@ -187,6 +193,7 @@ class Fake:
         }
         with self.lock:
             self.requests.append(record)
+        self.current = route
 
         behaviour = self.fail.get(route)
         if behaviour == "drop":
@@ -196,6 +203,19 @@ class Fake:
         if behaviour == "hang":
             time.sleep(self.hang_s)
             self.json(h, 200, {})
+            return
+        if behaviour == "trickle":
+            h.send_response(200)
+            h.send_header("Content-Type", "application/json")
+            h.send_header("Content-Length", "200")
+            h.end_headers()
+            try:
+                for _ in range(200):
+                    h.wfile.write(b" ")
+                    h.wfile.flush()
+                    time.sleep(0.3)
+            except OSError:
+                pass  # the client gave up, as it must
             return
         if behaviour == "slow_body":
             h.send_response(200)

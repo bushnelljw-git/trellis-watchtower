@@ -106,10 +106,10 @@ class Case(unittest.TestCase):
         self.assertEqual(line["severity"], "ERROR")
         self.assertEqual(exit_code, 0, "a journey that ran to a verdict exits 0, fail included")
 
-    def assert_error(self, line: dict, exit_code: int, *, step: str, code: str) -> None:
+    def assert_error(self, line: dict, exit_code: int, *, step: str, code: str, status_class: str = "none") -> None:
         """The runner itself broke: an error line, and a non-zero exit for jobs-failed."""
         self.assertEqual((line["outcome"], line["step"], line["code"], line["status_class"]),
-                         ("error", step, code, "none"))
+                         ("error", step, code, status_class))
         self.assertEqual(line["severity"], "ERROR")
         self.assertEqual(exit_code, 1)
 
@@ -171,13 +171,14 @@ class StaffSignIn(Case):
     def test_metadata_server_refuses(self):
         with fakes.Fake(fail={"metadata": 500}) as fake:
             line, code = self.run_journey("staff-sign-in", self.env(fake))
-        self.assert_failed(line, code, step="iap_token", code="iap_token", status_class="5xx")
+        # The job's own environment, not the site: the runner's error, for jobs-failed.
+        self.assert_error(line, code, step="iap_token", code="iap_token", status_class="5xx")
         self.assertEqual(fake.routes(), ["metadata"], "nothing reaches the edge without a token")
 
     def test_wrong_audience_is_refused_by_the_metadata_server(self):
         with fakes.Fake() as fake:
             line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_IAP_AUDIENCE="other"))
-        self.assert_failed(line, code, step="iap_token", code="iap_token", status_class="4xx")
+        self.assert_error(line, code, step="iap_token", code="iap_token", status_class="4xx")
 
     def test_iap_refuses(self):
         with fakes.Fake(fail={"ops_shell": "iap_refuse"}) as fake:
@@ -268,10 +269,63 @@ class StaffSignIn(Case):
             line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="0.4"))
         self.assert_failed(line, code, step="me", code="timeout", status_class="none")
 
+    def test_a_trickling_body_cannot_outlast_its_step(self):
+        # One byte every 0.3 s: each read returns something, so only the step's own clock can stop it.
+        with fakes.Fake(fail={"me": "trickle"}, clock=lambda: FIXED_NOW) as fake:
+            started = time.monotonic()
+            line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="1"))
+            took = time.monotonic() - started
+        self.assert_failed(line, code, step="me", code="timeout", status_class="none")
+        self.assertLess(line["steps_ms"]["me"], 1500, "the step's budget is 1 s")
+        self.assertLess(took, 3)
+        self.assertEqual(fake.routes()[-1], "logout", "and the session is still ended")
+
+    def test_too_deep_json_is_shape_and_still_signs_out(self):
+        for route in ("me", "mfa_verify"):
+            with self.subTest(route=route), fakes.Fake(fail={route: "deep_json"}, clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_journey("staff-sign-in", self.env(fake))
+                self.assert_failed(line, code, step=route, code="shape", status_class="2xx")
+                self.assertEqual(fake.routes()[-1], "logout")
+                self.assertEqual(fake.requests[-1]["csrf"], fakes.CSRF)
+
+    def test_any_exception_after_sign_in_still_signs_out(self):
+        original = journeys._json_read
+
+        def broken(run, session, step, path, **kwargs):
+            if step == "desk_version":
+                with run.timed(step):
+                    raise RuntimeError(f"a bug holding {fakes.SESSION}")
+            return original(run, session, step, path, **kwargs)
+
+        journeys._json_read = broken
+        try:
+            with fakes.Fake(clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_journey("staff-sign-in", self.env(fake))
+        finally:
+            journeys._json_read = original
+        self.assert_error(line, code, step="desk_version", code="runner")
+        self.assertEqual(fake.routes()[-2:], ["me", "logout"])
+        self.assertEqual(fake.requests[-1]["csrf"], fakes.CSRF)
+        self.assertEqual(fake.routes().count("logout"), 1)
+
+    def test_sign_out_has_its_own_budget_after_the_deadline_is_spent(self):
+        with fakes.Fake(fail={"desk_version": "hang"}, clock=lambda: FIXED_NOW, hang_s=1.5) as fake:
+            line, code = self.run_journey("staff-sign-in", self.env(
+                fake, SYNTHETICS_STEP_TIMEOUT_S="30", SYNTHETICS_DEADLINE_S="0.6"))
+            routes = fake.routes()
+        self.assert_failed(line, code, step="desk_version", code="timeout", status_class="none")
+        self.assertEqual(routes[-1], "logout", "the deadline was spent, and the sign-out still went")
+
+    def test_logout_step_failing_is_not_repeated(self):
+        with fakes.Fake(fail={"logout": 503}, clock=lambda: FIXED_NOW) as fake:
+            line, code = self.run_journey("staff-sign-in", self.env(fake))
+        self.assert_failed(line, code, step="logout", code="status", status_class="5xx")
+        self.assertEqual(fake.routes().count("logout"), 1)
+
     def test_timeout_at_the_metadata_server(self):
         with fakes.Fake(fail={"metadata": "hang"}, hang_s=2.0) as fake:
             line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="0.4"))
-        self.assert_failed(line, code, step="iap_token", code="iap_token", status_class="none")
+        self.assert_error(line, code, step="iap_token", code="iap_token")
 
     def test_run_deadline_bounds_every_step(self):
         with fakes.Fake(fail={"ops_shell": "hang"}, hang_s=2.0) as fake:
@@ -324,6 +378,12 @@ class Configuration(Case):
                             ("SYNTHETICS_STEP_TIMEOUT_S", "abc"),
                             ("SYNTHETICS_DEADLINE_S", "500"),
                             ("SYNTHETICS_METADATA_HOST", "evil.example/path?x="),
+                            ("SYNTHETICS_METADATA_HOST", "evil.example"),
+                            ("SYNTHETICS_METADATA_HOST", "metadata.evil.example:80"),
+                            ("SYNTHETICS_METADATA_HOST", "127.0.0.1:80/path"),
+                            ("SYNTHETICS_METADATA_HOST", "user@127.0.0.1:80"),
+                            ("SYNTHETICS_METADATA_HOST", "127.0.0.1:notaport"),
+                            ("SYNTHETICS_DEADLINE_S", "101"),
                             ("SYNTHETICS_CA_FILE", "/nonexistent/ca.pem")]:
             with self.subTest(name=name, value=value), fakes.Fake() as fake:
                 line, code = self.run_journey("staff-sign-in", self.env(fake, **{name: value}))
@@ -338,6 +398,23 @@ class Configuration(Case):
                 line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_CREDENTIALS_FILE=path))
                 self.assert_error(line, code, step="secrets", code="config")
                 self.assertEqual(fake.requests, [])
+
+    def test_credentials_must_be_a_regular_file(self):
+        fifo = os.path.join(self.tmp.name, "fifo")
+        os.mkfifo(fifo)
+        for path in (self.tmp.name, fifo, "/dev/zero"):
+            with self.subTest(path=os.path.basename(path)), fakes.Fake() as fake:
+                started = time.monotonic()
+                line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_CREDENTIALS_FILE=path))
+                self.assert_error(line, code, step="secrets", code="config")
+                self.assertLess(time.monotonic() - started, 2, "a FIFO or a device never blocks the read")
+                self.assertEqual(fake.requests, [])
+
+    def test_credentials_nested_too_deep(self):
+        path = credentials_file(self.tmp.name, raw=b"[" * 30000 + b"]" * 30000)
+        with fakes.Fake() as fake:
+            line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_CREDENTIALS_FILE=path))
+        self.assert_error(line, code, step="secrets", code="config")
 
     def test_missing_credentials_file(self):
         with fakes.Fake() as fake:
@@ -440,6 +517,13 @@ class Crm(Case):
         self.assertIsNone(by_route["crm_shell"]["authorization"])
         self.assertEqual(by_route["crm_me"]["authorization"], f"Bearer {fakes.CRM_TOKEN}")
         self.assertEqual(by_route["crm_me"]["proxy_authorization"], f"Bearer {fakes.IAP_TOKEN}")
+
+    def test_any_exception_after_sign_in_still_signs_out(self):
+        with fakes.Fake(fail={"crm_me": "deep_json"}, clock=lambda: FIXED_NOW) as fake:
+            line, code = self.run_journey("crm", self.env(fake, SYNTHETICS_CRM_ENABLED="1"))
+        self.assert_failed(line, code, step="me", code="shape", status_class="2xx")
+        self.assertEqual(fake.routes()[-1], "crm_logout")
+        self.assertEqual(fake.requests[-1]["authorization"], f"Bearer {fakes.CRM_TOKEN}")
 
     def test_me_failing_still_signs_out(self):
         with fakes.Fake(fail={"crm_me": 502}, clock=lambda: FIXED_NOW) as fake:

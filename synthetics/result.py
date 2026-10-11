@@ -10,7 +10,9 @@ and synthetics/README.md carries the same format for that lane.
 `outcome` is the verdict: `pass`, `fail` or `skipped` when the journey ran to
 one (the job then exits 0, and this line alone drives the alert), or `error`
 when the runner itself broke: its configuration or mounted credentials are
-unusable (`config`), or it hit a bug (`runner`). An `error` run exits non-zero,
+unusable (`config`), the metadata server would not mint its IAP token
+(`iap_token`: the job's own environment, not the site), or it hit a bug
+(`runner`). An `error` run exits non-zero,
 so the job's own `jobs-failed` means "the job is broken", never "the site
 failed a check" (the orchestrator's ruling, 2026-10-11, following design §3).
 
@@ -31,8 +33,8 @@ JOBS = ("staff-sign-in", "ops-desk", "crm")
 OUTCOMES = ("pass", "fail", "skipped", "error")
 
 #: Why a run ended as it did. `ok` is the only pass; `paused` and
-#: `not_configured` the only skips; `config` and `runner` the only errors; the
-#: rest are failures, the site's answer to a check.
+#: `not_configured` the only skips; `config`, `iap_token` and `runner` the only
+#: errors; the rest are failures, the site's answer to a check.
 CODES = (
     "ok",
     "paused",
@@ -54,7 +56,7 @@ CODES = (
 )
 PASS_CODES = ("ok",)
 SKIP_CODES = ("paused", "not_configured")
-ERROR_CODES = ("config", "runner")
+ERROR_CODES = ("config", "iap_token", "runner")
 #: The outcome each code belongs to.
 OUTCOME_OF = {
     code: ("pass" if code in PASS_CODES else "skipped" if code in SKIP_CODES else

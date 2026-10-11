@@ -33,7 +33,8 @@ MAX_TOKEN = 8 * 1024
 
 
 def fetch_id_token(audience: str, *, host: str = METADATA_HOST, timeout: float) -> str:
-    """The token, or `StepFailure("iap_token")` with the metadata server's status."""
+    """The token, or `StepFailure("iap_token")` with the metadata server's status: the
+    run's `error` (the job's own environment failed, not the site)."""
     query = urllib.parse.urlencode({"audience": audience, "format": "full"})
     request = urllib.request.Request(
         f"http://{host}{IDENTITY_PATH}?{query}",

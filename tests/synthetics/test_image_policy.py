@@ -67,6 +67,8 @@ class Dockerfile(unittest.TestCase):
         self.assertEqual(steps[-1][1], '["python", "-I", "-m", "synthetics"]')
         self.assertNotIn("CMD", names)
         self.assertNotIn("HEALTHCHECK", names)
+        # python -I ignores every PYTHON* variable, so an ENV here would only mislead.
+        self.assertNotIn("ENV", names)
 
     def test_no_package_installer(self):
         text = "\n".join(args for _name, args in instructions())

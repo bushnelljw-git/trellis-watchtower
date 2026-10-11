@@ -22,9 +22,6 @@
 #   Everything after it is exec form too. `id` (coreutils) stays, which the start check runs.
 FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
 COPY synthetics/__init__.py synthetics/__main__.py synthetics/client.py synthetics/iap.py synthetics/journeys.py \
      synthetics/result.py synthetics/totp.py /usr/local/lib/python3.12/site-packages/synthetics/
 
@@ -35,6 +32,7 @@ RUN --mount=type=bind,source=scripts/image_strip.py,target=/tmp/image_strip.py \
     ["python", "-I", "-B", "/tmp/image_strip.py"]
 USER 10001:10001
 
-# -I: no working directory, PYTHONPATH or user site on the path; the package is site-packages' alone.
+# -I: no working directory, PYTHONPATH or user site on the path, and no PYTHON* variable read (so none is set here);
+# the package is site-packages' alone. The result line is flushed by the runner itself.
 # No CMD: the job gives `journey <name>`; with nothing, argparse refuses (exit 2), never a silent pass.
 ENTRYPOINT ["python", "-I", "-m", "synthetics"]

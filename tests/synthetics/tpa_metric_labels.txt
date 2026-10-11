@@ -1,0 +1,10 @@
+# tpa-platform's closed list of log-metric label names: the list in var.log_metrics' label validation,
+# `contains([...], label)` in infra/modules/monitoring/variables.tf (docs/infra/monitoring.md §2), vendored so
+# tests/synthetics/test_result.py can hold the result line's labels to it without a sibling checkout. When the sibling
+# checkout is there (../tpa-platform, or TPA_PLATFORM_DIR), the test re-reads the pinned blob and its origin/master and
+# requires this list to equal both. To move the pin: copy the new list, commit and blob here, and run make synthetics-test.
+repository=tpa-platform
+commit=df51e3e069c3491ab24d0b1958df1825ddeab61e
+path=infra/modules/monitoring/variables.tf
+blob=0cb0165a0cf58ee25c48f28208101f13541979f6
+labels=service,operation,gate,code,outcome,status_class,job,lane,class,sqlstate

@@ -12,8 +12,14 @@ python -I -m synthetics journey <staff-sign-in|ops-desk|crm> [--no-iap]
 ## The journeys
 
 Each is a fixed list of steps that stops at the first failure. One password and one TOTP code per run, never
-retried (auth accepts a TOTP step once and charges a refused code to the lockout budget). A run that got a session
-always signs out, also when a later step failed. Past the sign-in everything is a read.
+retried (auth accepts a TOTP step once and charges a refused code to the lockout budget). Past the sign-in everything
+is a read.
+
+**Every run that got a session signs out, whatever ends it.** The session counts as signed in the moment auth's
+session cookie arrives in the jar (for J3, the moment the CRM's bearer is read), before anything reads the response.
+From then on any exception, a failed check or a bug, sends the sign-out before it propagates; the `logout` step runs
+once, after the reads succeed, and is never repeated. The sign-out has its own budget, `min(step timeout, 10 s)`,
+outside the run's deadline, so a run that spent its deadline on a hung step still ends its session.
 
 | Job | Severity (design §5) | Steps, in order |
 |---|---|---|
@@ -43,9 +49,9 @@ lines byte for byte (a pass, a failed check, a broken runner, a skip), and check
 | `message` | always `synthetic_result` (the metric's filter) |
 | `job` | `staff-sign-in`, `ops-desk`, `crm` |
 | `outcome` | the journey's verdict, `pass`, `fail` or `skipped`; or `error` when the runner itself broke and there is no verdict |
-| `code` | a pass is `ok`; a skip is `paused` or `not_configured`; an error is `config` (a missing or bad setting, or an unreadable or malformed credentials file) or `runner` (an unexpected exception: a bug in the runner); a failure is one of `iap_token` (the metadata server gave no token), `iap` (IAP refused: a response with `X-Goog-IAP-Generated-Response: true`, a redirect to Google's sign-in, or a 401 or 403 on a shell step), `connect`, `tls`, `timeout`, `redirect` (any other 3xx), `status` (an unexpected status), `credentials` (a 401 at `login` or `mfa_verify`), `locked` (423), `rate_limited` (429), `csrf` (logout refused with a 403, or no CSRF cookie to send), `shape` (a 2xx without what the step needs) |
+| `code` | a pass is `ok`; a skip is `paused` or `not_configured`; an error is `config` (a missing or bad setting, or a credentials file that is unreadable, not a regular file or malformed), `iap_token` (the metadata server gave no token: the job's own environment, not the site) or `runner` (an unexpected exception: a bug in the runner); a failure is one of `iap` (IAP refused: a response with `X-Goog-IAP-Generated-Response: true`, a redirect to Google's sign-in, or a 401 or 403 on a shell step), `connect`, `tls`, `timeout`, `redirect` (any other 3xx), `status` (an unexpected status), `credentials` (a 401 at `login` or `mfa_verify`), `locked` (423), `rate_limited` (429), `csrf` (logout refused with a 403, or no CSRF cookie to send), `shape` (a 2xx without what the step needs, a body that is not the JSON object expected, or JSON nested too deep) |
 | `step` | `none` for a pass or a skip; for a failure the step it failed at, for an error the step it broke in (`none` if before any): `config`, `secrets`, `iap_token`, `ops_shell`, `ops_release`, `crm_shell`, `login`, `mfa_verify`, `me`, `desk_version`, `live_queue`, `desk_version_employers`, `logout`, `portal_shell` |
-| `status_class` | the failing response's class, or the last response's on a pass: `2xx`, `3xx`, `4xx`, `5xx`, or `none` (no response: a skip, a transport failure, a timeout) |
+| `status_class` | the failing response's class, or the last response's on a pass: `2xx`, `3xx`, `4xx`, `5xx`, or `none` (no response: a skip, a transport failure, a timeout, a body that outlasted its step) |
 | `elapsed_ms` | the whole run, whole milliseconds (it includes a wait of up to 8 s for a fresh TOTP step) |
 | `steps_ms` | each step that ran, in order, whole milliseconds |
 
@@ -59,8 +65,8 @@ reach the line.
 
 - **0 whenever the journey ran to a verdict**: `pass`, `fail` or `skipped`. The result line alone drives
   `synthetic-failing`, so a site that fails a check never fails the job too.
-- **1 only when the runner itself broke**: an `error` line (`config` or `runner`), or the line could not be written
-  at all. So `jobs-failed` keeps meaning "the job is broken", and one failure never pages twice.
+- **1 only when the runner itself broke**: an `error` line (`config`, `iap_token` or `runner`), or the line could not
+  be written at all. So `jobs-failed` keeps meaning "the job is broken", and one failure never pages twice.
 - **2** on a bad command line (argparse; no line, as no journey was named).
 
 A wrong credentials *version* (a valid file, the wrong password) is a verdict: `fail` / `credentials` at `login`,
@@ -71,7 +77,7 @@ exit 0, which is design §7's proof of `synthetic-failing`. A malformed or missi
 
 | Environment | J1 | J2 | J3 | Value |
 |---|---|---|---|---|
-| `SYNTHETICS_BASE_URL` | yes | yes | yes | the ops host's origin (J1, J2), the CRM host's (J3): `https://host`, no path |
+| `SYNTHETICS_BASE_URL` | yes | yes | yes | the ops host's origin (J1, J2), the CRM host's (J3): `https://host`, no path. **J1 and J2: it must equal auth's `AUTH_PUBLIC_ORIGIN`** (beta's `local.browser_origin`, the ops host unless `single_origin = "portal"`): auth's CSRF check refuses a write whose `Origin` is not that origin, so any other host fails every run at `logout` with `csrf` |
 | `SYNTHETICS_PORTAL_BASE_URL` | yes | | | the portal host's origin (the same as the ops host's while it is single-origin, until R183) |
 | `SYNTHETICS_EMAIL` | yes | yes | yes | `synthetic-staff@<org_domain>`, `synthetic-desk@<org_domain>`, the CRM user's |
 | `SYNTHETICS_CREDENTIALS_FILE` | yes | yes | yes | the path the credentials secret is mounted at |
@@ -79,9 +85,9 @@ exit 0, which is design §7's proof of `synthetic-failing`. A malformed or missi
 | `SYNTHETICS_PAUSED` | | | | `true` while a needed database is stopped: `skipped` / `paused`, nothing sent. A second guard beside the paused schedule |
 | `SYNTHETICS_CRM_ENABLED` | | | yes | `true` once the CRM lane has its user and endpoints; anything else is `not_configured` |
 | `SYNTHETICS_STEP_TIMEOUT_S` | | | | per request, default 15, at most 60 |
-| `SYNTHETICS_DEADLINE_S` | | | | the whole run, default 100, at most 110 (the job's `task_timeout` is 120) |
+| `SYNTHETICS_DEADLINE_S` | | | | the whole run, default 90, at most 100; the sign-out's own budget (at most 10 s) comes on top, so a run ends inside the job's `task_timeout` of 120 s |
 | `SYNTHETICS_CA_FILE` | | | | local only: the one CA to trust (the cloud uses the system store) |
-| `SYNTHETICS_METADATA_HOST` | | | | tests only: the fake metadata server. Unset in the cloud |
+| `SYNTHETICS_METADATA_HOST` | | | | tests only: the fake metadata server. Unset in the cloud. With IAP on it may only be `metadata.google.internal` or a loopback host (`error` / `config` otherwise), so the token is never asked of another host |
 
 **The secrets** (design §3): `synthetic-staff-credentials` (J1), `synthetic-desk-credentials` (J2), and the CRM
 lane's `synthetic-crm-credentials` (J3), each one version, mounted as a file pinned to
@@ -92,8 +98,9 @@ lane's `synthetic-crm-credentials` (J3), each one version, mounted as a file pin
 ```
 
 `sa-synthetics` is their one accessor. The file is read once per run; its values live in memory only and are never
-printed. A missing, unreadable, oversized or malformed file, an empty password or a TOTP secret that is not base32 is
-`error` / `config` at step `secrets` (exit 1).
+printed. It must be a regular file (checked on the open descriptor, opened non-blocking, so a FIFO or a device
+never hangs the run). A missing, unreadable, non-regular, oversized or malformed file (JSON nested too deep
+included), an empty password or a TOTP secret that is not base32 is `error` / `config` at step `secrets` (exit 1).
 
 **The job:** args `["journey", "<name>"]`; `task_timeout` 120 s; `max_retries` 0 (a retry would replay a TOTP step);
 egress only to the edge addresses (the metadata server is always reachable).
@@ -102,7 +109,8 @@ egress only to the edge addresses (the metadata server is always reachable).
 
 - **The token.** `GET http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=<SYNTHETICS_IAP_AUDIENCE>&format=full`
   with `Metadata-Flavor: Google`: Cloud Run's metadata server, as the job's own service account, never through a
-  proxy. It must answer 200 with a JWT; anything else is `iap_token`. One token per run, used for both hosts.
+  proxy. It must answer 200 with a JWT; anything else is `error` / `iap_token` (exit 1: the job's environment, not
+  the site). One token per run, used for both hosts.
 - **The header.** `Proxy-Authorization: Bearer <token>` on every request to the edge, and `Authorization` left empty
   (J1, J2), so auth never reads Google's token as a session bearer (AN-01). Google's programmatic-access page
   ("Authenticating from a service account", `docs.cloud.google.com/iap/docs/authentication-howto`, read
@@ -142,8 +150,8 @@ network, and `python -I -c "import synthetics"` imports (importing does nothing)
 
 `make synthetics-image-check` is this repository's own proof of the same: it builds the image, checks the user, `id`,
 the import, the CA bundle and that no shell starts, then runs the entrypoint offline (paused and J3 off: `skipped`,
-exit 0; no metadata server: `fail` / `iap_token`, exit 0; no configuration: `error` / `config`, exit 1; no arguments:
-exit 2) and removes the image.
+exit 0; no metadata server: `error` / `iap_token`, exit 1; no configuration: `error` / `config`, exit 1; no
+arguments: exit 2) and removes the image.
 
 ## Locally
 
@@ -164,7 +172,11 @@ Wait out the account's last TOTP step first (30 s since its last sign-in), or au
 
 `make synthetics-test` (part of `make check`): the journeys against a local fake of the metadata server, IAP, auth,
 tpa-api and the CRM (`tests/synthetics/synthetic_fakes.py`): a pass, each step failing, IAP's refusals, redirects,
-timeouts, dropped connections, TLS, configuration, pausing, J3's flag; the exit status of a failed check (0), a
-broken configuration, a runner crash and an unwritable line (1); RFC 6238's vectors; the golden lines; the
-image's policy, read statically; and no secret on stdout or stderr on any path, in-process and through the real
+timeouts (a stall, a body trickled a byte every 0.3 s, a spent deadline), dropped connections, TLS, JSON nested too
+deep, configuration (a credentials file that is a folder, a FIFO or a device; a metadata host that is not Google's or
+loopback), pausing, J3's flag; the sign-out sent after any exception once signed in, with its own budget, and never
+repeated; the exit status of a failed check (0), and of a broken configuration, a metadata server with no token, a
+runner crash and an unwritable line (1); RFC 6238's vectors; the golden lines; the result line's labels against
+tpa-platform's own allowlist (`tests/synthetics/tpa_metric_labels.txt`, vendored with its commit and blob, and
+re-read from the sibling checkout when there is one); the image's policy, read statically; and no secret on stdout or stderr on any path, in-process and through the real
 entry point.
