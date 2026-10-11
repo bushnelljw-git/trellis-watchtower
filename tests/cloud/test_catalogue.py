@@ -229,20 +229,21 @@ class CatalogueTest(unittest.TestCase):
         self.assertEqual(problems, [], "\n".join(problems))
 
     def test_an_unanchored_extractor_keeps_its_label_off_and_an_anchored_one_lets_it_back(self):
-        # Today's catalogue: the CRM's class is unanchored, so no dashboard groups by it...
-        self.assertEqual(self.catalogue.unanchored_labels("crm", "errors"), {"class"})
+        # Today's catalogue (tpa-platform d60de911): the CRM's class is anchored, as the call centre's is, so the
+        # CRM's error panels group by it again...
+        self.assertEqual(self.catalogue.unanchored_labels("crm", "errors"), set())
+        self.assertEqual(self.catalogue.unanchored_labels("cc", "errors"), set(), "the call centre's is anchored")
         crm_class = [(n, t) for n, t, _r, uid, _a, f in queries() if uid == "cloud-crm"
                      and "metric.label.class" in f["labels"]]
-        self.assertEqual(crm_class, [])
-        # ...and the moment the vendored catalogue anchors it (as the call centre's is), the rule allows it.
-        anchored = self.catalogue.text.replace(
-            'REGEXP_EXTRACT(jsonPayload.exc, "([A-Za-z_]', 'REGEXP_EXTRACT(jsonPayload.exc, "(?:^|\\\\n)([A-Za-z_]')
-        self.assertNotEqual(anchored, self.catalogue.text, "the CRM extractor's text moved; update this test")
+        self.assertNotEqual(crm_class, [])
+        # ...and the moment a vendored catalogue un-anchors it, the rule takes the label off again.
+        unanchored = self.catalogue.text.replace(
+            'REGEXP_EXTRACT(jsonPayload.exc, "(?:^|\\\\n)([A-Za-z_]', 'REGEXP_EXTRACT(jsonPayload.exc, "([A-Za-z_]')
+        self.assertNotEqual(unanchored, self.catalogue.text, "the CRM extractor's text moved; update this test")
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "monitoring.yml"
-            path.write_text(anchored)
-            self.assertEqual(cat.Catalogue(path).unanchored_labels("crm", "errors"), set())
-        self.assertEqual(self.catalogue.unanchored_labels("cc", "errors"), set(), "the call centre's is anchored")
+            path.write_text(unanchored)
+            self.assertEqual(cat.Catalogue(path).unanchored_labels("crm", "errors"), {"class"})
 
     def test_every_quiet_token_names_a_known_sweep_or_database(self):
         known = set(gen.SWEEPS) | set(gen.DATABASES)

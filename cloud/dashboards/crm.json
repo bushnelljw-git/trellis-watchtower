@@ -617,8 +617,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Errors, by service",
-      "description": "The CRM's lines at ERROR. Beta counts them as `crm_errors` (the CRM shares the app project); a CRM project of its own as `errors`. By service only: the catalogue's CRM class extractor is not anchored, so its class could be a word out of free text (until tpa-platform anchors it).",
+      "title": "Errors, by class",
+      "description": "The CRM's lines at ERROR. Beta counts them as `crm_errors` (the CRM shares the app project); a CRM project of its own as `errors`.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -649,7 +649,8 @@
               "cloud_run_revision"
             ],
             "groupBys": [
-              "resource.label.service_name"
+              "resource.label.service_name",
+              "metric.label.class"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
@@ -657,7 +658,7 @@
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "{{resource.label.service_name}}"
+          "aliasBy": "{{resource.label.service_name}} {{metric.label.class}}"
         },
         {
           "refId": "B",
@@ -682,7 +683,8 @@
               "crm-web|engine"
             ],
             "groupBys": [
-              "resource.label.service_name"
+              "resource.label.service_name",
+              "metric.label.class"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
@@ -690,7 +692,7 @@
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "{{resource.label.service_name}}"
+          "aliasBy": "{{resource.label.service_name}} {{metric.label.class}}"
         }
       ],
       "interval": "1m",

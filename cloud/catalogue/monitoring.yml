@@ -188,7 +188,11 @@ projects:
           AND jsonPayload.logger=~"^(auth|uvicorn)"
           AND jsonPayload.level="ERROR"
         labels:
-          class: 'REGEXP_EXTRACT(jsonPayload.error, "^([A-Za-z_][A-Za-z0-9_.]*)")'
+          # A leading name followed by a colon or nothing (the dashboard
+          # reviewer's sweep, 2026-10-11): auth writes the class's name alone
+          # here (auth/logging.py), and a line of free text gives no class,
+          # never its first word.
+          class: 'REGEXP_EXTRACT(jsonPayload.error, "^([A-Za-z_][A-Za-z0-9_.]*)(?::|$)")'
           operation: 'EXTRACT(jsonPayload.msg)'
           code: 'EXTRACT(jsonPayload.reason)'
 
@@ -1077,7 +1081,7 @@ projects:
           service: 'EXTRACT(protoPayload.serviceName)'
           outcome: 'EXTRACT(protoPayload.metadata.dryRun)'
 
-      # D-137 (2026-10-11; TP-151): the PHI project's alert editors change and
+      # D-138 (2026-10-11; TP-152): the PHI project's alert editors change and
       # silence existing policies and make nothing new (tpaAlertEditor, row
       # 168), and an edit of an existing policy is the residual: its condition
       # can still be rewritten. So every change to a policy or a channel
@@ -1088,7 +1092,9 @@ projects:
       # is read (the module refuses them by name).
       # A snooze counts too (the re-review, 2026-10-11): silencing is the
       # step before an unseen edit, so a snooze made or changed pages, as
-      # the edit does. Snoozes have no delete: one ends by an update of its
+      # the edit does, except one that covers this alarm's own policy, which
+      # silences the incident its own entry opens (docs/infra/monitoring.md
+      # §7, the three silent changes). Snoozes have no delete: one ends by an update of its
       # interval, UpdateSnooze. CreateSnooze and UpdateSnooze are Admin
       # Activity entries (Cloud Monitoring's audit logging page); Get and
       # List are Data Access, never read here.
@@ -1114,7 +1120,7 @@ projects:
         labels:
           operation: 'EXTRACT(protoPayload.methodName)'
 
-      # D-141 (the owner, 2026-10-11: "Yes, with an alert"): grp-platform-admin
+      # D-142 (the owner, 2026-10-11: "Yes, with an alert"): grp-platform-admin
       # adds and changes this project's log metrics (tpaLogMetricWriter, row
       # 174), and every change sends an alert so it is always visible. The
       # three Admin Activity methods of MetricsServiceV2 (Cloud Logging's
@@ -1325,7 +1331,7 @@ projects:
                 metric.type = "logging.googleapis.com/user/perimeter_violations" AND resource.type = "audited_resource"
               group_by_fields: ["metric.label.code", "metric.label.service", "metric.label.outcome"]
 
-      # D-137 (2026-10-11): the detective half of row 168's narrowing. Normal
+      # D-138 (2026-10-11): the detective half of row 168's narrowing. Normal
       # routing: a change is to be read, not an outage. An apply of this
       # catalogue opens it too.
       monitoring-changed:
@@ -1333,7 +1339,7 @@ projects:
         documentation: >-
           An alert policy or a notification channel in the PHI project was
           created, changed or deleted, a channel verified, or a snooze made or
-          changed (D-137). Its alert editors (row 168) may change and snooze
+          changed (D-138). Its alert editors (row 168) may change and snooze
           existing policies and make nothing new, and an apply of the
           catalogue changes them too: beta's between-sessions stop and start
           (staffed-apply.md S1, S2) delete and recreate policies here, so each
@@ -1354,14 +1360,14 @@ projects:
                 metric.type = "logging.googleapis.com/user/monitoring_changes" AND resource.type = "audited_resource"
               group_by_fields: ["metric.label.operation"]
 
-      # D-141 (the owner, 2026-10-11: "Yes, with an alert"): the log metrics'
+      # D-142 (the owner, 2026-10-11: "Yes, with an alert"): the log metrics'
       # own change alarm, beside monitoring-changed. Normal routing (a
       # WARNING): a change is to be read, not an outage.
       log-counters-changed:
         display_name: "a log metric changed"
         documentation: >-
           A log-based metric in the PHI project was created, changed or
-          deleted (D-141). Its log metric writers (row 174, grp-platform-admin)
+          deleted (D-142). Its log metric writers (row 174, grp-platform-admin)
           may add and change them, and every change sends this alert so it is
           always visible; an apply of the catalogue changes them too. The
           counters are what the PHI project's alerts read, so a counter whose
@@ -1371,16 +1377,35 @@ projects:
           announced, or one to `monitoring_changes` or `log_metric_changes`
           themselves, is a finding; the next apply puts the catalogue's
           counters back.
+        # One condition per resource type the counter's series can land on,
+        # any of them opening the policy (the re-review's "land after",
+        # 2026-10-11). A condition's filter must name one resource type
+        # (Google refuses one without; the module's validation), and the
+        # filter grammar takes one type per comparison, so three conditions
+        # rather than one: `metric`, the type Cloud Logging writes a log
+        # metric's audit entries on (Logging's resource list: "Metric Type",
+        # labels project_id and name); `audited_resource`, the generic type
+        # Cloud Audit Logs and Cloud Monitoring share; and `global`, where a
+        # series goes whose entry's type Cloud Monitoring does not hold. A
+        # condition on a type with no series never opens. The metric's name is
+        # the project's alone, so no condition reads another counter.
+        # UNVERIFIED which one carries it: infra/README.md reads the entry's
+        # type before the apply and the series' type after it.
         conditions:
-          # Cloud Logging writes a log metric's audit entries on its `metric`
-          # resource (Logging's resource list: "Metric Type", labels
-          # project_id and name), which is also a Cloud Monitoring resource
-          # type, so the counter's series lands there. UNVERIFIED until read:
-          # infra/README.md's "before you apply" reads one entry's type.
-          - name: "a log metric change in the Admin Activity log"
+          - name: "a log metric change in the Admin Activity log (on metric)"
             threshold:
               filter: >-
                 metric.type = "logging.googleapis.com/user/log_metric_changes" AND resource.type = "metric"
+              group_by_fields: ["metric.label.operation"]
+          - name: "a log metric change in the Admin Activity log (on audited_resource)"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/log_metric_changes" AND resource.type = "audited_resource"
+              group_by_fields: ["metric.label.operation"]
+          - name: "a log metric change in the Admin Activity log (on global)"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/log_metric_changes" AND resource.type = "global"
               group_by_fields: ["metric.label.operation"]
 
       # Its own key since 2026-10-11, when `canary-sql` became the shared
@@ -1475,14 +1500,20 @@ projects:
       errors:
         description: >-
           ERROR lines of the CRM's services. Their formatter writes the whole
-          formatted exception to `exc`, so only the class name at the start of
-          its last line is read, and nothing else of the line.
+          formatted exception to `exc`, so only the class name a whole last
+          line opens with is read (`Class` or `Class: ...`), and nothing else;
+          a last line of free text gives no class.
         filter: |
           resource.type="cloud_run_revision"
           AND jsonPayload.logger:*
           AND (jsonPayload.level="ERROR" OR jsonPayload.level="error")
         labels:
-          class: 'REGEXP_EXTRACT(jsonPayload.exc, "([A-Za-z_][A-Za-z0-9_.]*)(?:: [[:print:]]*)?$")'
+          # Anchored to a line's start, as the call centre's (the review's
+          # finding 4; the dashboard reviewer, 2026-10-11): unanchored, a
+          # message running onto "...for Jane Doe" read the class "Doe", a
+          # person's name in a label that reaches PagerDuty, email and the
+          # dashboards.
+          class: 'REGEXP_EXTRACT(jsonPayload.exc, "(?:^|\\n)([A-Za-z_][A-Za-z0-9_.]*)(?::[^\\n]*)?$")'
 
     error_metrics:
       errors:

@@ -4703,7 +4703,8 @@
               "cloud_run_revision"
             ],
             "groupBys": [
-              "resource.label.service_name"
+              "resource.label.service_name",
+              "metric.label.class"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
@@ -4740,7 +4741,8 @@
               "crm-web|engine"
             ],
             "groupBys": [
-              "resource.label.service_name"
+              "resource.label.service_name",
+              "metric.label.class"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
