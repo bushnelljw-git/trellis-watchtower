@@ -114,3 +114,9 @@ PHI, docs/REQUESTS.md asks the TPA repos for a fourth exception fact: the innerm
   call-centre projects, with nine dashboards checked against tpa-platform's metric catalogue. The owner ruled yes on
   2026-10-11 ("Yes, everything"); the cloud half is tpa-platform's, being built. `make cloud-image-check` builds and
   checks it offline. See [cloud/README.md](cloud/README.md).
+- **Synthetic journeys.** [synthetics/](synthetics/) is the runner for the sign-in journeys (bodyfirst
+  `tasks/reliability/SYNTHETICS-DESIGN.md` §3): standard-library Python in a no-shell image, one Cloud Run job per
+  journey (staff sign-in, the ops desk, and the CRM behind a flag), through IAP as a robot Google account, writing
+  one result line that tpa-platform's `synthetic_results` metric reads. The jobs, schedules and alerts are
+  tpa-platform's. `make synthetics-test` runs it against local fakes; `make synthetics-image-check` builds and checks
+  the image offline. See [synthetics/README.md](synthetics/README.md).

@@ -15,6 +15,9 @@
 #   make stub-test     negative test of the database body-match probes
 #   make pagerduty-test  the PagerDuty scripts against local fakes (also run by check)
 #   make pagerduty-plan  pd_setup.py dry run against the live PagerDuty account (reads only)
+#   make synthetics-test the synthetic journeys against local fakes (also run by check)
+#   make synthetics-image-check build synthetics/'s image under a throwaway tag, check it as
+#                      tpa-platform's builder does, run it offline, remove it
 #
 # Every docker compose call names this project's own file, so nothing here can
 # act on another project's containers.
@@ -34,10 +37,10 @@ MIN_FREE_MB ?= 4096
 # The pinned image of a compose service, read from compose.yml (one source).
 img = $$($(CHECK_ENV) $(COMPOSE) -f compose.yml --profile db --profile test config --format json | jq -r '.services["$(1)"].image')
 
-.PHONY: help up down check lint probe-check scrub-check stub-test disk-guard pagerduty-test pagerduty-plan cloud-dashboards cloud-image-check
+.PHONY: help up down check lint probe-check scrub-check stub-test disk-guard pagerduty-test pagerduty-plan cloud-dashboards cloud-image-check synthetics-test synthetics-image-check
 
 help:
-	@sed -n '3,18p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,21p' Makefile | sed 's/^# \{0,1\}//'
 
 disk-guard:
 	@free=$$(docker run --rm $(call img,stub) df -Pm / | awk 'NR==2{print $$4}'); \
@@ -81,6 +84,7 @@ lint:
 	@echo "== cloud dashboards: the vendored catalogue, the datasources, the render script"
 	@python3 -m unittest discover -s tests/cloud -q
 	@$(MAKE) --no-print-directory pagerduty-test
+	@$(MAKE) --no-print-directory synthetics-test
 
 cloud-dashboards:
 	@python3 scripts/cloud_dashboards.py
@@ -94,6 +98,13 @@ pagerduty-test:
 
 pagerduty-plan:
 	@python3 scripts/pagerduty/pd_setup.py
+
+synthetics-test:
+	@echo "== synthetics (local fakes only)"
+	@python3 -m unittest discover -s tests/synthetics -q
+
+synthetics-image-check: disk-guard
+	@./scripts/synthetics_image_check.sh
 
 probe-check:
 	@./scripts/probe_check.sh

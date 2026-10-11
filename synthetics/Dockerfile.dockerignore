@@ -1,0 +1,4 @@
+# The build context of synthetics/Dockerfile (the repository root): only the package's modules and the strip script.
+*
+!synthetics/*.py
+!scripts/image_strip.py

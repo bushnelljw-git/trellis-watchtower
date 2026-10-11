@@ -1,0 +1,160 @@
+# synthetics: the sign-in journeys
+
+The runner for bodyfirst `tasks/reliability/SYNTHETICS-DESIGN.md` §3 (piece 4): a standard-library Python package
+and its image. tpa-platform runs it as one Cloud Run job per journey on Cloud Scheduler (piece 5), and its log
+metric `synthetic_results` reads the one line each run writes. There is no phone-call journey: the owner answered
+Q4 "No" (design §9).
+
+```
+python -I -m synthetics journey <staff-sign-in|ops-desk|crm> [--no-iap]
+```
+
+## The journeys
+
+Each is a fixed list of steps that stops at the first failure. One password and one TOTP code per run, never
+retried (auth accepts a TOTP step once and charges a refused code to the lockout budget). A run that got a session
+always signs out, also when a later step failed. Past the sign-in everything is a read.
+
+| Job | Severity (design §5) | Steps, in order |
+|---|---|---|
+| `staff-sign-in` (J1) | CRITICAL | `config`, `secrets`, `iap_token`; on the ops host: `ops_shell` (`GET /ops/`, 200 with `<base href="/ops/">`), `ops_release` (`GET /ops/release.json`, a JSON object), `login` (`POST /auth/login`, a challenge offering `totp`), `mfa_verify` (`POST /auth/mfa/verify`, which must set `__Host-tpa-session` and `__Host-tpa-csrf`), `me` (`GET /auth/me`), `desk_version` (`GET /tpa/api/v1/desk/cases/version`, counts only, reaches tpa-db), `logout` (`POST /auth/logout` with `X-CSRF-Token`, 204); then on the portal host: `portal_shell` (`GET /tpa/`, 200 with `<base href="/tpa/">`) |
+| `ops-desk` (J2) | CRITICAL | `config`, `secrets`, `iap_token`, `login`, `mfa_verify`, `live_queue` (`GET /tpa/api/v1/live/queue`, the non-touching snapshot through svc-ops), `desk_version_employers` (`GET /tpa/api/v1/desk/cases/version?scope=employers`), `logout` |
+| `crm` (J3) | WARNING | Only with `SYNTHETICS_CRM_ENABLED=true`; otherwise `skipped` / `not_configured` at once, reading nothing and sending nothing, exit 0. Switched on: `config`, `secrets`, `iap_token`, `crm_shell` (`GET /`, `<base href="/">`), `login` (`POST /api/v1/auth/login`, `mfa_required` with method `totp`), `mfa_verify` (`POST /api/v1/auth/mfa/verify`, a bearer token), `me` (`GET /api/v1/auth/me` with that bearer in `Authorization`), `logout` (`POST /api/v1/auth/logout`). The CRM lane owns its synthetic user (`seed-crm`'s synthetic mode, `synthetic-crm-credentials`) and its cheapest list read, which it adds here when it switches the flag on |
+
+Every request carries `Sec-Fetch-Site: same-origin`; every write carries `Origin`. No redirect is followed. No proxy
+from the environment is used.
+
+## The result line
+
+Exactly one line per run on stdout, compact JSON, keys in this order, and nothing on stderr (argparse's usage on a
+bad command line is the one exception, with exit 2 and no line). `tests/synthetics/test_result.py` pins these three
+lines byte for byte, and checks this file still carries them:
+
+```
+{"severity":"INFO","level":"INFO","message":"synthetic_result","job":"staff-sign-in","outcome":"pass","code":"ok","step":"none","status_class":"2xx","elapsed_ms":4210,"steps_ms":{"config":0,"secrets":0,"iap_token":38,"ops_shell":61,"ops_release":22,"login":180,"mfa_verify":96,"me":41,"desk_version":133,"logout":35,"portal_shell":58}}
+{"severity":"ERROR","level":"ERROR","message":"synthetic_result","job":"ops-desk","outcome":"fail","code":"status","step":"live_queue","status_class":"5xx","elapsed_ms":15022,"steps_ms":{"config":0,"secrets":0,"iap_token":40,"login":171,"mfa_verify":90,"live_queue":15001}}
+{"severity":"INFO","level":"INFO","message":"synthetic_result","job":"crm","outcome":"skipped","code":"not_configured","step":"none","status_class":"none","elapsed_ms":0,"steps_ms":{}}
+```
+
+| Field | Values |
+|---|---|
+| `severity`, `level` | `INFO` for a pass or a skip, `ERROR` for a failure. Both: Cloud Logging lifts `severity` into the entry's severity; `level` is tpa-platform's own line field |
+| `message` | always `synthetic_result` (the metric's filter) |
+| `job` | `staff-sign-in`, `ops-desk`, `crm` |
+| `outcome` | `pass`, `fail`, `skipped` |
+| `code` | a pass is `ok`; a skip is `paused` or `not_configured`; a failure is one of `config` (a missing or bad setting, or an unreadable or malformed credentials file), `iap_token` (the metadata server gave no token), `iap` (IAP refused: a response with `X-Goog-IAP-Generated-Response: true`, a redirect to Google's sign-in, or a 401 or 403 on a shell step), `connect`, `tls`, `timeout`, `redirect` (any other 3xx), `status` (an unexpected status), `credentials` (a 401 at `login` or `mfa_verify`), `locked` (423), `rate_limited` (429), `csrf` (logout refused with a 403, or no CSRF cookie to send), `shape` (a 2xx without what the step needs), `internal` (a bug in the runner) |
+| `step` | `none` for a pass or a skip; for a failure the step it failed at: `config`, `secrets`, `iap_token`, `ops_shell`, `ops_release`, `crm_shell`, `login`, `mfa_verify`, `me`, `desk_version`, `live_queue`, `desk_version_employers`, `logout`, `portal_shell` |
+| `status_class` | the failing response's class, or the last response's on a pass: `2xx`, `3xx`, `4xx`, `5xx`, or `none` (no response: a skip, a transport failure, a timeout) |
+| `elapsed_ms` | the whole run, whole milliseconds (it includes a wait of up to 8 s for a fresh TOTP step) |
+| `steps_ms` | each step that ran, in order, whole milliseconds |
+
+**For the tpa-platform lane:** the metric's labels are `job`, `outcome`, `code` and `status_class`, all on
+docs/infra/monitoring.md §2's closed list. `step` and `steps_ms` are fields only; `step` is not on that list, so
+making it a label is a contract change there. Every value above comes from a closed list in `result.py` and the
+renderer refuses anything else, so no id, URL, address, token, cookie, code, password, body or exception text can
+reach the line.
+
+**Exit status:** 0 on `pass` and `skipped`; 1 on `fail`; 2 on a bad command line. This follows the build brief
+("non-zero on fail"), not design §3's "it exits 0 either way". With `max_retries = 0` a failed run is then also a
+failed job execution, so tpa-platform's `jobs-failed` must leave out the `synthetics-` jobs, or a failure pages
+through both it and `synthetic-failing`.
+
+## What the job sets
+
+| Environment | J1 | J2 | J3 | Value |
+|---|---|---|---|---|
+| `SYNTHETICS_BASE_URL` | yes | yes | yes | the ops host's origin (J1, J2), the CRM host's (J3): `https://host`, no path |
+| `SYNTHETICS_PORTAL_BASE_URL` | yes | | | the portal host's origin (the same as the ops host's while it is single-origin, until R183) |
+| `SYNTHETICS_EMAIL` | yes | yes | yes | `synthetic-staff@<org_domain>`, `synthetic-desk@<org_domain>`, the CRM user's |
+| `SYNTHETICS_CREDENTIALS_FILE` | yes | yes | yes | the path the credentials secret is mounted at |
+| `SYNTHETICS_IAP_AUDIENCE` | yes | yes | yes | `var.iap_oauth_client_id`, R298's External client (no `programmatic_clients` entry, per the design) |
+| `SYNTHETICS_PAUSED` | | | | `true` while a needed database is stopped: `skipped` / `paused`, nothing sent. A second guard beside the paused schedule |
+| `SYNTHETICS_CRM_ENABLED` | | | yes | `true` once the CRM lane has its user and endpoints; anything else is `not_configured` |
+| `SYNTHETICS_STEP_TIMEOUT_S` | | | | per request, default 15, at most 60 |
+| `SYNTHETICS_DEADLINE_S` | | | | the whole run, default 100, at most 110 (the job's `task_timeout` is 120) |
+| `SYNTHETICS_CA_FILE` | | | | local only: the one CA to trust (the cloud uses the system store) |
+| `SYNTHETICS_METADATA_HOST` | | | | tests only: the fake metadata server. Unset in the cloud |
+
+**The secrets** (design §3): `synthetic-staff-credentials` (J1), `synthetic-desk-credentials` (J2), and the CRM
+lane's `synthetic-crm-credentials` (J3), each one version, mounted as a file pinned to
+`var.synthetic_credentials_versions` (never `latest`), holding exactly
+
+```
+{"password": "...", "totp_secret": "<base32>"}
+```
+
+`sa-synthetics` is their one accessor. The file is read once per run; its values live in memory only and are never
+printed. A missing, unreadable, oversized or malformed file, an empty password or a TOTP secret that is not base32 is
+`fail` / `config` at step `secrets`.
+
+**The job:** args `["journey", "<name>"]`; `task_timeout` 120 s; `max_retries` 0 (a retry would replay a TOTP step);
+egress only to the edge addresses (the metadata server is always reachable).
+
+## IAP, programmatically
+
+- **The token.** `GET http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=<SYNTHETICS_IAP_AUDIENCE>&format=full`
+  with `Metadata-Flavor: Google`: Cloud Run's metadata server, as the job's own service account, never through a
+  proxy. It must answer 200 with a JWT; anything else is `iap_token`. One token per run, used for both hosts.
+- **The header.** `Proxy-Authorization: Bearer <token>` on every request to the edge, and `Authorization` left empty
+  (J1, J2), so auth never reads Google's token as a session bearer (AN-01). Google's programmatic-access page
+  ("Authenticating from a service account", `docs.cloud.google.com/iap/docs/authentication-howto`, read
+  2026-10-11): "If a valid ID token is found in a `Proxy-Authorization` header, IAP authorizes the request with it.
+  After authorizing the request, IAP passes the `Authorization` header to your application without processing the
+  content." That is what J3 relies on: IAP's token in `Proxy-Authorization`, the CRM's bearer in `Authorization`.
+- **Unverified:**
+  - Whether IAP removes a *valid* `Proxy-Authorization` before the backend. The page says it strips the header
+    when it finds no valid token there, and is silent on the valid case. If web or the CRM sees it, add it to web's
+    strip list (design §3, class 1).
+  - The same page tells you to add the OAuth client to the application's programmatic-access allowlist. The design
+    reads R298's External client (IAP's own client on these backends) as needing no `programmatic_clients` entry.
+    The first beta run settles it: a 401 at `ops_shell` with code `iap` means the entry is needed.
+  - `X-Goog-IAP-Generated-Response: true` on IAP's own refusals, which `iap` uses. A 401 or 403 on a shell step is
+    read as `iap` either way.
+
+## The image
+
+`synthetics/Dockerfile`, built from the repository root (its last step bind-mounts `scripts/image_strip.py`), with
+`synthetics/Dockerfile.dockerignore` keeping the context to the modules and the strip script:
+
+- `python:3.12-slim` pinned by digest (tpa-platform's Python images' digest);
+- the modules copied straight into site-packages, root's and read-only (no pip, no lock: standard library only);
+- `scripts/image_strip.py`, byte for byte tpa-platform's (`tests/synthetics/test_image_policy.py` pins its sha256),
+  as the last build step: no shell, package manager, network tool, perl, Python installer or setuid program;
+- `USER 10001:10001`; `ENTRYPOINT ["python", "-I", "-m", "synthetics"]`; no CMD.
+
+No scan exception is needed: tpa-platform's images on the same base pass its gate with none, and
+`security/scan-exceptions.yaml`'s entries are Grafana's.
+
+**For tpa-platform's builder** (piece 5, class 2): a `cloudbuild/pipeline.py` row
+`"watchtower-synthetics": Service("trellis-watchtower", "synthetics/Dockerfile", ".", "trellis-watchtower/watchtower-synthetics", "trellis-watchtower")`,
+and `scripts/image_start_check.sh`'s case
+`watchtower-synthetics) source=".sources/trellis-watchtower"; dockerfile="synthetics/Dockerfile"; context="."; sources=""; package="synthetics" ;;`.
+Its generic Python path then fits as it is: the configured user is 10001:10001, `id -u` and `id -g` say 10001 with no
+network, and `python -I -c "import synthetics"` imports (importing does nothing).
+
+`make synthetics-image-check` is this repository's own proof of the same: it builds the image, checks the user, `id`,
+the import, the CA bundle and that no shell starts, then runs the entrypoint offline (paused, J3 off, no
+configuration, no metadata server, no arguments) and removes the image.
+
+## Locally
+
+The :4310 stack has no IAP, so `--no-iap` runs without a token or `Proxy-Authorization`, and refuses any base URL that
+is not a loopback host. With a seeded `ops_agent` (auth-notary's `auth seed`: the shared seed password and
+`SEED_TOTP_SECRET`) in a mode-600 credentials file:
+
+```
+SYNTHETICS_BASE_URL=https://localhost:4310 SYNTHETICS_PORTAL_BASE_URL=https://localhost:4310 \
+SYNTHETICS_EMAIL=ops_agent.second@example.test SYNTHETICS_CREDENTIALS_FILE=<file> \
+SYNTHETICS_CA_FILE="$(mkcert -CAROOT)/rootCA.pem" \
+python3 -m synthetics journey staff-sign-in --no-iap
+```
+
+Wait out the account's last TOTP step first (30 s since its last sign-in), or auth refuses the code as a replay.
+
+## Tests
+
+`make synthetics-test` (part of `make check`): the journeys against a local fake of the metadata server, IAP, auth,
+tpa-api and the CRM (`tests/synthetics/synthetic_fakes.py`): a pass, each step failing, IAP's refusals, redirects,
+timeouts, dropped connections, TLS, configuration, pausing, J3's flag; RFC 6238's vectors; the golden lines; the
+image's policy, read statically; and no secret on stdout or stderr on any path, in-process and through the real
+entry point.

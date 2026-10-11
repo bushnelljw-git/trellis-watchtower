@@ -1,8 +1,11 @@
-# Accepted exceptions to the vulnerability gate of this repository's one
-# cloud image, the monitoring website's Grafana (cloud/, D-145), which
-# tpa-platform's shared image builder builds and signs with this repository's
-# own key (image-signing/trellis-watchtower). The builder reads THIS file, at
-# the image's own commit, never another repository's.
+# Accepted exceptions to the vulnerability gate of this repository's cloud
+# images, the monitoring website's Grafana (cloud/, D-145) and the synthetic
+# journeys (synthetics/), which tpa-platform's shared image builder builds and
+# signs with this repository's own key (image-signing/trellis-watchtower). The
+# builder reads THIS file, at the image's own commit, never another
+# repository's. The synthetics image (python:3.12-slim by tpa-platform's
+# digest, standard library only) needs no entry: tpa-platform's images on the
+# same base pass with none.
 #
 # The builder's policy step fails an image, and nothing is signed or tagged,
 # when Container Analysis reports a finding whose effectiveSeverity is
