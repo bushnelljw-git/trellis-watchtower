@@ -6,7 +6,7 @@
 modules:
   # Any 2xx. tpa-api /health and /ready, auth /ready, records /ready,
   # feed-ingest /healthz, web /ready (overlay), connectors and drains /health
-  # (overlay), the Fly portal.
+  # (overlay).
   http_ready:
     prober: http
     timeout: 5s
@@ -17,7 +17,6 @@ modules:
 
   # network /api/v1/health -> {"status":"ok","database":true,"version":"2.0.0"}
   # network /tpa/health    -> {"ok":true,"service":"tpa-engine","database":true,...}
-  # Fly bodyf1rst-network  -> same body as the first.
   http_json_db_ok:
     prober: http
     timeout: 5s

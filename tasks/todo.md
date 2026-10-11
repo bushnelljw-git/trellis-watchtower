@@ -7,7 +7,7 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
 - [x] W1 Local metrics: compose, blackbox, Prometheus with rules (and rule unit tests), two postgres exporters, a GET-only socket proxy, a Makefile with a disk guard, `.env.example`. `tpa-net` is manual opt-in only.
 - [x] W2 Local logs: Loki 3.7 with structured metadata, an Alloy allowlist plus a fail-closed scrub, fixtures, `scrub_check` (36 assertions), `stub_test`.
 - [x] W3 11 dashboards (overview is home; errors; staleness for connectors, drains, auth-publisher, auth-sweeper), `dashboard_lint` plus a test, `docs/SIGNALS.md`, README.
-- [x] F `scripts/fly-uptime-checks.sh` written. Dry run checked; `--apply` tested against a fake gcloud. **Not run** (needs the owner's OK, a Slack channel id, email and phone).
+- [x] F Dropped: no Fly systems (owner, 2026-10-11). `scripts/fly-uptime-checks.sh` was written and never run; it is removed (see NF below).
 - [x] P1 tpa-platform `infra/modules/monitoring` + `infra/monitoring.yml` in both environments, D-65, `docs/infra/monitoring.md`, shape and golden-line tests. Written, not applied.
 - [x] P2 `ing-monitoring` is the perimeter's fifth ingress rule in both environments. Written, not applied.
 - [x] P3 `cloud/` builds and runs with `--network none` (datasources provisioned; 401 without an IAP assertion). The tpa-platform half is the class 3 request (needs the owner).
@@ -127,6 +127,17 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   - [ ] For tpa-platform's lane: lift the hold, and drop the `www.gstatic.com` egress (`watch_key_egress_approved`,
     the `watch-run-egress` rule): the image no longer fetches anything.
 
+- [x] NF (2026-10-11, the owner: "There will be NO systems in fly ONLY the gcp project") every Fly piece removed,
+  branch `remove-fly`:
+  - [x] `prometheus/targets/fly.yml` (the `fly` stack's two laptop probes), the Fly production dashboard, and the
+    overview's `fly` row link.
+  - [x] The `fly` Prometheus datasource: out of provisioning, and listed under `deleteDatasources` so a Grafana whose
+    volume still holds it drops it. `FLY_ORG` and `FLY_PROM_TOKEN` out of `.env.example` and compose.
+  - [x] `scripts/fly-uptime-checks.sh` (never run, so nothing in `bodyf1rst-prod` to remove). The lint allows
+    `prometheus` and `loki` only.
+  - [x] README, SPEC (phase F dropped, owner decision, naming rules), SIGNALS, REQUESTS, PAGERDUTY and the forge and
+    errors dashboards' notes.
+
 ## Review
 
 ### 2026-10-11 (cloud dashboards)
@@ -171,6 +182,6 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
 - **Open for the owner:**
   - rule on the hosted-Grafana class 3 request;
   - decide who may change production alerts (`monitoring.editor`/`admin`) and whether a compliance channel exists;
-  - supply FLY_ORG and a read-only Fly token;
-  - OK the Fly script run in `bodyf1rst-prod`;
+  - ~~supply FLY_ORG and a read-only Fly token;~~ ~~OK the Fly script run in `bodyf1rst-prod`;~~ dropped: no Fly
+    systems (owner, 2026-10-11);
   - OK a GitHub remote and the commits.

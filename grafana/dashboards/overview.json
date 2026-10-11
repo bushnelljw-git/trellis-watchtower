@@ -103,7 +103,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(((stack:probe_success:max_over_time1h == 0)\nor\n  (1 + 0 * count by (stack) (\n      probe_success{job=\"blackbox\"} == 0\n      unless on (instance, probe) (probe_http_status_code{job=\"blackbox\", probe=\"db\"} >= 200 < 300)\n  ))\nor\n  (2 + 0 * count by (stack) (probe_success{job=\"blackbox\"} == 0))\nor\n  (3 + 0 * stack:probe_success:max_over_time1h)), \"dashboard\", \"tw-tpa-edge-api\", \"stack\", \"tpa\"), \"dashboard\", \"tw-crm-network\", \"stack\", \"network\"), \"dashboard\", \"tw-forge\", \"stack\", \"forge\"), \"dashboard\", \"tw-enroll\", \"stack\", \"enroll\"), \"dashboard\", \"tw-feed-ingest\", \"stack\", \"feed-ingest\"), \"dashboard\", \"tw-fly-production\", \"stack\", \"fly\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(((stack:probe_success:max_over_time1h == 0)\nor\n  (1 + 0 * count by (stack) (\n      probe_success{job=\"blackbox\"} == 0\n      unless on (instance, probe) (probe_http_status_code{job=\"blackbox\", probe=\"db\"} >= 200 < 300)\n  ))\nor\n  (2 + 0 * count by (stack) (probe_success{job=\"blackbox\"} == 0))\nor\n  (3 + 0 * stack:probe_success:max_over_time1h)), \"dashboard\", \"tw-tpa-edge-api\", \"stack\", \"tpa\"), \"dashboard\", \"tw-crm-network\", \"stack\", \"network\"), \"dashboard\", \"tw-forge\", \"stack\", \"forge\"), \"dashboard\", \"tw-enroll\", \"stack\", \"enroll\"), \"dashboard\", \"tw-feed-ingest\", \"stack\", \"feed-ingest\")",
           "legendFormat": "__auto",
           "range": false,
           "instant": true,

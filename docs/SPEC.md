@@ -29,7 +29,7 @@ The research found five constraints that shape the design:
   - The key stays in the owner's login keychain, and the scripts (`scripts/pagerduty/`) are run by a person. This repo
     still holds no key, no Terraform and no deploy identity. The design's details were decided by the orchestrating
     session, by delegation.
-  - The PagerDuty account is the TPA's. BodyF1rst's Fly checks in `bodyf1rst-prod` never page through it.
+  - The PagerDuty account is the TPA's.
 - **Hosted dashboard (2026-10-11):** asked "Do you want a private monitoring website (watch.<your domain>, behind
   Google sign-in) showing charts for the whole system? Alerts work the same either way; today you'd use Google's own
   console", the owner chose **"Yes, everything"**: *"Charts for the app, CRM, call centre AND health numbers
@@ -41,6 +41,9 @@ The research found five constraints that shape the design:
     dashboards over the catalogue's metrics, checked against a vendored, pinned copy of tpa-platform's
     `infra/monitoring.yml` ([cloud/README.md](../cloud/README.md)). tpa-platform's lane builds the cloud half after
     its alert-gaps branch lands. Still no Terraform, deploy identity or image push here.
+- **No Fly (2026-10-11):** *"There will be NO systems in fly ONLY the gcp project"*. Every Fly piece is removed: the
+  laptop probes of the Fly apps (the `fly` stack), the Fly production dashboard, the Fly Prometheus datasource
+  (`FLY_ORG`, `FLY_PROM_TOKEN`) and the Fly uptime-check script for `bodyf1rst-prod`. Phase F is dropped.
 
 ## Design decisions (stated, not asked)
 - **Clone with history** as asked. Rename `origin` to `upstream` with push disabled, and stop tracking `.env`. Put the new GitHub remote under `bushnelljw-git`, with the other TPA repos, created only on the owner's OK after a secret scan of history. The old watchtower is untouched and keeps watching BodyF1rst.
@@ -54,7 +57,7 @@ The research found five constraints that shape the design:
 - **Replace** Promtail (end of life) with **Grafana Alloy**.
 - **Upgrade** Grafana 11.4 to **12.x**.
 - **Where things live:**
-  - trellis-watchtower owns the local stack, all dashboards, the production Grafana image, Fly monitoring and the signal catalogue.
+  - trellis-watchtower owns the local stack, all dashboards, the production Grafana image and the signal catalogue.
   - tpa-platform/infra owns every GCP resource in the TPA projects.
   - trellis-watchtower holds **no Terraform and no deploy identity**.
 - **Production alerts live in Cloud Monitoring alert policies,** not Grafana alerting. They keep running when Grafana scales to zero, and this fixes the current watchtower's lost-silence problem. Grafana is stateless: dashboards only, provisioned from files.
@@ -69,10 +72,6 @@ The research found five constraints that shape the design:
     - Locally: Loki with LogQL.
     - In the cloud: a log-based counter in each project, with those labels only.
   - **Prometheus alone can't do this.** It only stores numbers the services export, and they export none. Loki locally, and log metrics in the cloud, are what turn error lines into groups.
-- **Fly production (network, portal, forge; enroll once it deploys):**
-  - Uptime checks and alert policies go in the existing **`bodyf1rst-prod`** project, created by a script in trellis-watchtower. BodyF1rst names can't go in TPA projects, and the old watchtower's Slack wiring already lives there.
-  - Local Grafana also reads Fly's hosted Prometheus with a read-only token.
-  - forge is private, so it is covered by Fly metrics only.
 
 ## Spec: what trellis-watchtower watches
 
@@ -83,8 +82,8 @@ The research found five constraints that shape the design:
 | records-service | compose `tpa` (8220) | `/ready` probe (database, revocations, JWKS); scrubbed logs | PHI project: log metrics for refusals by gate and code, `rate limited`, `audit flush failed`, `database unreachable`, mirror errors; chain-head and export job status |
 | feed-ingest | host process, console :8099 | `/healthz` probe | none (it has no cloud deployment by design) |
 | trellis | bundle in `web` | `/tpa/release.json` probe (shows the release id) | covered by the web uptime check |
-| bodyf1rst-network | host :8100, network-db 5434; Fly | probe `/api/v1/health` with a body match on `"database": true`; postgres_exporter; Fly datasource | Fly uptime checks with body match (bodyf1rst-prod); later GCP `crm` project metrics |
-| health-forge | host :8000, forge-db 5433; Fly (private) | body-match probe; postgres_exporter; Fly datasource | Fly metrics only |
+| bodyf1rst-network | host :8100, network-db 5434 | probe `/api/v1/health` with a body match on `"database": true`; postgres_exporter | GCP `crm` project metrics, once it runs there |
+| health-forge | host :8000, forge-db 5433 | body-match probe; postgres_exporter | added when it runs in GCP |
 | bodyf1rst-enroll | host :8400 (not deployed) | body-match probe (`"db": true`) | added when it deploys |
 
 **Rules the implementation must keep:**
@@ -139,7 +138,7 @@ The research found five constraints that shape the design:
   - rules: probe down, body mismatch, database down;
   - the `stack` label covers `tpa`, `network`, `forge`, `enroll` and `feed-ingest`, so a stack that isn't running reads as "not running", not as an outage.
 - **`Makefile`:** `up`, `down`, `check`, `probe-check`, `scrub-check`.
-- **`.env.example`:** database DSNs and `FLY_PROM_TOKEN`.
+- **`.env.example`:** the Grafana admin password and the database DSNs.
 
 **W2: local logs**
 - **`alloy/config.alloy`:** allowlist by the `com.docker.compose.project`/`service` labels, plus the drops and strips listed under the rules above.
@@ -150,19 +149,17 @@ The research found five constraints that shape the design:
   - `scripts/dashboard_lint.py` (rejects `requestUrl`, `uri` and id labels in any panel).
 
 **W3: dashboards and signal catalogue**
-- **`grafana/dashboards/`:** stack overview (the home page), TPA edge + API, auth, records, jobs + connectors, feed-ingest, CRM (network), forge, enroll, Fly production.
+- **`grafana/dashboards/`:** stack overview (the home page), TPA edge + API, auth, records, jobs + connectors, feed-ingest, CRM (network), forge, enroll.
 - **Errors dashboard** (over Loki, JSON lines at `level=ERROR`, grouped by `service`, `class`, `operation`/`route` and `sqlstate`):
   - a table of each group with count, first seen, last seen and release;
   - a "new in the last 24 h" panel using LogQL `unless … offset 24h`;
   - a trend per service.
   - network, forge and enroll join once their host logs are shown clean (W2).
-- **Fly datasource:** Fly's hosted Prometheus, token from `.env`.
 - **`docs/SIGNALS.md`:** each signal, its source, what red means, and who fixes it.
 - **README rewrite.**
 
-**F: Fly production paging** (running it needs the owner's OK)
-- `scripts/fly-uptime-checks.sh`: idempotent `gcloud` against `bodyf1rst-prod`. It creates body-match uptime checks for `bodyf1rst-network` and `bodyf1rst-portal`, alert policies, and email, text and Slack channels.
-- It sits alongside the old watchtower's existing checks and doesn't touch them.
+**F: Fly production paging.** Dropped: no Fly systems (owner, 2026-10-11). The script was never run, so nothing
+exists in `bodyf1rst-prod` to remove.
 
 **P1: TPA monitoring as code** (in tpa-platform; written and tested, **not applied**)
 - **Lane setup:** the lane loads the `trellis-security:tpa-platform` skill first and works on master in place.
@@ -236,7 +233,7 @@ The research found five constraints that shape the design:
 - An alert on the records audit-partition horizon, 2027-12 (records).
 - **Where an error happened** (tpa-platform, records, auth-notary): add a safe fourth fact to `exception_facts`, the innermost first-party frame as `module:function:line`. It holds no locals, no message and no values. It gives Sentry-style "where" with no PHI. It changes records `docs/04` §5.2 ("and no fourth"), so it goes through those repos' security review and trellis-security.
 - **Browser errors** (trellis + tpa-platform): today the portal reports nothing. Add a same-origin `POST /tpa/api/v1/client-errors` route that accepts only the error name, route template, component and release. It then feeds the same error metric. This means no new vendor, no CSP change, and no URLs or messages collected. It is recommended over Grafana Faro, whose SDK collects URLs (member ids in paths, TR-05) and error messages.
-- **Fly production errors** (network, forge, enroll): not covered until network moves to the GCP `crm` project, or until Fly logs are shipped somewhere. Out of scope for this plan.
+- **Production errors for network, forge and enroll:** not covered until each runs in GCP (network in the `crm` project). Out of scope for this plan.
 
 ## Verification
 - **Local:**
@@ -258,14 +255,12 @@ The research found five constraints that shape the design:
   - `binding_gate.py` on the updated fixture plan.
   - `contract_check.sh` for P3.
   - Nothing is applied.
-- **Fly:** a dry run of `fly-uptime-checks.sh` prints the `gcloud` calls. The real run waits for the owner's OK.
 
 ## Owner-gated (not done without the owner's word)
 - Applying P1, P2 or P3 to any cloud (class 3; no GCP organization exists yet).
 - Who holds `monitoring.editor`.
 - ~~The IAP exception and the contract revision.~~ Ruled yes by the owner, 2026-10-11 (the hosted dashboard).
 - Creating the GitHub remote.
-- Running the Fly script in `bodyf1rst-prod`.
 - Rebuilding `tpa-model-gateway` (the Member Ask session's container).
 
 ## Cost (production, once applied)
@@ -276,8 +271,8 @@ The research found five constraints that shape the design:
 The local stack (W1–W2) and the dashboards (W3) must both use these names exactly.
 
 **Prometheus (blackbox probes, `job="blackbox"`):**
-- `stack`: one of `tpa`, `network`, `forge`, `enroll`, `feed-ingest`, `fly`.
-- `service`: `web`, `web-tls`, `tpa-api`, `auth`, `records`, `connectors`, `tpa-jobs-drains`, `trellis`, `feed-ingest`, `network-engine`, `network-tpa`, `forge-engine`, `enroll-engine`, `fly-network`, `fly-portal`.
+- `stack`: one of `tpa`, `network`, `forge`, `enroll`, `feed-ingest`.
+- `service`: `web`, `web-tls`, `tpa-api`, `auth`, `records`, `connectors`, `tpa-jobs-drains`, `trellis`, `feed-ingest`, `network-engine`, `network-tpa`, `forge-engine`, `enroll-engine`.
 - `probe`: `health`, `ready`, `db` (body match on the database field), `release`, `tls`.
 - Series used: `probe_success`, `probe_duration_seconds`, `probe_http_status_code`.
 

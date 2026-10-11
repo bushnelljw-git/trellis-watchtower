@@ -887,7 +887,7 @@
       "title": "Coverage",
       "options": {
         "mode": "markdown",
-        "content": "Covered: the tpa compose services Alloy ships (web, web-tls, tpa-api, tpa-jobs-drains, connectors, auth and its workers, records), plus replayed fixtures (`stack=\"fixture\"`). Not covered yet: network, forge and enroll (host-process logs, shipped once each is shown clean), the portal in the browser (no client-errors route yet) and Fly production. An exception's location is not logged yet; see the `where` requests in docs/REQUESTS.md.",
+        "content": "Covered: the tpa compose services Alloy ships (web, web-tls, tpa-api, tpa-jobs-drains, connectors, auth and its workers, records), plus replayed fixtures (`stack=\"fixture\"`). Not covered yet: network, forge and enroll (host-process logs, shipped once each is shown clean) and the portal in the browser (no client-errors route yet). An exception's location is not logged yet; see the `where` requests in docs/REQUESTS.md.",
         "code": {
           "language": "plaintext",
           "showLineNumbers": false,

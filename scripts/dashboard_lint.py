@@ -6,7 +6,7 @@ Every dashboard fails when:
      `principal_id`, `sid`) in a query, a legend, a transformation, a template variable or a field override.
      Monitoring labels come from a closed allowlist (docs/SPEC.md, "Rules the implementation must keep"), so a
      panel that groups or filters on one of these is charting an id;
-  2. it uses a datasource uid outside its set: a local dashboard (grafana/dashboards) `prometheus`, `loki` or `fly`;
+  2. it uses a datasource uid outside its set: a local dashboard (grafana/dashboards) `prometheus` or `loki`;
      a cloud dashboard (cloud/dashboards, and its no-cc/ variants) exactly the uids declared under
      cloud/provisioning/datasources/;
   3. it has no uid, or a uid another dashboard already uses (a no-cc/ variant has its page's uid, and nothing else);
@@ -52,7 +52,7 @@ LOCAL_DIR = ROOT / "grafana" / "dashboards"
 CLOUD_DIR = ROOT / "cloud" / "dashboards"
 CLOUD_DATASOURCES = ROOT / "cloud" / "provisioning" / "datasources"
 
-LOCAL_UIDS = {"prometheus", "loki", "fly"}
+LOCAL_UIDS = {"prometheus", "loki"}
 # Grafana's own pseudo-datasources: the built-in annotation query and mixed/dashboard panels.
 BUILTIN_UIDS = {"-- Grafana --", "grafana", "-- Mixed --", "-- Dashboard --"}
 

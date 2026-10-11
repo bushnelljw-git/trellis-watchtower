@@ -423,7 +423,7 @@
       "title": "Signals",
       "options": {
         "mode": "markdown",
-        "content": "health-forge runs on :8000 with forge-db on 5433. In production it is private on Fly (flycast only), so the Fly production dashboard covers it with Fly metrics only.\n\nLogs from this host process are not shipped yet. docs/SPEC.md W2: host-process logs stay out until each is shown clean (their JSON formatters put the full traceback and every extra field on the line). See docs/REQUESTS.md \u00a73.",
+        "content": "health-forge runs on :8000 with forge-db on 5433. Its production signals are added when it runs in the GCP project.\n\nLogs from this host process are not shipped yet. docs/SPEC.md W2: host-process logs stay out until each is shown clean (their JSON formatters put the full traceback and every extra field on the line). See docs/REQUESTS.md \u00a73.",
         "code": {
           "language": "plaintext",
           "showLineNumbers": false,

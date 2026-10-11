@@ -19,7 +19,7 @@ alert policy (severity CRITICAL or WARNING)
   -> each person's notification rules (phone, SMS, app, email, Slack)
 ```
 
-Like `scripts/fly-uptime-checks.sh`, the scripts here are run by a person. The repo holds no key, no Terraform and no
+The scripts here are run by a person. The repo holds no key, no Terraform and no
 deploy identity. The PagerDuty key stays in the owner's login keychain.
 
 ## What exists in PagerDuty

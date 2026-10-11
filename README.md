@@ -17,15 +17,15 @@ The design is [docs/SPEC.md](docs/SPEC.md). Every signal, what red means and who
 | `forge` | health-forge on :8000, forge-db on 5433 | body-match probe; postgres_exporter |
 | `enroll` | bodyf1rst-enroll on :8400 | body-match probe |
 | `feed-ingest` | the feed-ingest console on :8099 | `/healthz` probe |
-| `fly` | bodyf1rst-network, bodyf1rst-portal and bodyf1rst-forge in production on Fly | probes from this laptop; Fly's hosted Prometheus; Cloud Monitoring uptime checks (below) |
 
 trellis-security is documentation, not a monitored target. A stack that is not running today shows as *not running*
-(grey), never as an outage.
+(grey), never as an outage. There are no Fly systems (owner, 2026-10-11): production is the GCP project only, so
+nothing here watches Fly.
 
 ## Local quick start
 
 ```bash
-cp .env.example .env         # then fill it in: Grafana admin password, the two postgres DSNs, optionally Fly
+cp .env.example .env         # then fill it in: Grafana admin password, the two postgres DSNs
 make up                      # start the stack
 make probe-check             # probe_success per stack, service and probe
 open http://127.0.0.1:4390   # Grafana: the Stack overview, as an anonymous Viewer
@@ -53,15 +53,11 @@ touches the :4310 stack's containers; it reads their logs through a socket proxy
   without it to detach. By default connectors and the drains are watched from their logs instead (the time since
   connectors' last `outcome="pass"` line and since the last drain run summary), and web through the :4310 release
   and TLS probes.
-- **Fly metrics are optional.** The Fly production dashboard's metric panels read Fly's hosted Prometheus and need
-  `FLY_ORG` (the org slug) and `FLY_PROM_TOKEN` (from `fly tokens create readonly`) in `.env`. Until both are set
-  those panels show a datasource error (401): missing configuration, not an outage. The Fly probes run from this
-  laptop regardless.
 - **Other targets.** `make check` validates every config with the pinned images. `make scrub-check` replays the log
   fixtures through Alloy and proves nothing unsafe is stored. `make stub-test` proves that a health body saying
   `"database": false` reads as down even with a 200. The Makefile header lists them all.
 - **Dashboards** are files in [grafana/dashboards/](grafana/dashboards/): a Stack overview (the home page), TPA edge
-  and API, auth, records, jobs and connectors, feed-ingest, CRM (network), forge, enroll, Fly production and Errors.
+  and API, auth, records, jobs and connectors, feed-ingest, CRM (network), forge, enroll and Errors.
   Each has the uid `tw-<file name>`, the tag `trellis-watchtower` plus a stack tag, and a 30 s refresh.
   `python3 scripts/dashboard_lint.py` must pass before a dashboard change is committed; its test is
   `python3 -m unittest discover -s tests/dashboards`.
@@ -118,20 +114,3 @@ PHI, docs/REQUESTS.md asks the TPA repos for a fourth exception fact: the innerm
   call-centre projects, with nine dashboards checked against tpa-platform's metric catalogue. The owner ruled yes on
   2026-10-11 ("Yes, everything"); the cloud half is tpa-platform's, being built. `make cloud-image-check` builds and
   checks it offline. See [cloud/README.md](cloud/README.md).
-
-## Fly paging
-
-The production BodyF1rst apps run on Fly. Their paging is Cloud Monitoring uptime checks in the existing
-`bodyf1rst-prod` project, created by [scripts/fly-uptime-checks.sh](scripts/fly-uptime-checks.sh). They never page
-through the TPA's PagerDuty account:
-
-- body-match checks on `https://bodyf1rst-network.fly.dev/api/v1/health` (`"database": true`) and
-  `https://bodyf1rst-portal.fly.dev/` (the page title), from three US regions every minute;
-- one alert policy per check, urgent (text, Slack and email), firing when 2 of the 3 regions fail;
-- email and SMS channels from `--email` and `--sms` (or `TW_ALERT_EMAIL` and `TW_ALERT_SMS`). The Slack channel is an
-  existing one passed by id (`--slack-channel`); the script never creates one and never handles a token.
-
-The script is a dry run by default and prints every `gcloud` call. `--apply` runs them, skipping anything whose
-`trellis-watchtower:` display name already exists, and it never touches the old watchtower's checks. **Running it
-with `--apply` needs the owner's OK.** The SMS channel must be verified in the console before it delivers. forge is
-private on Fly, so Fly metrics are its only production signal. Fly production errors are not covered yet.

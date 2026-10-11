@@ -36,7 +36,7 @@ Thumbs.db
 # Logs
 *.log
 
-# Local secrets (DSNs, Fly token)
+# Local secrets (DSNs, the Grafana admin password)
 .env
 
 # Scrub-test replay directory (scripts/scrub_check.sh)

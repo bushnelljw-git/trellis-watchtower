@@ -7,7 +7,7 @@ it. Names follow the contract at the end of [SPEC.md](SPEC.md) ("Naming rules sh
 - **Probe**: a blackbox probe scraped by Prometheus (`job="blackbox"`, labels `stack`, `service`, `probe`). A `db`
   probe matches the health body as well as the status, because these health endpoints answer 200 with their
   database down.
-- **Metric**: postgres_exporter (`job="postgres"`, `db`), or Fly's hosted Prometheus (datasource `fly`).
+- **Metric**: postgres_exporter (`job="postgres"`, `db`).
 - **LogQL**: Loki, over the scrubbed lines Alloy ships from the `tpa` compose project, using the stream labels
   `stack` and `service` and the structured metadata `level`, `exc_class`, `sqlstate`, `operation`, `route`,
   `outcome`, `status`, `job` and `lane`.
@@ -131,23 +131,6 @@ An **error group** is `service` + `exc_class` + (`operation` or `route`) + `sqls
 |---|---|---|---|---|
 | feed-ingest `health` | Probe: console :8099 `/healthz` | The console is not running (it is a host process with no cloud deployment by design) | Is the console process running? | feed-ingest |
 
-## Fly production (`tw-fly-production`)
-
-| Signal | Source | Red means | First check | Who fixes |
-|---|---|---|---|---|
-| fly-network `db` (laptop) | Probe: `https://bodyf1rst-network.fly.dev/api/v1/health`, body `"database": true` | Production network is down or reports its database down | `fly status -a bodyf1rst-network`, then the `bodyf1rst-pgvector` app | bodyf1rst-network |
-| fly-portal `health` (laptop) | Probe: `https://bodyf1rst-portal.fly.dev/index.html` | The partner portal is not served | `fly status -a bodyf1rst-portal`; did a deploy just run? | bodyf1rst-network (`web/`) |
-| Machines up | Metric (fly): `fly_instance_up` by `app` | An app has no machine reporting (every app keeps one running) | `fly status -a <app>` | The app's repository |
-| Edge 5xx ratio | Metric (fly): `fly_edge_http_responses_count` | Over 0.1% (the release-canary threshold) | `fly logs -a <app>` | The app's repository |
-| App p95, concurrency, CPU, memory | Metric (fly) | p95 or memory climbs toward the machine's limit | The app's own logs | The app's repository |
-| **Paging:** `trellis-watchtower: fly-network`, `fly-portal` uptime checks and their `… down` policies | Cloud Monitoring in `bodyf1rst-prod` (`scripts/fly-uptime-checks.sh`; not created until the owner says so) | The check fails from 2 of its 3 US regions. **Urgent**: text, Slack and email | The policy's documentation, then `fly status` | bodyf1rst-network |
-
-The Fly metrics need `FLY_ORG` (the org slug) and `FLY_PROM_TOKEN` (a read-only token from
-`fly tokens create readonly`) in `.env`. Until both are set, every Fly-metrics panel shows a datasource error (401):
-that is missing configuration, not an outage, and the dashboard says so. The two laptop probes do not depend on it.
-forge is private on Fly (flycast only), so Fly metrics are its only production signal. Fly production errors are not
-covered (SPEC.md, "Requests to other repos").
-
 ## Production TPA signals (cloud: the hosted dashboards)
 
 The TPA projects' production alerts are Cloud Monitoring alert policies in tpa-platform's `infra/modules/monitoring/`
@@ -185,5 +168,4 @@ Slack). A WARNING policy becomes a low-urgency P3 (app, email, Slack). A policy 
 urgency (the rules ignore letter case). The on-call person is on the "TPA primary on-call" schedule. A high-urgency
 page goes to level 2 after 15 minutes without an acknowledgement; low urgency never escalates. Slack
 messages come from PagerDuty in #tpa-beta-alerts. How it works, how to silence it, and how to test it are in
-[PAGERDUTY.md](PAGERDUTY.md). The Fly checks above page through `bodyf1rst-prod`'s own channels, never the TPA's
-PagerDuty.
+[PAGERDUTY.md](PAGERDUTY.md).

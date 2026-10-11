@@ -10,6 +10,10 @@ trellis-watchtower watches these repos but changes none of them. What it needs f
 
 Written 2026-09-24 by the watchtower session. Every file:line below was read at the commit named for its repo.
 
+**2026-10-11:** there are no Fly systems (owner: "There will be NO systems in fly ONLY the gcp project"). The
+`fly.toml` lines below are kept as the evidence read on 2026-09-24. The asks in §1 and §2 stand wherever the engines
+run: a health check that reads only the status code passes a `200` with the database down.
+
 ---
 
 ## 1. Health answers 503 when its database check fails
@@ -203,5 +207,5 @@ The model-gateway rebuild is the member Ask session's. A note to that session is
 
 ## Out of scope
 
-Fly production errors (network, forge, enroll) aren't covered. They will be once network moves to the GCP `crm`
-project, or once Fly logs are shipped somewhere (`docs/SPEC.md`).
+Production errors for network, forge and enroll aren't covered. They will be once each runs in GCP (network in the
+`crm` project; `docs/SPEC.md`).

@@ -43,8 +43,6 @@ services:
       - "127.0.0.1:4390:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
-      FLY_ORG: ${FLY_ORG:-}
-      FLY_PROM_TOKEN: ${FLY_PROM_TOKEN:-}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro

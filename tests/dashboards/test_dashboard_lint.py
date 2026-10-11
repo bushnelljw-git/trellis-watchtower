@@ -34,7 +34,7 @@ class DashboardLintTest(unittest.TestCase):
             "dashboard has no uid",
             "uid `tw-bad` is already used",
             # A cloud datasource has no place in a local dashboard.
-            "unknown datasource uid `cloud-app` (allowed: fly, loki, prometheus)",
+            "unknown datasource uid `cloud-app` (allowed: loki, prometheus)",
         ]:
             self.assertIn(expected, out)
 
