@@ -107,6 +107,11 @@ PHI, docs/REQUESTS.md asks the TPA repos for a fourth exception fact: the innerm
   Grafana scales to zero. They live in tpa-platform's `infra/modules/monitoring/` (log-based metrics, alert policies,
   uptime checks, notification channels), because tpa-platform is the only place GCP resources in the TPA projects are
   applied from. This repo holds no Terraform and no deploy identity. Nothing is applied yet.
+- **Paging.** Each TPA project's alert policies page through the TPA's PagerDuty account. Each project has one
+  service. Urgency follows the policy's severity, and the on-call schedule escalates to a second person after 15
+  minutes. Slack messages come from PagerDuty. `scripts/pagerduty/pd_setup.py` keeps the PagerDuty side as code
+  (applied 2026-10-11). `scripts/pagerduty/gcp_channels.py` makes each project's `pagerduty` notification channel,
+  run by a person with Monitoring rights there. See [docs/PAGERDUTY.md](docs/PAGERDUTY.md).
 - **Hosted Grafana.** [cloud/](cloud/) is the production image: Grafana 12 pinned by digest, signed in only by the
   IAP assertion on `watch.${domain}` for `grp-platform`, reading Cloud Monitoring for the app, crm and phi projects.
   It stays a laptop artifact until the owner rules on the class 3 request
@@ -116,7 +121,8 @@ PHI, docs/REQUESTS.md asks the TPA repos for a fourth exception fact: the innerm
 ## Fly paging
 
 The production BodyF1rst apps run on Fly. Their paging is Cloud Monitoring uptime checks in the existing
-`bodyf1rst-prod` project, created by [scripts/fly-uptime-checks.sh](scripts/fly-uptime-checks.sh):
+`bodyf1rst-prod` project, created by [scripts/fly-uptime-checks.sh](scripts/fly-uptime-checks.sh). They never page
+through the TPA's PagerDuty account:
 
 - body-match checks on `https://bodyf1rst-network.fly.dev/api/v1/health` (`"database": true`) and
   `https://bodyf1rst-portal.fly.dev/` (the page title), from three US regions every minute;

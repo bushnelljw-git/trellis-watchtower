@@ -19,6 +19,18 @@ The research found five constraints that shape the design:
 - **Dashboards:** the **platform team** (`grp-platform`) can open the production dashboards.
 - **Scope:** trellis-security is docs, not a monitored target.
 
+## Owner decisions (2026-10-11)
+- **PagerDuty:** *"This is my API key for pagerduty, i want everything set up very well with it."*
+  - TPA alerts now page people through the TPA's PagerDuty account. Each project's alert policies go to that project's
+    PagerDuty service, which sets urgency from the policy's severity, pages whoever is on call and escalates. See
+    [PAGERDUTY.md](PAGERDUTY.md).
+  - Slack goes through PagerDuty, so Google's own Slack channel stays unset. Google's own text message is dropped once
+    a PagerDuty test page reaches the owner's phone. Email from Google stays until the owner says otherwise.
+  - The key stays in the owner's login keychain, and the scripts (`scripts/pagerduty/`) are run by a person. This repo
+    still holds no key, no Terraform and no deploy identity. The design's details were decided by the orchestrating
+    session, by delegation.
+  - The PagerDuty account is the TPA's. BodyF1rst's Fly checks in `bodyf1rst-prod` never page through it.
+
 ## Design decisions (stated, not asked)
 - **Clone with history** as asked. Rename `origin` to `upstream` with push disabled, and stop tracking `.env`. Put the new GitHub remote under `bushnelljw-git`, with the other TPA repos, created only on the owner's OK after a secret scan of history. The old watchtower is untouched and keeps watching BodyF1rst.
 - **One pinned image per process.** This replaces the supervisord bundles, which hide crash loops.

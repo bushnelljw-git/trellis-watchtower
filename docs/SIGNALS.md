@@ -155,3 +155,12 @@ The TPA projects' production alerts are Cloud Monitoring alert policies in tpa-p
 release canary, the audit chain, the perimeter, outage uptime checks and the error-group alerts. Their catalogue is
 the "Alert catalogue (production)" in SPEC.md, and tpa-platform's `docs/infra/monitoring.md` once P1 lands. The
 hosted dashboards that read them come from `cloud/` after the owner's class 3 ruling.
+
+**Paging (2026-10-11).** Every policy in a TPA project notifies that project's `pagerduty` channel. The channel
+pages one PagerDuty service: "TPA beta · Portal & API" for the app project, "· Member records" for PHI, and
+"· Call centre" for the call-centre project. A CRITICAL policy becomes a high-urgency P1 page (phone, SMS, app, email,
+Slack). A WARNING policy becomes a low-urgency P3 (app, email, Slack). A policy with no severity still pages at high
+urgency. The on-call person is on the "TPA primary on-call" schedule, and level 2 follows after 15 minutes. Slack
+messages come from PagerDuty in #tpa-beta-alerts. How it works, how to silence it, and how to test it are in
+[PAGERDUTY.md](PAGERDUTY.md). The Fly checks above page through `bodyf1rst-prod`'s own channels, never the TPA's
+PagerDuty.

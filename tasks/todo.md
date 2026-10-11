@@ -13,6 +13,17 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
 - [x] P3 `cloud/` builds and runs with `--network none` (datasources provisioned; 401 without an IAP assertion). The tpa-platform half is the class 3 request (needs the owner).
 - [x] S trellis-security: 10 request files (1 class 3 needing the owner); SECURITY-BAR gets an "Operational monitoring" bullet (provisional until P1 lands); proposed findings go inside the requests; [docs/REQUESTS.md](../docs/REQUESTS.md) covers network, forge and enroll.
 - [x] Review: see below.
+- [x] PD (2026-10-11, the owner: "i want everything set up very well with it") PagerDuty as code, in [docs/PAGERDUTY.md](../docs/PAGERDUTY.md):
+  - `scripts/pagerduty/pd_setup.py` is **applied live**: the team, the schedule, the escalation policy, three "TPA beta ·" services (each with an integration and an orchestration), the business service, and the notification rules. Re-runs show 0 to create and 0 to update.
+  - `pd_test_event.py`: four live test events, all as designed (3× Warning → low/warning/P3, 1× Critical → high/critical/P1), each resolved within 11 s.
+  - `gcp_channels.py`: written and tested. The dry run is checked (Google answers 403 to the owner's account). **Not applied.**
+  - `tests/pagerduty` (local fakes, in `make check`).
+- [ ] PD, by people (docs/PAGERDUTY.md):
+  - Connect the three services to Slack #tpa-beta-alerts.
+  - The owner installs the app and adds a phone, then re-runs `pd_setup.py --apply` and sends a test page.
+  - Rafeale accepts his invitation.
+  - Someone with Monitoring rights runs `gcp_channels.py --apply`, and tpa-platform takes `alert_pagerduty_channel_ids`.
+  - After the test page reaches the owner's phone, tpa-platform sets `alert_sms_number = null`.
 
 ## Review
 

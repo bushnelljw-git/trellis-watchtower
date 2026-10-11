@@ -8,6 +8,8 @@
 #   make probe-check   probe_success per stack/service/probe
 #   make scrub-check   replay the log fixtures through Alloy, assert clean
 #   make stub-test     negative test of the database body-match probes
+#   make pagerduty-test  the PagerDuty scripts against local fakes (also run by check)
+#   make pagerduty-plan  pd_setup.py dry run against the live PagerDuty account (reads only)
 #
 # Every docker compose call names this project's own file, so nothing here can
 # act on another project's containers.
@@ -27,10 +29,10 @@ MIN_FREE_MB ?= 4096
 # The pinned image of a compose service, read from compose.yml (one source).
 img = $$($(CHECK_ENV) $(COMPOSE) -f compose.yml --profile db --profile test config --format json | jq -r '.services["$(1)"].image')
 
-.PHONY: help up down check lint probe-check scrub-check stub-test disk-guard
+.PHONY: help up down check lint probe-check scrub-check stub-test disk-guard pagerduty-test pagerduty-plan
 
 help:
-	@sed -n '3,11p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,13p' Makefile | sed 's/^# \{0,1\}//'
 
 disk-guard:
 	@free=$$(docker run --rm $(call img,stub) df -Pm / | awk 'NR==2{print $$4}'); \
@@ -71,6 +73,14 @@ lint:
 	@echo "== dashboard lint"
 	@python3 scripts/dashboard_lint.py
 	@python3 -m unittest discover -s tests/dashboards -q
+	@$(MAKE) --no-print-directory pagerduty-test
+
+pagerduty-test:
+	@echo "== pagerduty scripts (local fakes only)"
+	@python3 -m unittest discover -s tests/pagerduty -q
+
+pagerduty-plan:
+	@python3 scripts/pagerduty/pd_setup.py
 
 probe-check:
 	@./scripts/probe_check.sh
