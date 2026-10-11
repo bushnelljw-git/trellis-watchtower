@@ -300,11 +300,13 @@ class Session:
         payload: dict[str, Any] | None = None,
         accept: str = "application/json",
         bearer: str | None = None,
+        tenant: str | None = None,
         csrf: bool = False,
         timeout: float | None = None,
     ) -> Response:
         """One request to this origin. `timeout` replaces the step's timeout and the
-        run's deadline with a budget of its own (the sign-out's)."""
+        run's deadline with a budget of its own (the sign-out's). `tenant` is the CRM's
+        `X-Tenant-Id`, which the caller has already checked is a UUID."""
         if not path.startswith("/") or path.startswith("//"):
             raise StepFailure("runner")
         headers = {
@@ -316,6 +318,8 @@ class Session:
             headers["Proxy-Authorization"] = f"Bearer {self._iap_token}"
         if bearer:
             headers["Authorization"] = f"Bearer {bearer}"
+        if tenant:
+            headers["X-Tenant-Id"] = tenant
         cookie_path = urllib.parse.urlsplit(path).path
         cookie = self.cookies.header_for(cookie_path)
         if cookie:

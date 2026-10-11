@@ -77,6 +77,7 @@ STEPS = (
     "login",
     "mfa_verify",
     "me",
+    "crm_tenant",
     "desk_version",
     "live_queue",
     "desk_version_employers",

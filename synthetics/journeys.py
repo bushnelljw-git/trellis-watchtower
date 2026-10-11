@@ -10,9 +10,13 @@
   /tpa/api/v1/desk/cases/version?scope=employers`; sign out.
 - **J3 `crm`** (WARNING), only with `SYNTHETICS_CRM_ENABLED`: the CRM's shell
   through IAP; its own sign-in (`/api/v1/auth/login`, `/api/v1/auth/mfa/verify`,
-  a bearer token); `GET /api/v1/auth/me`; `POST /api/v1/auth/logout`. The CRM
-  lane owns its synthetic user and its cheapest list read; until it switches
-  the flag on, J3 reports `skipped` / `not_configured` and never fails.
+  a bearer token); `GET /api/v1/auth/me`, which names the one business the
+  login belongs to; `GET /api/v1/tenants/current` in that business (the
+  portal's boot read: membership, row security and crm-db, read-only);
+  `POST /api/v1/auth/logout`. The login is the CRM's own (its
+  `app/synthetic_login.py`: `synthetic-crm@synthetic.invalid`, a read-only
+  member with no book); until the flag is on, J3 reports `skipped` /
+  `not_configured` and never fails.
 
 Every journey is read-only past the sign-in: one password and one code per run,
 never retried (a TOTP step is accepted once, and a refused one is charged to the
@@ -31,6 +35,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import ssl
 import stat
 import time
@@ -69,7 +74,11 @@ CRM_SHELL = "/"
 CRM_LOGIN = "/api/v1/auth/login"
 CRM_VERIFY = "/api/v1/auth/mfa/verify"
 CRM_ME = "/api/v1/auth/me"
+CRM_TENANT = "/api/v1/tenants/current"
 CRM_LOGOUT = "/api/v1/auth/logout"
+#: A CRM business's id, as `/api/v1/auth/me` names it: the only value J3 ever
+#: copies from a response into a request (`X-Tenant-Id`), so it must be a UUID.
+TENANT_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
 class Skip(Exception):
@@ -432,14 +441,33 @@ def crm(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> Non
     crm_host = _session(config.base_url, config, token, context, deadline)
     _shell(run, crm_host, "crm_shell", CRM_SHELL, "/")
     with _signed_in_to_crm(run, crm_host, config, credentials, tools) as bearer:
-        _json_read(run, crm_host, "me", CRM_ME, bearer=bearer)
+        with run.timed("me"):
+            me = run.check(crm_host.get(CRM_ME, bearer=bearer)).json_object()
+            tenant = _crm_business(me, crm_host.last_status)
+        with run.timed("crm_tenant"):
+            run.check(crm_host.get(CRM_TENANT, bearer=bearer, tenant=tenant)).json_object()
+
+
+def _crm_business(me: dict, status: int | None) -> str:
+    """The first business `/api/v1/auth/me` lists, by id. The synthetic login has
+    exactly one; none, or an id that is not a UUID, is the CRM's `shape` failure."""
+    memberships = me.get("memberships")
+    first = memberships[0] if isinstance(memberships, list) and memberships else None
+    tenant = first.get("tenant_id") if isinstance(first, dict) else None
+    if not isinstance(tenant, str) or not TENANT_ID.fullmatch(tenant):
+        raise StepFailure("shape", status)
+    return tenant
 
 
 @contextmanager
 def _signed_in_to_crm(run: Run, session: Session, config: Config, credentials: Credentials,
                       tools: Tools) -> Iterator[str]:
     """Signed in to the CRM (its bearer read from `/api/v1/auth/mfa/verify`) for the body,
-    then the `logout` step; any exception once the bearer is held signs out quietly first."""
+    then the `logout` step; any exception once the bearer is held signs out quietly first.
+
+    A bearer handed back by `/api/v1/auth/login` itself (the login answered the password
+    alone: it has lost its second factor) is held too, so that failure signs out as well.
+    """
     budget = _sign_out_budget(config)
     bearer = ""
     try:
@@ -449,6 +477,13 @@ def _signed_in_to_crm(run: Run, session: Session, config: Config, credentials: C
                 sign_in=True,
             ).json_object()
             challenge = answer.get("challenge_id")
+            handed = answer.get("token")
+            if isinstance(handed, str) and handed:
+                # The password alone minted a session: the login has lost its
+                # second factor (an administrator's reset clears it). A fail, and
+                # the session it was handed is ended rather than left for 30 days.
+                bearer = handed
+                raise StepFailure("shape", session.last_status)
             if (answer.get("mfa_required") is not True or answer.get("method") != "totp"
                     or not isinstance(challenge, str)):
                 raise StepFailure("shape", session.last_status)

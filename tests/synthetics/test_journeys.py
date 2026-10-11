@@ -38,7 +38,8 @@ J1_STEPS = ["config", "secrets", "iap_token", "ops_shell", "ops_release", "login
 J1_ROUTES = ["metadata", "ops_shell", "ops_release", "login", "mfa_verify", "me", "desk_version", "logout",
              "portal_shell"]
 J2_ROUTES = ["metadata", "login", "mfa_verify", "live_queue", "desk_version_employers", "logout"]
-J3_ROUTES = ["metadata", "crm_shell", "crm_login", "crm_mfa_verify", "crm_me", "crm_logout"]
+J3_ROUTES = ["metadata", "crm_shell", "crm_login", "crm_mfa_verify", "crm_me", "crm_tenant", "crm_logout"]
+J3_STEPS = ["config", "secrets", "iap_token", "crm_shell", "login", "mfa_verify", "me", "crm_tenant", "logout"]
 
 
 def credentials_file(directory: str, value: object | None = None, raw: bytes | None = None) -> str:
@@ -512,11 +513,47 @@ class Crm(Case):
         with fakes.Fake(clock=lambda: FIXED_NOW) as fake:
             line, code = self.run_journey("crm", self.env(fake, SYNTHETICS_CRM_ENABLED="1"))
         self.assertEqual((line["job"], line["outcome"], code), ("crm", "pass", 0))
+        self.assertEqual(list(line["steps_ms"]), J3_STEPS)
         self.assertEqual(fake.routes(), J3_ROUTES)
         by_route = {r["route"]: r for r in fake.requests}
         self.assertIsNone(by_route["crm_shell"]["authorization"])
         self.assertEqual(by_route["crm_me"]["authorization"], f"Bearer {fakes.CRM_TOKEN}")
         self.assertEqual(by_route["crm_me"]["proxy_authorization"], f"Bearer {fakes.IAP_TOKEN}")
+        self.assertIsNone(by_route["crm_me"]["tenant"])
+        # The portal's boot read, in the one business me named, with the CRM's bearer
+        # beside IAP's token.
+        self.assertEqual(by_route["crm_tenant"]["tenant"], fakes.CRM_TENANT_ID)
+        self.assertEqual(by_route["crm_tenant"]["authorization"], f"Bearer {fakes.CRM_TOKEN}")
+        self.assertEqual(by_route["crm_tenant"]["proxy_authorization"], f"Bearer {fakes.IAP_TOKEN}")
+        self.assertEqual(by_route["crm_tenant"]["method"], "GET")
+
+    def test_the_tenant_read_failing_still_signs_out(self):
+        for behaviour, expected, status_class in [(500, "status", "5xx"), ("deep_json", "shape", "2xx"),
+                                                  ("hang", "timeout", "none")]:
+            with self.subTest(behaviour=behaviour), fakes.Fake(fail={"crm_tenant": behaviour},
+                                                               clock=lambda: FIXED_NOW) as fake:
+                env = self.env(fake, SYNTHETICS_CRM_ENABLED="1", SYNTHETICS_STEP_TIMEOUT_S="0.5")
+                line, code = self.run_journey("crm", env)
+                self.assert_failed(line, code, step="crm_tenant", code=expected, status_class=status_class)
+                self.assertEqual(fake.routes()[-1], "crm_logout")
+                self.assertEqual(fake.requests[-1]["authorization"], f"Bearer {fakes.CRM_TOKEN}")
+
+    def test_a_me_that_names_no_usable_business_fails_and_signs_out(self):
+        for behaviour in ("no_memberships", "bad_tenant"):
+            with self.subTest(behaviour=behaviour), fakes.Fake(fail={"crm_me": behaviour},
+                                                               clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_journey("crm", self.env(fake, SYNTHETICS_CRM_ENABLED="1"))
+                self.assert_failed(line, code, step="me", code="shape", status_class="2xx")
+                self.assertNotIn("crm_tenant", fake.routes(), "nothing from a bad id is ever sent")
+                self.assertEqual(fake.routes()[-1], "crm_logout")
+
+    def test_a_login_that_lost_its_second_factor_fails_and_ends_the_session_it_was_handed(self):
+        with fakes.Fake(fail={"crm_login": "password_only"}, clock=lambda: FIXED_NOW) as fake:
+            line, code = self.run_journey("crm", self.env(fake, SYNTHETICS_CRM_ENABLED="1"))
+        self.assert_failed(line, code, step="login", code="shape", status_class="2xx")
+        self.assertEqual(fake.routes(), ["metadata", "crm_shell", "crm_login", "crm_logout"])
+        self.assertEqual(fake.requests[-1]["authorization"], f"Bearer {fakes.CRM_TOKEN}")
+        self.assertEqual(fake.codes_received, [], "no code is spent on it")
 
     def test_any_exception_after_sign_in_still_signs_out(self):
         with fakes.Fake(fail={"crm_me": "deep_json"}, clock=lambda: FIXED_NOW) as fake:

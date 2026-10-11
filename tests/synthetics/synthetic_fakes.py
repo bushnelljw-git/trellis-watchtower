@@ -15,7 +15,9 @@ memory and recording every request. It models what the runner relies on:
   the CSRF value, and `Origin` equal to the origin it was sent to.
 - **tpa-api**: the desk version and live queue reads need the session cookie.
 - **The CRM**: its login answers `mfa_required`, its verify a bearer token, and
-  its me and logout need that bearer in `Authorization`.
+  its me, tenant and logout need that bearer in `Authorization`; me names one
+  business (`CRM_TENANT_ID`) and `/api/v1/tenants/current` needs it in
+  `X-Tenant-Id`.
 
 Every secret here is a sentinel the tests then look for in the runner's output.
 `fail` maps a route name to a behaviour: an int status; "hang" (no answer for
@@ -23,7 +25,9 @@ Every secret here is a sentinel the tests then look for in the runner's output.
 byte every 0.3 s for up to a minute); "deep_json" (the route's normal answer,
 cookies included, with a body nested 100,000 deep); "drop" (close the connection);
 "redirect_google"; "redirect_other"; "iap_refuse"; "not_json"; "no_base_href";
-"enrol"; "no_cookies".
+"enrol"; "no_cookies"; "password_only" (the CRM's login hands back a token with
+no second factor); "no_memberships" and "bad_tenant" (the CRM's me names no
+business, or one whose id is not a UUID).
 """
 
 from __future__ import annotations
@@ -48,6 +52,7 @@ CSRF = "sentinel-csrf-4d7e33"
 EPOCH = "7"
 CHALLENGE = "chl_sentinel_77aa"
 CRM_TOKEN = "sentinel-crm-bearer-0a8f12"
+CRM_TENANT_ID = "00000000-0000-4000-8000-5e471e100001"
 SENTINELS = (IAP_TOKEN, AUDIENCE, EMAIL, PASSWORD, TOTP_SECRET, SESSION, CSRF, CHALLENGE, CRM_TOKEN,
              "sentinel")
 
@@ -68,6 +73,7 @@ ROUTES = {
     ("POST", "/api/v1/auth/login"): "crm_login",
     ("POST", "/api/v1/auth/mfa/verify"): "crm_mfa_verify",
     ("GET", "/api/v1/auth/me"): "crm_me",
+    ("GET", "/api/v1/tenants/current"): "crm_tenant",
     ("POST", "/api/v1/auth/logout"): "crm_logout",
 }
 
@@ -187,6 +193,7 @@ class Fake:
             "origin": h.headers.get("Origin"),
             "sec_fetch_site": h.headers.get("Sec-Fetch-Site"),
             "csrf": h.headers.get("X-CSRF-Token"),
+            "tenant": h.headers.get("X-Tenant-Id"),
             "cookie": h.headers.get("Cookie"),
             "metadata_flavor": h.headers.get("Metadata-Flavor"),
             "query": query,
@@ -358,6 +365,9 @@ class Fake:
     def _crm_login(self, h, record, body, behaviour) -> None:
         if not self._credentials_ok(body):
             self.json(h, 401, {"detail": "invalid_credentials"})
+        elif behaviour == "password_only":
+            self.json(h, 200, {"mfa_required": False, "challenge_id": None, "method": None,
+                               "token": CRM_TOKEN, "user": {"email": EMAIL}})
         else:
             self.json(h, 200, {"mfa_required": True, "challenge_id": CHALLENGE, "method": "totp"})
 
@@ -374,8 +384,24 @@ class Fake:
         return True
 
     def _crm_me(self, h, record, body, behaviour) -> None:
-        if self._crm_bearer(h, record):
-            self.json(h, 200, {"user": {"email": EMAIL}})
+        if not self._crm_bearer(h, record):
+            return
+        memberships = [{"tenant_id": CRM_TENANT_ID, "tenant_name": "sentinel", "role": "member",
+                        "partner_id": None}]
+        if behaviour == "no_memberships":
+            memberships = []
+        elif behaviour == "bad_tenant":
+            memberships[0]["tenant_id"] = "sentinel\r\nX-Injected: 1"
+        self.json(h, 200, {"user": {"email": EMAIL}, "memberships": memberships})
+
+    def _crm_tenant(self, h, record, body, behaviour) -> None:
+        if not self._crm_bearer(h, record):
+            return
+        if record["tenant"] != CRM_TENANT_ID:
+            self.json(h, 400, {"detail": "tenant_required"})
+            return
+        self.json(h, 200, {"tenant": {"id": CRM_TENANT_ID, "name": "sentinel"}, "role": "member",
+                           "partner": None})
 
     def _crm_logout(self, h, record, body, behaviour) -> None:
         if self._crm_bearer(h, record):

@@ -25,7 +25,7 @@ outside the run's deadline, so a run that spent its deadline on a hung step stil
 |---|---|---|
 | `staff-sign-in` (J1) | CRITICAL | `config`, `secrets`, `iap_token`; on the ops host: `ops_shell` (`GET /ops/`, 200 with `<base href="/ops/">`), `ops_release` (`GET /ops/release.json`, a JSON object), `login` (`POST /auth/login`, a challenge offering `totp`), `mfa_verify` (`POST /auth/mfa/verify`, which must set `__Host-tpa-session` and `__Host-tpa-csrf`), `me` (`GET /auth/me`), `desk_version` (`GET /tpa/api/v1/desk/cases/version`, counts only, reaches tpa-db), `logout` (`POST /auth/logout` with `X-CSRF-Token`, 204); then on the portal host: `portal_shell` (`GET /tpa/`, 200 with `<base href="/tpa/">`) |
 | `ops-desk` (J2) | CRITICAL | `config`, `secrets`, `iap_token`, `login`, `mfa_verify`, `live_queue` (`GET /tpa/api/v1/live/queue`, the non-touching snapshot through svc-ops), `desk_version_employers` (`GET /tpa/api/v1/desk/cases/version?scope=employers`), `logout` |
-| `crm` (J3) | WARNING | Only with `SYNTHETICS_CRM_ENABLED=true`; otherwise `skipped` / `not_configured` at once, reading nothing and sending nothing. Switched on: `config`, `secrets`, `iap_token`, `crm_shell` (`GET /`, `<base href="/">`), `login` (`POST /api/v1/auth/login`, `mfa_required` with method `totp`), `mfa_verify` (`POST /api/v1/auth/mfa/verify`, a bearer token), `me` (`GET /api/v1/auth/me` with that bearer in `Authorization`), `logout` (`POST /api/v1/auth/logout`). The CRM lane owns its synthetic user (`seed-crm`'s synthetic mode, `synthetic-crm-credentials`) and its cheapest list read, which it adds here when it switches the flag on |
+| `crm` (J3) | WARNING | Only with `SYNTHETICS_CRM_ENABLED=true`; otherwise `skipped` / `not_configured` at once, reading nothing and sending nothing. Switched on: `config`, `secrets`, `iap_token`, `crm_shell` (`GET /`, `<base href="/">`), `login` (`POST /api/v1/auth/login`, `mfa_required` with method `totp`), `mfa_verify` (`POST /api/v1/auth/mfa/verify`, a bearer token), `me` (`GET /api/v1/auth/me` with that bearer in `Authorization`; it must name a business whose `tenant_id` is a UUID), `crm_tenant` (`GET /api/v1/tenants/current` with that id in `X-Tenant-Id`: the portal's boot read, through membership and row security to crm-db, read-only), `logout` (`POST /api/v1/auth/logout`). A `login` that hands back a token with no second factor (the login lost it) is `fail` / `shape`, and that token is signed out too. The login is the CRM's own (bodyf1rst-network `engine/app/synthetic_login.py`: `synthetic-crm@synthetic.invalid`, a read-only `member` with no book; `seed-crm --args=seed-synthetic` writes `synthetic-crm-credentials`) |
 
 Every request carries `Sec-Fetch-Site: same-origin`; every write carries `Origin`. No redirect is followed. No proxy
 from the environment is used.
@@ -50,7 +50,7 @@ lines byte for byte (a pass, a failed check, a broken runner, a skip), and check
 | `job` | `staff-sign-in`, `ops-desk`, `crm` |
 | `outcome` | the journey's verdict, `pass`, `fail` or `skipped`; or `error` when the runner itself broke and there is no verdict |
 | `code` | a pass is `ok`; a skip is `paused` or `not_configured`; an error is `config` (a missing or bad setting, or a credentials file that is unreadable, not a regular file or malformed), `iap_token` (the metadata server gave no token: the job's own environment, not the site) or `runner` (an unexpected exception: a bug in the runner); a failure is one of `iap` (IAP refused: a response with `X-Goog-IAP-Generated-Response: true`, a redirect to Google's sign-in, or a 401 or 403 on a shell step), `connect`, `tls`, `timeout`, `redirect` (any other 3xx), `status` (an unexpected status), `credentials` (a 401 at `login` or `mfa_verify`), `locked` (423), `rate_limited` (429), `csrf` (logout refused with a 403, or no CSRF cookie to send), `shape` (a 2xx without what the step needs, a body that is not the JSON object expected, or JSON nested too deep) |
-| `step` | `none` for a pass or a skip; for a failure the step it failed at, for an error the step it broke in (`none` if before any): `config`, `secrets`, `iap_token`, `ops_shell`, `ops_release`, `crm_shell`, `login`, `mfa_verify`, `me`, `desk_version`, `live_queue`, `desk_version_employers`, `logout`, `portal_shell` |
+| `step` | `none` for a pass or a skip; for a failure the step it failed at, for an error the step it broke in (`none` if before any): `config`, `secrets`, `iap_token`, `ops_shell`, `ops_release`, `crm_shell`, `login`, `mfa_verify`, `me`, `crm_tenant`, `desk_version`, `live_queue`, `desk_version_employers`, `logout`, `portal_shell` |
 | `status_class` | the failing response's class, or the last response's on a pass: `2xx`, `3xx`, `4xx`, `5xx`, or `none` (no response: a skip, a transport failure, a timeout, a body that outlasted its step) |
 | `elapsed_ms` | the whole run, whole milliseconds (it includes a wait of up to 8 s for a fresh TOTP step) |
 | `steps_ms` | each step that ran, in order, whole milliseconds |
@@ -79,11 +79,11 @@ exit 0, which is design §7's proof of `synthetic-failing`. A malformed or missi
 |---|---|---|---|---|
 | `SYNTHETICS_BASE_URL` | yes | yes | yes | the ops host's origin (J1, J2), the CRM host's (J3): `https://host`, no path. **J1 and J2: it must equal auth's `AUTH_PUBLIC_ORIGIN`** (beta's `local.browser_origin`, the ops host unless `single_origin = "portal"`): auth's CSRF check refuses a write whose `Origin` is not that origin, so any other host fails every run at `logout` with `csrf` |
 | `SYNTHETICS_PORTAL_BASE_URL` | yes | | | the portal host's origin (the same as the ops host's while it is single-origin, until R183) |
-| `SYNTHETICS_EMAIL` | yes | yes | yes | `synthetic-staff@<org_domain>`, `synthetic-desk@<org_domain>`, the CRM user's |
+| `SYNTHETICS_EMAIL` | yes | yes | yes | `synthetic-staff@<org_domain>`, `synthetic-desk@<org_domain>`, and for J3 exactly `synthetic-crm@synthetic.invalid` (the CRM's own constant, `SYNTHETIC_EMAIL`) |
 | `SYNTHETICS_CREDENTIALS_FILE` | yes | yes | yes | the path the credentials secret is mounted at |
 | `SYNTHETICS_IAP_AUDIENCE` | yes | yes | yes | `var.iap_oauth_client_id`, R298's External client (no `programmatic_clients` entry, per the design) |
 | `SYNTHETICS_PAUSED` | | | | `true` while a needed database is stopped: `skipped` / `paused`, nothing sent. A second guard beside the paused schedule |
-| `SYNTHETICS_CRM_ENABLED` | | | yes | `true` once the CRM lane has its user and endpoints; anything else is `not_configured` |
+| `SYNTHETICS_CRM_ENABLED` | | | yes | `true` once the CRM's beta copy has run `seed-synthetic` and the secret's version is pinned; anything else is `not_configured` |
 | `SYNTHETICS_STEP_TIMEOUT_S` | | | | per request, default 15, at most 60 |
 | `SYNTHETICS_DEADLINE_S` | | | | the whole run, default 90, at most 100; the sign-out's own budget (at most 10 s) comes on top, so a run ends inside the job's `task_timeout` of 120 s |
 | `SYNTHETICS_CA_FILE` | | | | local only: the one CA to trust (the cloud uses the system store) |
@@ -174,7 +174,8 @@ Wait out the account's last TOTP step first (30 s since its last sign-in), or au
 tpa-api and the CRM (`tests/synthetics/synthetic_fakes.py`): a pass, each step failing, IAP's refusals, redirects,
 timeouts (a stall, a body trickled a byte every 0.3 s, a spent deadline), dropped connections, TLS, JSON nested too
 deep, configuration (a credentials file that is a folder, a FIFO or a device; a metadata host that is not Google's or
-loopback), pausing, J3's flag; the sign-out sent after any exception once signed in, with its own budget, and never
+loopback), pausing, J3's flag, J3's business read (the id `me` names, sent as `X-Tenant-Id` only when it is a UUID) and a CRM login
+that answers the password alone; the sign-out sent after any exception once signed in, with its own budget, and never
 repeated; the exit status of a failed check (0), and of a broken configuration, a metadata server with no token, a
 runner crash and an unwritable line (1); RFC 6238's vectors; the golden lines; the result line's labels against
 tpa-platform's own allowlist (`tests/synthetics/tpa_metric_labels.txt`, vendored with its commit and blob, and
