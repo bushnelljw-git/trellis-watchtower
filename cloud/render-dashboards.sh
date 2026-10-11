@@ -14,6 +14,8 @@
 #   TPA_PAUSED_JOBS     comma list, may be empty: sweeps paused on purpose (tpa-platform's var.tpa_jobs_paused).
 #   TPA_STOPPED_DATABASES  comma list, may be empty: Cloud SQL instances stopped on purpose (tpa-platform's
 #                       local.database_stopped; `auth_db` and `auth-db` both name auth-db).
+#                       Both are beta's alone: with TPA_ENVIRONMENT=production either one set is refused, so
+#                       production's tiles can never be quieted.
 #                       Their tiles, and the tiles of what reads them, read "paused" or "database stopped" in no
 #                       colour instead of red (scripts/cloud_dashboards.py, when_quiet).
 #
@@ -76,6 +78,13 @@ case "$environment" in
   production) settle_environment='s/@@E@@\([^@]*\)@@[^@]*@@/\1/g' ;;
   *) refuse "TPA_ENVIRONMENT must be 'beta' or 'production', got '${environment}'" ;;
 esac
+# Production pauses and stops nothing on purpose, so a quiet tile there would hide a real failure.
+if [ "$environment" = production ]; then
+  for var in TPA_PAUSED_JOBS TPA_STOPPED_DATABASES; do
+    eval "value=\${$var:-}"
+    [ -z "$value" ] || refuse "$var must be empty with TPA_ENVIRONMENT=production, got '${value}'"
+  done
+fi
 paused="$(names TPA_PAUSED_JOBS $KNOWN_SWEEPS)"
 stopped="$(names TPA_STOPPED_DATABASES $KNOWN_DATABASES)"
 
@@ -128,4 +137,7 @@ echo "render-dashboards: rendered $(ls "$dst"/*.json | wc -l | tr -d ' ') dashbo
   "stopped: $(echo $stopped | tr ' ' ',' | sed 's/^$/none/'); call centre: $([ -n "$cc" ] && echo yes || echo no))"
 
 [ "$render_only" = 1 ] && exit 0
+# exec replaces this shell, so the EXIT trap never runs: clear the scratch directory first.
+rm -rf "$work"
+trap - EXIT
 exec /run.sh "$@"

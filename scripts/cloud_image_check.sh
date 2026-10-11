@@ -78,6 +78,14 @@ docker exec "$name" sh -c '
   touch /etc/grafana/dashboards/x 2>/dev/null && { echo "/etc/grafana/dashboards is writable"; exit 1; }
   exit 0' || fail "the baked files must be root's and read-only"
 echo "   config, provisioning, dashboards, entrypoint: root's, read-only to uid 472"
+leftover="$(docker exec "$name" sh -c 'ls -d /tmp/tmp.* 2>/dev/null' || true)"
+[ -z "$leftover" ] || fail "render-dashboards left its scratch directory behind: $leftover"
+echo "   render-dashboards left nothing in /tmp"
+refused="$(docker run --rm --network none "${common[@]}" "${production[@]}" -e TPA_STOPPED_DATABASES=tpa-db \
+  "$tag" 2>&1 || true)"
+grep -q "TPA_STOPPED_DATABASES must be empty with TPA_ENVIRONMENT=production" <<<"$refused" ||
+  fail "production with a stopped database was not refused: $refused"
+echo "   production with TPA_STOPPED_DATABASES set: refused before Grafana starts"
 docker rm -f "$name" >/dev/null
 
 echo "== 2. beta at rest, a signed-in Viewer (jwk_set_file), no network"

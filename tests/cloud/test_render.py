@@ -172,6 +172,16 @@ class RenderTest(unittest.TestCase):
         self.assertRefused(BETA, "TPA_STOPPED_DATABASES names 'auth-db/g;s/x'",
                            TPA_STOPPED_DATABASES="auth-db/g;s/x")
 
+    def test_production_refuses_paused_sweeps_and_stopped_databases(self):
+        # Production pauses and stops nothing, so a quiet tile there would hide a real failure.
+        self.assertRefused(PRODUCTION, "TPA_PAUSED_JOBS must be empty with TPA_ENVIRONMENT=production",
+                           TPA_PAUSED_JOBS="nightly-anomalies")
+        self.assertRefused(PRODUCTION, "TPA_STOPPED_DATABASES must be empty with TPA_ENVIRONMENT=production",
+                           TPA_STOPPED_DATABASES="tpa-db")
+        # Refused before the names are read: even one the image would not know.
+        self.assertRefused(PRODUCTION, "TPA_STOPPED_DATABASES must be empty", TPA_STOPPED_DATABASES=",")
+        self.assertEqual(self.render(PRODUCTION, TPA_PAUSED_JOBS="", TPA_STOPPED_DATABASES="").returncode, 0)
+
     def test_an_unknown_environment_is_refused(self):
         self.assertRefused({**BETA, "TPA_ENVIRONMENT": "staging"}, "TPA_ENVIRONMENT must be 'beta' or 'production'")
         self.assertRefused({k: v for k, v in BETA.items() if k != "TPA_ENVIRONMENT"},
