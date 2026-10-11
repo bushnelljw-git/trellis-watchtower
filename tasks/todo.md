@@ -64,6 +64,27 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     Screenshots show every panel's query is sent.
   - [x] Docs: cloud/README, SPEC owner decision, SIGNALS cloud rows, README. `make check` green.
 
+- [x] CR (2026-10-11) the coordinator's review of `cloud-dashboards` @ cfbc3a7, in new commits:
+  - [x] 1 What a viewer can read: any signed-in viewer can post their own query to `/api/ds/query` (shown by the image
+    check on every run). Grafana 12.4.11 has no setting that limits a datasource to its saved panels (checked:
+    defaults.ini, the binary's toggles; per-datasource query permissions are Enterprise's). The lint's and README's
+    wording now says so, and the README lists what tpa-platform sets to bound it: the IAP host under
+    `ing-monitoring`'s access level, a `monitoring.timeSeries.list`-only custom role (a signed-in browser made no
+    resource call), on the four projects alone. Explore and query history are off as well.
+  - [x] 2 `TPA_PAUSED_JOBS`, `TPA_STOPPED_DATABASES` (and `TPA_ENVIRONMENT`): render-time tokens turn the affected
+    tiles neutral "paused" / "database stopped". Unknown names are refused; 16 render tests. Pixels checked.
+  - [x] 3 Deadline windows are the deadline plus 3 minutes.
+  - [x] 4 CRM errors by service only while its class extractor is unanchored; the test allows the class (and the
+    generator adds it) when the vendored catalogue anchors it.
+  - [x] 5 Lint: a reducer, primary and secondary, present and not REDUCE_NONE; no bare `__field.labels`. Mutation tests
+    on a real page.
+  - [x] 6 Cloud Run p95 merged (ALIGN_DELTA + REDUCE_PERCENTILE_95); the Dockerfile's baked files root's and
+    read-only; a signed-token Viewer pass in the image check; production-full without the call centre, and the uptime
+    wording per environment.
+  - [x] The catalogue stays pinned to tpa-platform's `beta-alert-gaps` branch (now `64a144b9`; its two newest moves
+    changed comments only). **Re-vendor from tpa-platform master when that branch lands**:
+    `scripts/vendor_catalogue.sh --check ../tpa-platform origin/master`, then without `--check`, then `make lint`.
+
 ## Review
 
 ### 2026-10-11 (cloud dashboards)

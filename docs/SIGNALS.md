@@ -156,12 +156,13 @@ charts the same metrics: nine dashboards, read-only, over four datasources (`clo
 `cloud-cc`). The owner ruled it yes on 2026-10-11; it is live once tpa-platform builds the cloud half. **Source** below
 is the Cloud Monitoring metric (`logging.googleapis.com/user/<name>` for a log-based one). A red triangle on a panel is
 a failed query, not a reading (on `cloud-phi`, most often the perimeter rule missing), and its "no value" text means
-nothing.
+nothing. In beta at rest a tile reading "paused" or "database stopped" (no colour) is a sweep paused or a database
+stopped on purpose (the service's `TPA_PAUSED_JOBS`, `TPA_STOPPED_DATABASES`), not a fault.
 
 | Signal (dashboard) | Source | Red means | First check | Who fixes |
 |---|---|---|---|---|
 | Uptime checks passing (overview, Portal & API, CRM) | `monitoring.googleapis.com/uptime_check/check_passed` by host | Under 95% in 24 h. Behind IAP a pass is Google's sign-in page: it proves the edge and IAP, never the service | The 5xx and instance panels for the service behind the host | tpa-platform (edge) |
-| Scheduled runs (overview, Jobs) | `run.googleapis.com/job/completed_execution_count`, `result="succeeded"`, within each job's deadline | MISSED: no success within 1.5 cadences (`missed run (<job>)`). Beta's paused sweeps (O143) read MISSED on purpose | Failed executions, then the schedule's failures (Jobs) | the job's repository (tpa-platform, auth-notary, records-service) |
+| Scheduled runs (overview, Jobs) | `run.googleapis.com/job/completed_execution_count`, `result="succeeded"`, within each job's deadline plus 3 min (job metrics arrive up to 180 s late) | MISSED: no success within 1.5 cadences (`missed run (<job>)`). "paused" or "database stopped" in beta at rest | Failed executions, then the schedule's failures (Jobs) | the job's repository (tpa-platform, auth-notary, records-service) |
 | Requests, 5xx (every area) | `run.googleapis.com/request_count` by service and `response_code_class` | 5xx in the last hour (`canary-5xx` at 0.1% and five; the urgent only-5xx liveness policies) | The service's ERROR lines (Errors), then start-up failures | the service's repository |
 | p95 (every area) | `run.googleapis.com/request_latencies` (ALIGN_PERCENTILE_95); tpa-api's own `tpa_api_latency` | Over 2 s (`canary-latency`, `tpa-api-latency`). web's and tpa-api's Cloud Run p95 counts the desk's 40-second streams | records' latency, then auth's | tpa-platform, records-service, auth-notary |
 | Error groups (overview, Errors) | `errors` (app, PHI, call centre), `auth_errors`, the CRM's `crm_errors` (beta) or `errors` | A group in 24 h (orange); new groups and spikes page as `new error group` and `error spike` | The group's service or job, class, operation or event, code, SQLSTATE (Errors) | the group's service's repository |
