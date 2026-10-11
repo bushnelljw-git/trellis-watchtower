@@ -7,6 +7,13 @@ stdout (Cloud Logging's jsonPayload): its filter is
 closed label list. tests/synthetics/test_result.py pins the line byte for byte,
 and synthetics/README.md carries the same format for that lane.
 
+`outcome` is the verdict: `pass`, `fail` or `skipped` when the journey ran to
+one (the job then exits 0, and this line alone drives the alert), or `error`
+when the runner itself broke: its configuration or mounted credentials are
+unusable (`config`), or it hit a bug (`runner`). An `error` run exits non-zero,
+so the job's own `jobs-failed` means "the job is broken", never "the site
+failed a check" (the orchestrator's ruling, 2026-10-11, following design §3).
+
 Every value is either one of the closed lists below or a whole number of
 milliseconds. `render` refuses anything else, so no id, URL, address, token,
 cookie, code, password, response body or exception text can reach the line.
@@ -21,15 +28,17 @@ MESSAGE = "synthetic_result"
 
 JOBS = ("staff-sign-in", "ops-desk", "crm")
 
-OUTCOMES = ("pass", "fail", "skipped")
+OUTCOMES = ("pass", "fail", "skipped", "error")
 
 #: Why a run ended as it did. `ok` is the only pass; `paused` and
-#: `not_configured` the only skips; the rest are failures.
+#: `not_configured` the only skips; `config` and `runner` the only errors; the
+#: rest are failures, the site's answer to a check.
 CODES = (
     "ok",
     "paused",
     "not_configured",
     "config",
+    "runner",
     "iap_token",
     "iap",
     "connect",
@@ -42,13 +51,19 @@ CODES = (
     "rate_limited",
     "csrf",
     "shape",
-    "internal",
 )
 PASS_CODES = ("ok",)
 SKIP_CODES = ("paused", "not_configured")
+ERROR_CODES = ("config", "runner")
+#: The outcome each code belongs to.
+OUTCOME_OF = {
+    code: ("pass" if code in PASS_CODES else "skipped" if code in SKIP_CODES else
+           "error" if code in ERROR_CODES else "fail")
+    for code in CODES
+}
 
-#: The steps, in the order the journeys take them. `none` is a run that did not
-#: fail (a pass, or a skip before any step).
+#: The steps, in the order the journeys take them. `none` is a pass or a skip,
+#: or an error before any step began.
 STEPS = (
     "none",
     "config",
@@ -69,7 +84,7 @@ STEPS = (
 
 STATUS_CLASSES = ("2xx", "3xx", "4xx", "5xx", "none")
 
-SEVERITY = {"pass": "INFO", "skipped": "INFO", "fail": "ERROR"}
+SEVERITY = {"pass": "INFO", "skipped": "INFO", "fail": "ERROR", "error": "ERROR"}
 
 
 class Unrenderable(ValueError):
@@ -105,16 +120,14 @@ def render(
         raise Unrenderable("outcome is not on the closed list")
     if code not in CODES:
         raise Unrenderable("code is not on the closed list")
-    if outcome == "pass" and code not in PASS_CODES:
-        raise Unrenderable("a pass carries code ok")
-    if outcome == "skipped" and code not in SKIP_CODES:
-        raise Unrenderable("a skip carries code paused or not_configured")
-    if outcome == "fail" and code in PASS_CODES + SKIP_CODES:
-        raise Unrenderable("a failure carries a failure code")
+    if OUTCOME_OF[code] != outcome:
+        raise Unrenderable("the code belongs to another outcome")
     if step not in STEPS:
         raise Unrenderable("step is not on the closed list")
-    if (outcome == "fail") == (step == "none"):
-        raise Unrenderable("a failure names its step, and only a failure does")
+    if outcome in ("pass", "skipped") and step != "none":
+        raise Unrenderable("a pass or a skip names no step")
+    if outcome == "fail" and step == "none":
+        raise Unrenderable("a failure names its step")
     if status_class not in STATUS_CLASSES:
         raise Unrenderable("status_class is not on the closed list")
     timings = {}

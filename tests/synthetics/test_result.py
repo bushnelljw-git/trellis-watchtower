@@ -23,6 +23,11 @@ GOLDEN_FAIL = (
     '"code":"status","step":"live_queue","status_class":"5xx","elapsed_ms":15022,"steps_ms":{"config":0,'
     '"secrets":0,"iap_token":40,"login":171,"mfa_verify":90,"live_queue":15001}}'
 )
+GOLDEN_ERROR = (
+    '{"severity":"ERROR","level":"ERROR","message":"synthetic_result","job":"staff-sign-in","outcome":"error",'
+    '"code":"runner","step":"login","status_class":"none","elapsed_ms":212,"steps_ms":{"config":0,"secrets":0,'
+    '"iap_token":41,"ops_shell":60,"ops_release":21,"login":88}}'
+)
 GOLDEN_SKIP = (
     '{"severity":"INFO","level":"INFO","message":"synthetic_result","job":"crm","outcome":"skipped",'
     '"code":"not_configured","step":"none","status_class":"none","elapsed_ms":0,"steps_ms":{}}'
@@ -46,13 +51,20 @@ class Golden(unittest.TestCase):
             steps_ms={"config": 0, "secrets": 0, "iap_token": 40, "login": 171, "mfa_verify": 90,
                       "live_queue": 15001}), GOLDEN_FAIL)
 
+    def test_error(self):
+        self.assertEqual(result.render(
+            job="staff-sign-in", outcome="error", code="runner", step="login", status_class="none",
+            elapsed_ms=212,
+            steps_ms={"config": 0, "secrets": 0, "iap_token": 41, "ops_shell": 60, "ops_release": 21,
+                      "login": 88}), GOLDEN_ERROR)
+
     def test_skip(self):
         self.assertEqual(result.render(job="crm", outcome="skipped", code="not_configured", step="none",
                                        status_class="none", elapsed_ms=0, steps_ms={}), GOLDEN_SKIP)
 
     def test_readme_carries_the_same_lines(self):
         readme = (ROOT / "synthetics" / "README.md").read_text(encoding="utf-8")
-        for golden in (GOLDEN_PASS, GOLDEN_FAIL, GOLDEN_SKIP):
+        for golden in (GOLDEN_PASS, GOLDEN_FAIL, GOLDEN_ERROR, GOLDEN_SKIP):
             self.assertIn(golden, readme)
         for values in (result.JOBS, result.OUTCOMES, result.CODES, result.STEPS, result.STATUS_CLASSES):
             for value in values:
@@ -94,10 +106,24 @@ class Refusals(unittest.TestCase):
         self.refuse(outcome="skipped", code="ok")
         self.refuse(outcome="fail", code="ok", step="login")
         self.refuse(outcome="fail", code="paused", step="login")
+        # A broken runner is never a check's verdict, and a check's verdict never the runner's error.
+        self.refuse(outcome="fail", code="config", step="config")
+        self.refuse(outcome="fail", code="runner", step="login")
+        self.refuse(outcome="error", code="status", step="login")
+        self.refuse(outcome="error", code="ok")
 
-    def test_a_failure_names_its_step_and_only_a_failure(self):
+    def test_every_code_has_one_outcome(self):
+        self.assertEqual(set(result.OUTCOME_OF), set(result.CODES))
+        self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "error"}, {"config", "runner"})
+        self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "pass"}, {"ok"})
+        self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "skipped"}, {"paused", "not_configured"})
+
+    def test_steps(self):
+        # A failure names its step; a pass or a skip names none; an error names where it broke, if anywhere.
         self.refuse(outcome="fail", code="status", step="none")
         self.refuse(step="login")
+        self.refuse(outcome="skipped", code="paused", step="login")
+        result.render(**dict(PASS_FIELDS, outcome="error", code="runner", step="none", status_class="none"))
 
     def test_durations_are_whole_milliseconds(self):
         self.refuse(elapsed_ms=-1)

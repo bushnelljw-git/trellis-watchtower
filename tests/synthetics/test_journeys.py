@@ -100,8 +100,16 @@ class Case(unittest.TestCase):
         return line
 
     def assert_failed(self, line: dict, exit_code: int, *, step: str, code: str, status_class: str) -> None:
+        """A verdict: the site failed a check. The line drives the alert; the job itself succeeds."""
         self.assertEqual((line["outcome"], line["step"], line["code"], line["status_class"]),
                          ("fail", step, code, status_class))
+        self.assertEqual(line["severity"], "ERROR")
+        self.assertEqual(exit_code, 0, "a journey that ran to a verdict exits 0, fail included")
+
+    def assert_error(self, line: dict, exit_code: int, *, step: str, code: str) -> None:
+        """The runner itself broke: an error line, and a non-zero exit for jobs-failed."""
+        self.assertEqual((line["outcome"], line["step"], line["code"], line["status_class"]),
+                         ("error", step, code, "none"))
         self.assertEqual(line["severity"], "ERROR")
         self.assertEqual(exit_code, 1)
 
@@ -303,7 +311,7 @@ class Configuration(Case):
                 env = self.env(fake)
                 del env[name]
                 line, code = self.run_journey("staff-sign-in", env)
-                self.assert_failed(line, code, step="config", code="config", status_class="none")
+                self.assert_error(line, code, step="config", code="config")
                 self.assertEqual(fake.requests, [], "nothing is sent on a configuration failure")
 
     def test_bad_values(self):
@@ -319,7 +327,7 @@ class Configuration(Case):
                             ("SYNTHETICS_CA_FILE", "/nonexistent/ca.pem")]:
             with self.subTest(name=name, value=value), fakes.Fake() as fake:
                 line, code = self.run_journey("staff-sign-in", self.env(fake, **{name: value}))
-                self.assert_failed(line, code, step="config", code="config", status_class="none")
+                self.assert_error(line, code, step="config", code="config")
                 self.assertEqual(fake.requests, [])
 
     def test_bad_credentials_file(self):
@@ -328,20 +336,20 @@ class Configuration(Case):
             with self.subTest(raw=raw[:20]), fakes.Fake() as fake:
                 path = credentials_file(self.tmp.name, raw=raw)
                 line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_CREDENTIALS_FILE=path))
-                self.assert_failed(line, code, step="secrets", code="config", status_class="none")
+                self.assert_error(line, code, step="secrets", code="config")
                 self.assertEqual(fake.requests, [])
 
     def test_missing_credentials_file(self):
         with fakes.Fake() as fake:
             line, code = self.run_journey("staff-sign-in", self.env(
                 fake, SYNTHETICS_CREDENTIALS_FILE=os.path.join(self.tmp.name, "absent")))
-        self.assert_failed(line, code, step="secrets", code="config", status_class="none")
+        self.assert_error(line, code, step="secrets", code="config")
 
     def test_local_mode_is_loopback_only(self):
         with fakes.Fake(iap=False) as fake:
             line, code = self.run_journey("staff-sign-in", self.env(
                 fake, SYNTHETICS_BASE_URL="https://ops.example.com"), use_iap=False)
-        self.assert_failed(line, code, step="config", code="config", status_class="none")
+        self.assert_error(line, code, step="config", code="config")
 
     def test_local_mode_sends_no_iap_token(self):
         with fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
@@ -367,7 +375,7 @@ class Configuration(Case):
             line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_PAUSED="false"))
         self.assertEqual((line["outcome"], code), ("pass", 0))
 
-    def test_unexpected_error_is_internal_and_says_nothing(self):
+    def test_a_runner_crash_is_an_error_line_says_nothing_and_exits_non_zero(self):
         def boom(run, env, **kwargs):
             run.step = "me"
             raise RuntimeError(f"{fakes.PASSWORD} {fakes.SESSION}")
@@ -379,7 +387,20 @@ class Configuration(Case):
                 line, code = self.run_journey("staff-sign-in", self.env(fake))
         finally:
             journeys.JOURNEYS["staff-sign-in"] = original
-        self.assert_failed(line, code, step="me", code="internal", status_class="none")
+        self.assert_error(line, code, step="me", code="runner")
+
+    def test_a_line_that_cannot_be_written_exits_non_zero(self):
+        class Broken(io.StringIO):
+            def write(self, _text):
+                raise BrokenPipeError
+
+        for fail in ({}, {"login": 401}):
+            with self.subTest(fail=fail), fakes.Fake(fail=fail, clock=lambda: FIXED_NOW) as fake:
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    code = cli.run("staff-sign-in", self.env(fake), use_iap=True, stream=Broken(),
+                                   tools=Tools(now=lambda: FIXED_NOW, sleep=lambda _s: None))
+                self.assertEqual((code, err.getvalue()), (1, ""))
 
 
 class OpsDesk(Case):
@@ -444,16 +465,37 @@ class EntryPoint(Case):
         self.assertEqual((line["outcome"], code), ("pass", 0))
         self.assert_no_received_code_printed(fake, line)
 
-    def test_fail_exits_one(self):
-        with fakes.Fake(fail={"login": 401}) as fake:
-            line, code = self.spawn(fake, "staff-sign-in")
-        self.assert_failed(line, code, step="login", code="credentials", status_class="4xx")
+    def test_a_failing_journey_exits_zero_with_outcome_fail(self):
+        for fail, step, expected, status_class in [({"login": 401}, "login", "credentials", "4xx"),
+                                                   ({"desk_version": 503}, "desk_version", "status", "5xx")]:
+            with self.subTest(step=step), fakes.Fake(fail=fail) as fake:
+                line, code = self.spawn(fake, "staff-sign-in")
+                self.assert_failed(line, code, step=step, code=expected, status_class=status_class)
 
-    def test_secrets_file_failure_exits_one(self):
+    def test_bad_credentials_file_is_an_error_and_exits_non_zero(self):
         path = credentials_file(self.tmp.name, raw=f'{{"password": "{fakes.PASSWORD}"}}'.encode())
         with fakes.Fake() as fake:
             line, code = self.spawn(fake, "ops-desk", SYNTHETICS_CREDENTIALS_FILE=path)
-        self.assert_failed(line, code, step="secrets", code="config", status_class="none")
+        self.assert_error(line, code, step="secrets", code="config")
+
+    def test_a_runner_crash_exits_non_zero_with_an_error_line(self):
+        # The real exit path (main, then sys.exit), with a journey that raises.
+        crash = (
+            "import sys; from synthetics import journeys, __main__ as cli\n"
+            "def boom(run, env, **kwargs):\n"
+            "    run.step = 'login'\n"
+            f"    raise KeyError('{fakes.PASSWORD}')\n"
+            "journeys.JOURNEYS['staff-sign-in'] = boom\n"
+            "sys.exit(cli.main(['journey', 'staff-sign-in']))\n"
+        )
+        with fakes.Fake() as fake:
+            env = {k: v for k, v in os.environ.items() if not k.startswith("SYNTHETICS_")}
+            env.update(self.env(fake), PYTHONPATH=str(ROOT))
+            done = subprocess.run([sys.executable, "-c", crash], env=env, capture_output=True, text=True,
+                                  timeout=30, cwd=self.tmp.name)
+        line = self.parse_clean(done.stdout, done.stderr)
+        self.assert_error(line, done.returncode, step="login", code="runner")
+        self.assertEqual(fake.requests, [])
 
     def test_skips_exit_zero(self):
         with fakes.Fake() as fake:

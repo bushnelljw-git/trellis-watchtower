@@ -277,7 +277,7 @@ class Session:
         csrf: bool = False,
     ) -> Response:
         if not path.startswith("/") or path.startswith("//"):
-            raise StepFailure("internal")
+            raise StepFailure("runner")
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": accept,

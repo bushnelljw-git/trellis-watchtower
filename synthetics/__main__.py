@@ -1,8 +1,16 @@
 """`python -m synthetics journey <staff-sign-in|ops-desk|crm> [--no-iap]`.
 
 One run, one result line on stdout (result.py), nothing on stderr but argparse's
-usage on a bad command line. Exit 0 on `pass` and `skipped`, 1 on `fail`, 2 on a
-bad command line.
+usage on a bad command line.
+
+Exit status (the orchestrator's ruling, 2026-10-11, following design §3): **0
+whenever the journey ran to a verdict**, `pass`, `fail` or `skipped`, because the
+result line alone drives `synthetic-failing`. **Non-zero only when the runner
+itself broke**, so the job's own `jobs-failed` means "the job is broken" and one
+failure never pages twice:
+- 1: an `error` line (`config`: a setting or the mounted credentials unusable;
+  `runner`: an unexpected exception), or the line could not be written at all;
+- 2: a bad command line (argparse; no line, since no journey was named).
 
 - `SYNTHETICS_PAUSED` true (a database stopped on purpose): `skipped` / `paused`
   at once, with no request of any kind.
@@ -10,7 +18,7 @@ bad command line.
   which has no IAP. No metadata call, no `Proxy-Authorization`, and every base URL
   must be a loopback host.
 
-No exception escapes: anything unexpected is `fail` / `internal` at the step it
+No exception escapes: anything unexpected is `error` / `runner` at the step it
 happened in, with no exception text anywhere.
 """
 
@@ -57,26 +65,28 @@ def run(
     except Skip as skipped:
         outcome, code = "skipped", skipped.code
     except StepFailure as failed:
-        outcome, code, step, status = "fail", failed.code, state.step, failed.status
+        code, step, status = failed.code, state.step, failed.status
+        outcome = result.OUTCOME_OF.get(code, "error")
     except Exception:  # noqa: BLE001 - one line, never a traceback (it could carry a value)
-        outcome, code, step, status = "fail", "internal", state.step, None
-    if outcome == "fail" and step == "none":
-        step = "config"
+        outcome, code, step, status = "error", "runner", state.step, None
     elapsed_ms = int((time.monotonic() - started) * 1000)
     try:
         line = result.render(job=name, outcome=outcome, code=code, step=step,
                              status_class=result.status_class(status), elapsed_ms=elapsed_ms,
                              steps_ms=state.steps_ms)
     except result.Unrenderable:
-        # A value off the closed lists (a bug here): still exactly one line, and a failure.
-        outcome = "fail"
-        line = result.render(job=name, outcome="fail", code="internal",
-                             step=step if step in result.STEPS and step != "none" else "config",
+        # A value off the closed lists is a bug here: still exactly one line, as the runner's error.
+        outcome = "error"
+        line = result.render(job=name, outcome="error", code="runner",
+                             step=step if step in result.STEPS else "none",
                              status_class="none", elapsed_ms=elapsed_ms, steps_ms={})
     out = stream if stream is not None else sys.stdout
-    out.write(line + "\n")
-    out.flush()
-    return 1 if outcome == "fail" else 0
+    try:
+        out.write(line + "\n")
+        out.flush()
+    except (OSError, ValueError):
+        return 1  # the line could not be written: the runner is broken, whatever the verdict
+    return 1 if outcome == "error" else 0
 
 
 def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None) -> int:

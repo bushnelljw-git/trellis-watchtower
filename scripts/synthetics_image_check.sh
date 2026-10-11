@@ -9,8 +9,8 @@
 #  4. The image's own ENTRYPOINT, with no network:
 #     - paused: one `skipped`/`paused` line, exit 0;
 #     - J3 with the CRM flag off: one `skipped`/`not_configured` line, exit 0;
-#     - J1 with no configuration: one `fail`/`config` line, exit 1;
-#     - J1 configured but with no network: the metadata call fails, one `fail`/`iap_token` line, exit 1;
+#     - J1 with no configuration: one `error`/`config` line, exit 1 (the runner is broken);
+#     - J1 configured but with no network: the metadata call fails, one `fail`/`iap_token` line, exit 0 (a verdict);
 #     - no arguments: refused by argparse, exit 2, nothing on stdout.
 #     And nothing on stderr on any of the first four.
 #
@@ -83,10 +83,10 @@ EOF
 }
 expect 0 skipped paused -e SYNTHETICS_PAUSED=1 "$tag" journey staff-sign-in
 expect 0 skipped not_configured "$tag" journey crm
-expect 1 fail config "$tag" journey staff-sign-in
+expect 1 error config "$tag" journey staff-sign-in
 printf '{"password":"check-only-not-a-secret","totp_secret":"JBSWY3DPEHPK3PXP"}' >"$work/credentials.json"
 chmod 0644 "$work/credentials.json"
-expect 1 fail iap_token -v "$work/credentials.json:/secrets/credentials.json:ro" \
+expect 0 fail iap_token -v "$work/credentials.json:/secrets/credentials.json:ro" \
   -e SYNTHETICS_BASE_URL=https://ops.check.invalid -e SYNTHETICS_PORTAL_BASE_URL=https://portal.check.invalid \
   -e SYNTHETICS_EMAIL=synthetic-staff@check.invalid -e SYNTHETICS_CREDENTIALS_FILE=/secrets/credentials.json \
   -e SYNTHETICS_IAP_AUDIENCE=0-check.apps.googleusercontent.com -e SYNTHETICS_STEP_TIMEOUT_S=3 \

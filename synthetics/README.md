@@ -19,7 +19,7 @@ always signs out, also when a later step failed. Past the sign-in everything is 
 |---|---|---|
 | `staff-sign-in` (J1) | CRITICAL | `config`, `secrets`, `iap_token`; on the ops host: `ops_shell` (`GET /ops/`, 200 with `<base href="/ops/">`), `ops_release` (`GET /ops/release.json`, a JSON object), `login` (`POST /auth/login`, a challenge offering `totp`), `mfa_verify` (`POST /auth/mfa/verify`, which must set `__Host-tpa-session` and `__Host-tpa-csrf`), `me` (`GET /auth/me`), `desk_version` (`GET /tpa/api/v1/desk/cases/version`, counts only, reaches tpa-db), `logout` (`POST /auth/logout` with `X-CSRF-Token`, 204); then on the portal host: `portal_shell` (`GET /tpa/`, 200 with `<base href="/tpa/">`) |
 | `ops-desk` (J2) | CRITICAL | `config`, `secrets`, `iap_token`, `login`, `mfa_verify`, `live_queue` (`GET /tpa/api/v1/live/queue`, the non-touching snapshot through svc-ops), `desk_version_employers` (`GET /tpa/api/v1/desk/cases/version?scope=employers`), `logout` |
-| `crm` (J3) | WARNING | Only with `SYNTHETICS_CRM_ENABLED=true`; otherwise `skipped` / `not_configured` at once, reading nothing and sending nothing, exit 0. Switched on: `config`, `secrets`, `iap_token`, `crm_shell` (`GET /`, `<base href="/">`), `login` (`POST /api/v1/auth/login`, `mfa_required` with method `totp`), `mfa_verify` (`POST /api/v1/auth/mfa/verify`, a bearer token), `me` (`GET /api/v1/auth/me` with that bearer in `Authorization`), `logout` (`POST /api/v1/auth/logout`). The CRM lane owns its synthetic user (`seed-crm`'s synthetic mode, `synthetic-crm-credentials`) and its cheapest list read, which it adds here when it switches the flag on |
+| `crm` (J3) | WARNING | Only with `SYNTHETICS_CRM_ENABLED=true`; otherwise `skipped` / `not_configured` at once, reading nothing and sending nothing. Switched on: `config`, `secrets`, `iap_token`, `crm_shell` (`GET /`, `<base href="/">`), `login` (`POST /api/v1/auth/login`, `mfa_required` with method `totp`), `mfa_verify` (`POST /api/v1/auth/mfa/verify`, a bearer token), `me` (`GET /api/v1/auth/me` with that bearer in `Authorization`), `logout` (`POST /api/v1/auth/logout`). The CRM lane owns its synthetic user (`seed-crm`'s synthetic mode, `synthetic-crm-credentials`) and its cheapest list read, which it adds here when it switches the flag on |
 
 Every request carries `Sec-Fetch-Site: same-origin`; every write carries `Origin`. No redirect is followed. No proxy
 from the environment is used.
@@ -27,23 +27,24 @@ from the environment is used.
 ## The result line
 
 Exactly one line per run on stdout, compact JSON, keys in this order, and nothing on stderr (argparse's usage on a
-bad command line is the one exception, with exit 2 and no line). `tests/synthetics/test_result.py` pins these three
-lines byte for byte, and checks this file still carries them:
+bad command line is the one exception, with exit 2 and no line). `tests/synthetics/test_result.py` pins these four
+lines byte for byte (a pass, a failed check, a broken runner, a skip), and checks this file still carries them:
 
 ```
 {"severity":"INFO","level":"INFO","message":"synthetic_result","job":"staff-sign-in","outcome":"pass","code":"ok","step":"none","status_class":"2xx","elapsed_ms":4210,"steps_ms":{"config":0,"secrets":0,"iap_token":38,"ops_shell":61,"ops_release":22,"login":180,"mfa_verify":96,"me":41,"desk_version":133,"logout":35,"portal_shell":58}}
 {"severity":"ERROR","level":"ERROR","message":"synthetic_result","job":"ops-desk","outcome":"fail","code":"status","step":"live_queue","status_class":"5xx","elapsed_ms":15022,"steps_ms":{"config":0,"secrets":0,"iap_token":40,"login":171,"mfa_verify":90,"live_queue":15001}}
+{"severity":"ERROR","level":"ERROR","message":"synthetic_result","job":"staff-sign-in","outcome":"error","code":"runner","step":"login","status_class":"none","elapsed_ms":212,"steps_ms":{"config":0,"secrets":0,"iap_token":41,"ops_shell":60,"ops_release":21,"login":88}}
 {"severity":"INFO","level":"INFO","message":"synthetic_result","job":"crm","outcome":"skipped","code":"not_configured","step":"none","status_class":"none","elapsed_ms":0,"steps_ms":{}}
 ```
 
 | Field | Values |
 |---|---|
-| `severity`, `level` | `INFO` for a pass or a skip, `ERROR` for a failure. Both: Cloud Logging lifts `severity` into the entry's severity; `level` is tpa-platform's own line field |
+| `severity`, `level` | `INFO` for a pass or a skip, `ERROR` for a failure or an error. Both: Cloud Logging lifts `severity` into the entry's severity; `level` is tpa-platform's own line field |
 | `message` | always `synthetic_result` (the metric's filter) |
 | `job` | `staff-sign-in`, `ops-desk`, `crm` |
-| `outcome` | `pass`, `fail`, `skipped` |
-| `code` | a pass is `ok`; a skip is `paused` or `not_configured`; a failure is one of `config` (a missing or bad setting, or an unreadable or malformed credentials file), `iap_token` (the metadata server gave no token), `iap` (IAP refused: a response with `X-Goog-IAP-Generated-Response: true`, a redirect to Google's sign-in, or a 401 or 403 on a shell step), `connect`, `tls`, `timeout`, `redirect` (any other 3xx), `status` (an unexpected status), `credentials` (a 401 at `login` or `mfa_verify`), `locked` (423), `rate_limited` (429), `csrf` (logout refused with a 403, or no CSRF cookie to send), `shape` (a 2xx without what the step needs), `internal` (a bug in the runner) |
-| `step` | `none` for a pass or a skip; for a failure the step it failed at: `config`, `secrets`, `iap_token`, `ops_shell`, `ops_release`, `crm_shell`, `login`, `mfa_verify`, `me`, `desk_version`, `live_queue`, `desk_version_employers`, `logout`, `portal_shell` |
+| `outcome` | the journey's verdict, `pass`, `fail` or `skipped`; or `error` when the runner itself broke and there is no verdict |
+| `code` | a pass is `ok`; a skip is `paused` or `not_configured`; an error is `config` (a missing or bad setting, or an unreadable or malformed credentials file) or `runner` (an unexpected exception: a bug in the runner); a failure is one of `iap_token` (the metadata server gave no token), `iap` (IAP refused: a response with `X-Goog-IAP-Generated-Response: true`, a redirect to Google's sign-in, or a 401 or 403 on a shell step), `connect`, `tls`, `timeout`, `redirect` (any other 3xx), `status` (an unexpected status), `credentials` (a 401 at `login` or `mfa_verify`), `locked` (423), `rate_limited` (429), `csrf` (logout refused with a 403, or no CSRF cookie to send), `shape` (a 2xx without what the step needs) |
+| `step` | `none` for a pass or a skip; for a failure the step it failed at, for an error the step it broke in (`none` if before any): `config`, `secrets`, `iap_token`, `ops_shell`, `ops_release`, `crm_shell`, `login`, `mfa_verify`, `me`, `desk_version`, `live_queue`, `desk_version_employers`, `logout`, `portal_shell` |
 | `status_class` | the failing response's class, or the last response's on a pass: `2xx`, `3xx`, `4xx`, `5xx`, or `none` (no response: a skip, a transport failure, a timeout) |
 | `elapsed_ms` | the whole run, whole milliseconds (it includes a wait of up to 8 s for a fresh TOTP step) |
 | `steps_ms` | each step that ran, in order, whole milliseconds |
@@ -54,10 +55,17 @@ making it a label is a contract change there. Every value above comes from a clo
 renderer refuses anything else, so no id, URL, address, token, cookie, code, password, body or exception text can
 reach the line.
 
-**Exit status:** 0 on `pass` and `skipped`; 1 on `fail`; 2 on a bad command line. This follows the build brief
-("non-zero on fail"), not design §3's "it exits 0 either way". With `max_retries = 0` a failed run is then also a
-failed job execution, so tpa-platform's `jobs-failed` must leave out the `synthetics-` jobs, or a failure pages
-through both it and `synthetic-failing`.
+**Exit status** (the orchestrator's ruling by delegation, 2026-10-11, following design §3):
+
+- **0 whenever the journey ran to a verdict**: `pass`, `fail` or `skipped`. The result line alone drives
+  `synthetic-failing`, so a site that fails a check never fails the job too.
+- **1 only when the runner itself broke**: an `error` line (`config` or `runner`), or the line could not be written
+  at all. So `jobs-failed` keeps meaning "the job is broken", and one failure never pages twice.
+- **2** on a bad command line (argparse; no line, as no journey was named).
+
+A wrong credentials *version* (a valid file, the wrong password) is a verdict: `fail` / `credentials` at `login`,
+exit 0, which is design §7's proof of `synthetic-failing`. A malformed or missing file is the runner's `error` /
+`config`.
 
 ## What the job sets
 
@@ -85,7 +93,7 @@ lane's `synthetic-crm-credentials` (J3), each one version, mounted as a file pin
 
 `sa-synthetics` is their one accessor. The file is read once per run; its values live in memory only and are never
 printed. A missing, unreadable, oversized or malformed file, an empty password or a TOTP secret that is not base32 is
-`fail` / `config` at step `secrets`.
+`error` / `config` at step `secrets` (exit 1).
 
 **The job:** args `["journey", "<name>"]`; `task_timeout` 120 s; `max_retries` 0 (a retry would replay a TOTP step);
 egress only to the edge addresses (the metadata server is always reachable).
@@ -133,8 +141,9 @@ Its generic Python path then fits as it is: the configured user is 10001:10001, 
 network, and `python -I -c "import synthetics"` imports (importing does nothing).
 
 `make synthetics-image-check` is this repository's own proof of the same: it builds the image, checks the user, `id`,
-the import, the CA bundle and that no shell starts, then runs the entrypoint offline (paused, J3 off, no
-configuration, no metadata server, no arguments) and removes the image.
+the import, the CA bundle and that no shell starts, then runs the entrypoint offline (paused and J3 off: `skipped`,
+exit 0; no metadata server: `fail` / `iap_token`, exit 0; no configuration: `error` / `config`, exit 1; no arguments:
+exit 2) and removes the image.
 
 ## Locally
 
@@ -155,6 +164,7 @@ Wait out the account's last TOTP step first (30 s since its last sign-in), or au
 
 `make synthetics-test` (part of `make check`): the journeys against a local fake of the metadata server, IAP, auth,
 tpa-api and the CRM (`tests/synthetics/synthetic_fakes.py`): a pass, each step failing, IAP's refusals, redirects,
-timeouts, dropped connections, TLS, configuration, pausing, J3's flag; RFC 6238's vectors; the golden lines; the
+timeouts, dropped connections, TLS, configuration, pausing, J3's flag; the exit status of a failed check (0), a
+broken configuration, a runner crash and an unwritable line (1); RFC 6238's vectors; the golden lines; the
 image's policy, read statically; and no secret on stdout or stderr on any path, in-process and through the real
 entry point.
