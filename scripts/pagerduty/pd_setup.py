@@ -2,31 +2,37 @@
 """trellis-watchtower: make the TPA's PagerDuty account match docs/PAGERDUTY.md. Standard library only.
 
 What it makes (each found by its exact name, created when absent and corrected when it differs):
-  - team "TPA Platform", with its manager and responder;
+  - team "TPA Platform", with both people as managers (PagerDuty's only team role for an owner or admin);
   - schedule "TPA primary on-call": one weekly layer, hand-off Monday 09:00 America/Chicago;
   - escalation policy "TPA Platform": the schedule, then the second person after 15 minutes; repeats twice;
   - one service per Google Cloud project ("TPA beta · Portal & API", "· Member records", "· Call centre"), each with
-    urgency from severity, alert grouping, a 30-minute acknowledgement timeout, no auto-resolve, the Google Cloud
-    Monitoring integration and a service event orchestration that turns Monitoring's severity into the alert's
-    severity and the incident's priority;
+    urgency from severity, a 30-minute acknowledgement timeout, no auto-resolve, the Google Cloud Monitoring
+    integration, an alert grouping setting (intelligent, or time-based where the account refuses it) and a service
+    event orchestration that turns Monitoring's severity, in any letter case, into the alert's severity and the
+    incident's priority;
   - business service "Trellis TPA (beta)", supported by the three services;
-  - both people's notification rules, from the contact methods they already have (never adding or changing one).
+  - notification rules for a contact method that has none yet (never adding or changing a contact method).
 
 It also reads (never makes) each service's Slack connection and prints "by hand" until a person has connected the
 service to #tpa-beta-alerts with every urgency, every priority and the five incident events (docs/PAGERDUTY.md).
 
-It never deletes anything, never touches "Default Service" or the "Default" escalation policy, and leaves alone
-anything a person added (an extra team member, a notification rule of their own): those print as "kept".
+What it will not do: delete anything; touch "Default Service" or the "Default" escalation policy; put back a
+notification rule a person removed (unless --add-rules); change a schedule that has more than one active layer; or
+create a service when one carrying our integration and description already exists under another name. Those print
+as "kept" or "refused". When a parent object (team, schedule, policy, service, business service) is refused by
+PagerDuty, the run stops before anything that depends on it.
 
 Usage:
-  scripts/pagerduty/pd_setup.py                    dry run: print the plan (create / update / ok / kept), change nothing
+  scripts/pagerduty/pd_setup.py                    dry run: print the plan, change nothing
   scripts/pagerduty/pd_setup.py --apply            make the changes
-  scripts/pagerduty/pd_setup.py --apply --retry-intelligent-grouping
-                                                   try intelligent alert grouping again on services that fell back
-                                                   to time-based grouping (for when the account gains it)
+  ... --add-rules                                  also add a designed notification rule that is missing on a contact
+                                                   method which has other rules (normally left as the person set it)
+  ... --retry-intelligent-grouping                 try intelligent alert grouping again where a service has
+                                                   time-based grouping (for when the account gains it)
 
 The API key: PAGERDUTY_TOKEN, or else the macOS login keychain (service "tpa-pagerduty-api"). It is never printed.
 Re-running changes nothing when PagerDuty already matches: a second run prints "0 to create, 0 to update".
+Exit: 0 clean; 1 something was refused or does not match and was left alone; 2 stopped.
 """
 
 from __future__ import annotations
@@ -41,8 +47,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pdlib as d  # noqa: E402
 from pdlib import ApiError, PagerDuty, Refused, out  # noqa: E402
 
-INTELLIGENT = {"type": "intelligent"}
+INTELLIGENT = {"type": "intelligent", "config": {"time_window": 300}}
 TIME_BASED = {"type": "time", "config": {"timeout": d.TIME_GROUPING_MINUTES}}
+
+
+class Stop(Exception):
+    """A parent object was refused: nothing that depends on it is attempted."""
 
 
 class Plan:
@@ -66,16 +76,23 @@ class Plan:
     def kept(self, what: str, detail: str) -> None:
         self._say("kept", what, detail)
 
+    def refuse(self, what: str, detail: str) -> None:
+        """The account differs from the design in a way the script must not change by itself."""
+        self._say("refused", what, detail)
+
     def person(self, what: str, detail: str) -> None:
         """A step only a person can take; reported, never counted as a change."""
         self._say("person", what, detail)
 
-    def change(self, verb: str, what: str, detail: str = "", action=None, placeholder=None):
+    def change(self, verb: str, what: str, detail: str = "", action=None, placeholder=None, parent=False):
+        """Report a create or update; with --apply, run it. A refused parent stops the run."""
         if self.apply and action is not None:
             try:
                 result = action()
             except ApiError as e:
                 self._say("refused", what, f"PagerDuty said {e}")
+                if parent:
+                    raise Stop(what) from None
                 return placeholder
             self._say(verb, what, detail)
             return result
@@ -127,7 +144,7 @@ def ensure_team(pd: PagerDuty, plan: Plan, users: dict[str, dict]) -> str:
     members: dict[str, str] = {}
     if team is None:
         team_id = plan.change("create", what, action=lambda: pd.write("POST", "/teams", body)["team"]["id"],
-                              placeholder="<new team>")
+                              placeholder="<new team>", parent=True)
     else:
         team_id = team["id"]
         diffs = changed([("description", team.get("description") or "", d.TEAM_DESCRIPTION)])
@@ -174,30 +191,26 @@ def ensure_schedule(pd: PagerDuty, plan: Plan, users: dict[str, dict], team_id: 
     if found is None:
         return plan.change("create", what, detail,
                            lambda: pd.write("POST", "/schedules", body(layer))["schedule"]["id"],
-                           placeholder="<new schedule>")
+                           placeholder="<new schedule>", parent=True)
     sid = found["id"]
     s = pd.get(f"/schedules/{sid}")["schedule"]
+    live = [x for x in s.get("schedule_layers") or [] if not x.get("end")]
+    if len(live) != 1:
+        plan.refuse(what, f"{len(live)} active layers: the script only changes a schedule with exactly one, so "
+                          "nothing was changed; a person merges the layers in PagerDuty")
+        return sid
+    have = live[0]
     diffs = changed([
         ("time zone", s.get("time_zone"), d.TIME_ZONE),
         ("description", s.get("description") or "", d.SCHEDULE_DESCRIPTION),
         ("team", sorted(t["id"] for t in s.get("teams") or []), [team_id]),
+        ("who is on call", [u["user"]["id"] for u in have.get("users") or []], rotation),
+        ("turn length", have.get("rotation_turn_length_seconds"), d.WEEK_SECONDS),
+        ("hand-off time", same_instant(have.get("rotation_virtual_start"), d.ROTATION_VIRTUAL_START), True),
+        ("restrictions", bool(have.get("restrictions")), False),
     ])
-    live = [x for x in s.get("schedule_layers") or [] if not x.get("end")]
-    if len(live) != 1:
-        diffs.append(f"{len(live)} active layers (want 1)")
-        new_layer = layer
-    else:
-        have = live[0]
-        if [u["user"]["id"] for u in have.get("users") or []] != rotation:
-            diffs.append("who is on call")
-        if have.get("rotation_turn_length_seconds") != d.WEEK_SECONDS:
-            diffs.append("turn length")
-        if not same_instant(have.get("rotation_virtual_start"), d.ROTATION_VIRTUAL_START):
-            diffs.append("hand-off time")
-        if have.get("restrictions"):
-            diffs.append("restrictions")
-        new_layer = {**layer, "id": have["id"], "start": have.get("start") or d.LAYER_START}
     if diffs:
+        new_layer = {**layer, "id": have["id"], "start": have.get("start") or d.LAYER_START}
         plan.change("update", what, ", ".join(diffs), lambda: pd.write("PUT", f"/schedules/{sid}", body(new_layer)))
     else:
         plan.ok(what, detail)
@@ -227,7 +240,7 @@ def ensure_policy(pd: PagerDuty, plan: Plan, users: dict[str, dict], team_id: st
     if found is None:
         return plan.change("create", what, detail,
                            lambda: pd.write("POST", "/escalation_policies", body)["escalation_policy"]["id"],
-                           placeholder="<new escalation policy>")
+                           placeholder="<new escalation policy>", parent=True)
     pid = found["id"]
     diffs = changed([
         ("levels", shape(found.get("escalation_rules") or []), shape(rules)),
@@ -246,32 +259,66 @@ def ensure_policy(pd: PagerDuty, plan: Plan, users: dict[str, dict], team_id: st
 # ---- services --------------------------------------------------------------------------------------------------------
 
 
-class Grouping:
-    """Intelligent alert grouping where the account allows it, else time-based (10 minutes). Learned once a run."""
+def refuses_intelligent(e: ApiError) -> bool:
+    """A refusal of intelligent grouping itself: a 4xx whose text names it. Any other error is not a fallback."""
+    text = e.message.lower()
+    return 400 <= e.status < 500 and e.status not in (401, 404, 429) and ("intelligent" in text or "grouping" in text)
 
-    def __init__(self, retry_intelligent: bool):
-        self.retry_intelligent = retry_intelligent
+
+class Grouping:
+    """Alert grouping through /alert_grouping_settings (the service field alert_grouping_parameters is deprecated):
+    intelligent where the account allows it, else time-based, 10 minutes. The fallback is learned once a run."""
+
+    def __init__(self, pd: PagerDuty, plan: Plan, retry_intelligent: bool):
+        self.pd, self.plan, self.retry_intelligent = pd, plan, retry_intelligent
         self.preferred = INTELLIGENT
 
-    def acceptable(self, params: dict | None) -> bool:
-        kind = (params or {}).get("type")
+    def acceptable(self, setting: dict) -> bool:
+        kind = setting.get("type")
         if kind == "intelligent":
             return True
-        timeout = ((params or {}).get("config") or {}).get("timeout")
+        timeout = (setting.get("config") or {}).get("timeout")
         return kind == "time" and timeout == d.TIME_GROUPING_MINUTES and not self.retry_intelligent
 
-    def write(self, send):
-        """send(params) makes the request; on a refusal of intelligent grouping, retry once with time-based."""
+    def _send(self, send):
         if self.preferred is INTELLIGENT:
             try:
                 return send(INTELLIGENT)
             except ApiError as e:
-                if e.status not in (400, 402, 403, 422):
+                if not refuses_intelligent(e):
                     raise
-                out(f"          (PagerDuty refused intelligent alert grouping, HTTP {e.status}: using time-based "
+                out(f"          (PagerDuty refused intelligent alert grouping: {e.message[:160]}; using time-based "
                     f"grouping, {d.TIME_GROUPING_MINUTES} minutes)")
                 self.preferred = TIME_BASED
         return send(TIME_BASED)
+
+    def ensure(self, name: str, sid: str, new: bool) -> None:
+        what = f'  alert grouping on "{name}"'
+        if new and not self.plan.apply:
+            self.plan.change("create", what, "intelligent (time-based, 10 min, if the account refuses it)")
+            return
+        settings = [s for s in self.pd.list_cursor("/alert_grouping_settings", "alert_grouping_settings")
+                    if any(x.get("id") == sid for x in s.get("services") or [])]
+        if len(settings) > 1:
+            self.plan.refuse(what, f"{len(settings)} grouping settings hold this service; a person keeps one")
+            return
+        if not settings:
+            def create(g):
+                return self.pd.write("POST", "/alert_grouping_settings", {"alert_grouping_setting": {
+                    "name": name, **g, "services": [{"id": sid}]}})
+            self.plan.change("create", what, "intelligent (time-based, 10 min, if the account refuses it)",
+                             lambda: self._send(create))
+            return
+        setting = settings[0]
+        if self.acceptable(setting):
+            self.plan.ok(what, setting.get("type"))
+            return
+
+        def update(g):
+            return self.pd.write("PUT", f"/alert_grouping_settings/{setting['id']}", {"alert_grouping_setting": {
+                "name": setting.get("name") or name, **g,
+                "services": [{"id": x["id"]} for x in setting.get("services") or []]}})
+        self.plan.change("update", what, f"was {setting.get('type')}", lambda: self._send(update))
 
 
 def service_fields(cfg: dict, policy_id: str) -> dict:
@@ -308,19 +355,36 @@ def orchestration_shape(path: dict) -> tuple:
     return sets, _set_actions((path.get("catch_all") or {}).get("actions"))
 
 
+def ours(integration: dict) -> bool:
+    return ((integration.get("vendor") or {}).get("id") == d.VENDOR_ID
+            or (integration.get("name") == d.INTEGRATION_NAME and integration.get("type") == d.INTEGRATION_TYPE))
+
+
 def ensure_services(pd: PagerDuty, plan: Plan, policy_id: str, priorities: dict[str, str],
-                    grouping: Grouping) -> list[str]:
-    ids = []
+                    grouping: Grouping) -> list[str | None]:
+    """Each service's id, or None for one the script refused to make (its children are skipped)."""
+    every = pd.list("/services", "services", {"include[]": "integrations"})
+    ids: list[str | None] = []
     for cfg in d.SERVICES:
         name = cfg["name"]
         what = f'service "{name}"'
         fields = service_fields(cfg, policy_id)
-        detail = "urgency from severity; ack timeout 30 min; no auto-resolve; alert grouping"
-        svc = pd.find_by_name("/services", "services", name, {"include[]": "integrations"})
+        detail = "urgency from severity; ack timeout 30 min; no auto-resolve"
+        same = [s for s in every if s.get("name") == name]
+        if len(same) > 1:
+            raise Refused(f'{len(same)} services named "{name}": remove the extra ones first')
+        svc = same[0] if same else None
         if svc is None:
-            sid = plan.change("create", what, detail, lambda f=fields: grouping.write(
-                lambda g: pd.write("POST", "/services", {"service": {**f, "alert_grouping_parameters": g}}))
-                ["service"]["id"], placeholder=f"<new service {cfg['role']}>")
+            renamed = [s for s in every if s.get("description") == cfg["description"]
+                       and any(ours(i) for i in s.get("integrations") or [])]
+            if renamed:
+                plan.refuse(what, f'not created: "{renamed[0].get("name")}" carries its integration and description '
+                                  f'(renamed?). Rename it back to "{name}", or remove it, then re-run')
+                ids.append(None)
+                continue
+            sid = plan.change("create", what, detail,
+                              lambda f=fields: pd.write("POST", "/services", {"service": f})["service"]["id"],
+                              placeholder=f"<new service {cfg['role']}>", parent=True)
             integrations = []
         else:
             sid = svc["id"]
@@ -334,20 +398,16 @@ def ensure_services(pd: PagerDuty, plan: Plan, policy_id: str, priorities: dict[
                 ("alert creation", svc.get("alert_creation", "create_alerts_and_incidents"),
                  "create_alerts_and_incidents"),
             ])
-            if not grouping.acceptable(svc.get("alert_grouping_parameters")):
-                diffs.append("alert grouping")
             if diffs:
-                plan.change("update", what, ", ".join(diffs), lambda f=fields, sid=sid: grouping.write(
-                    lambda g: pd.write("PUT", f"/services/{sid}", {"service": {**f, "alert_grouping_parameters": g}})))
+                plan.change("update", what, ", ".join(diffs),
+                            lambda f=fields, sid=sid: pd.write("PUT", f"/services/{sid}", {"service": f}))
             else:
-                kind = (svc.get("alert_grouping_parameters") or {}).get("type")
-                plan.ok(what, f"alert grouping {kind}")
+                plan.ok(what, detail)
         ids.append(sid)
+        new = svc is None
 
-        ours = [i for i in integrations if (i.get("vendor") or {}).get("id") == d.VENDOR_ID
-                or (i.get("name") == d.INTEGRATION_NAME and i.get("type") == d.INTEGRATION_TYPE)]
         iwhat = f'  integration "{d.INTEGRATION_NAME}" on "{name}"'
-        if ours:
+        if any(ours(i) for i in integrations):
             plan.ok(iwhat)
         else:
             body = {"integration": {"type": d.INTEGRATION_TYPE, "name": d.INTEGRATION_NAME,
@@ -355,23 +415,26 @@ def ensure_services(pd: PagerDuty, plan: Plan, policy_id: str, priorities: dict[
             plan.change("create", iwhat, "the key Monitoring's pagerduty channel uses (gcp_channels.py)",
                         lambda sid=sid, body=body: pd.write("POST", f"/services/{sid}/integrations", body))
 
-        ensure_orchestration(pd, plan, name, sid, svc is None, priorities)
+        grouping.ensure(name, sid, new)
+        ensure_orchestration(pd, plan, name, sid, new, priorities)
     return ids
 
 
 def ensure_orchestration(pd: PagerDuty, plan: Plan, name: str, sid: str, new: bool, priorities: dict[str, str]):
     what = f'  event orchestration on "{name}"'
     detail = "; ".join(f"{r['monitoring']} -> {r['severity']} {r['priority']}" for r in d.SEVERITY_RULES)
-    detail += "; anything else keeps the default (critical)"
+    detail += " (any letter case); anything else keeps the default (critical)"
 
     def put():
         return pd.write("PUT", f"/event_orchestrations/services/{sid}",
                         {"orchestration_path": desired_orchestration(sid, priorities)})
 
+    def activate():
+        return pd.write("PUT", f"/event_orchestrations/services/{sid}/active", {"active": True})
+
     if new:
         plan.change("create", what, detail, put)
-        plan.change("create", f"  event orchestration active on \"{name}\"", "",
-                    lambda: pd.write("PUT", f"/event_orchestrations/services/{sid}/active", {"active": True}))
+        plan.change("create", f'  event orchestration active on "{name}"', "", activate)
         return
     path = pd.get(f"/event_orchestrations/services/{sid}")["orchestration_path"]
     if orchestration_shape(path) == orchestration_shape(desired_orchestration(sid, priorities)):
@@ -382,11 +445,10 @@ def ensure_orchestration(pd: PagerDuty, plan: Plan, name: str, sid: str, new: bo
     if active:
         plan.ok(f'  event orchestration active on "{name}"')
     else:
-        plan.change("update", f'  event orchestration active on "{name}"', "was inactive",
-                    lambda: pd.write("PUT", f"/event_orchestrations/services/{sid}/active", {"active": True}))
+        plan.change("update", f'  event orchestration active on "{name}"', "was inactive", activate)
 
 
-# ---- Slack (read only) ----------------------------------------------------------------------------------------------
+# ---- Slack (read only) -----------------------------------------------------------------------------------------------
 
 
 def slack_gaps(config: dict, priority_ids: list[str]) -> list[str]:
@@ -399,18 +461,20 @@ def slack_gaps(config: dict, priority_ids: list[str]) -> list[str]:
     if config.get("urgency") not in (None, ""):
         gaps.append(f"urgency: both high and low (it is {config['urgency']} only)")
     chosen = config.get("priorities") or []
-    if chosen and "*" not in chosen and not set(priority_ids) <= set(chosen):
+    if "*" not in chosen and not (chosen and set(priority_ids) <= set(chosen)):
         gaps.append("priorities: all")
     return gaps
 
 
-def report_slack(pd: PagerDuty, plan: Plan, service_ids: list[str], priority_ids: list[str]) -> None:
+def report_slack(pd: PagerDuty, plan: Plan, service_ids: list[str | None], priority_ids: list[str]) -> None:
     try:
         connections = pd.slack_connections()
     except ApiError as e:
         plan.person("  Slack connections", f'cannot read them ({e}); check by hand: docs/PAGERDUTY.md "Slack"')
         return
     for cfg, sid in zip(d.SERVICES, service_ids):
+        if sid is None:
+            continue
         what = f'  Slack: "{cfg["name"]}"'
         mine = [c for c in connections if c.get("source_id") == sid]
         if not mine:
@@ -427,7 +491,7 @@ def report_slack(pd: PagerDuty, plan: Plan, service_ids: list[str], priority_ids
 # ---- business service ------------------------------------------------------------------------------------------------
 
 
-def ensure_business_service(pd: PagerDuty, plan: Plan, team_id: str, service_ids: list[str]) -> None:
+def ensure_business_service(pd: PagerDuty, plan: Plan, team_id: str, service_ids: list[str | None]) -> None:
     what = f'business service "{d.BUSINESS_SERVICE}"'
     body = {"business_service": {"name": d.BUSINESS_SERVICE, "description": d.BUSINESS_DESCRIPTION,
                                  "point_of_contact": d.BUSINESS_POINT_OF_CONTACT, "team": ref("team", team_id)}}
@@ -437,7 +501,7 @@ def ensure_business_service(pd: PagerDuty, plan: Plan, team_id: str, service_ids
     supporting: set[str] = set()
     if not found:
         bid = plan.change("create", what, "", lambda: pd.write("POST", "/business_services", body)
-                          ["business_service"]["id"], placeholder="<new business service>")
+                          ["business_service"]["id"], placeholder="<new business service>", parent=True)
     else:
         b = found[0]
         bid = b["id"]
@@ -454,6 +518,8 @@ def ensure_business_service(pd: PagerDuty, plan: Plan, team_id: str, service_ids
         supporting = {r["supporting_service"]["id"] for r in rels if r.get("dependent_service", {}).get("id") == bid}
 
     for cfg, sid in zip(d.SERVICES, service_ids):
+        if sid is None:
+            continue
         dwhat = f'  "{d.BUSINESS_SERVICE}" supported by "{cfg["name"]}"'
         if sid in supporting:
             plan.ok(dwhat)
@@ -466,7 +532,9 @@ def ensure_business_service(pd: PagerDuty, plan: Plan, team_id: str, service_ids
 # ---- notification rules ----------------------------------------------------------------------------------------------
 
 
-def ensure_notification_rules(pd: PagerDuty, plan: Plan, users: dict[str, dict]) -> None:
+def ensure_notification_rules(pd: PagerDuty, plan: Plan, users: dict[str, dict], add_rules: bool) -> None:
+    """Rules for a contact method that has none yet (first-time setup). A method that already has rules is the
+    person's: a designed rule missing from it is reported, not added, unless --add-rules (settings must be honoured)."""
     for name in d.TEAM_MEMBERS:
         u = users[name]
         # Read from the user's own endpoints: /users?include[]=notification_rules leaves out Slack rules, and
@@ -479,6 +547,7 @@ def ensure_notification_rules(pd: PagerDuty, plan: Plan, users: dict[str, dict])
             for r in got or []:
                 key = ((r.get("contact_method") or {}).get("id"), r.get("urgency"))
                 have.setdefault(key, []).append(r.get("start_delay_in_minutes"))
+        with_rules = {cm_id for cm_id, _ in have}
         wanted = set()
         for urgency in ("high", "low"):
             for cm in methods:
@@ -489,16 +558,20 @@ def ensure_notification_rules(pd: PagerDuty, plan: Plan, users: dict[str, dict])
                 what = (f"notification rule {name}: {urgency} urgency -> {d.CONTACT_WORDS[cm['type']]} "
                         f'"{cm.get("label") or ""}" at {delay} min')
                 delays = have.get((cm["id"], urgency))
-                if delays is None:
+                if delays is not None:
+                    if delay in delays:
+                        plan.ok(what)
+                    else:
+                        plan.kept(what, f"the person set it at {sorted(delays)} min")
+                elif cm["id"] in with_rules and not add_rules:
+                    plan.kept(what, "not added: this contact method has rules the person set and none at this "
+                                    "urgency (--add-rules adds it)")
+                else:
                     body = {"notification_rule": {"type": "assignment_notification_rule", "urgency": urgency,
                                                   "start_delay_in_minutes": delay,
                                                   "contact_method": {"id": cm["id"], "type": cm["type"]}}}
                     plan.change("create", what, "", lambda uid=u["id"], body=body:
                                 pd.write("POST", f"/users/{uid}/notification_rules", body))
-                elif delay in delays:
-                    plan.ok(what)
-                else:
-                    plan.kept(what, f"the person set it at {sorted(delays)} min")
         for (cm_id, urgency), delays in sorted(have.items(), key=str):
             if (cm_id, urgency) not in wanted:
                 plan.kept(f"notification rule {name}: {urgency} urgency -> contact method {cm_id} at {delays} min",
@@ -506,7 +579,7 @@ def ensure_notification_rules(pd: PagerDuty, plan: Plan, users: dict[str, dict])
         missing = sorted({t for t in d.CONTACT_WORDS} - {c["type"] for c in methods})
         if missing:
             out(f"          ({name} has no {', '.join(d.CONTACT_WORDS[t] for t in missing)} yet: once added in "
-                "PagerDuty, a re-run adds the rules)")
+                "PagerDuty, a re-run adds its rules)")
 
 
 # ---- main ------------------------------------------------------------------------------------------------------------
@@ -515,8 +588,10 @@ def ensure_notification_rules(pd: PagerDuty, plan: Plan, users: dict[str, dict])
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--apply", action="store_true", help="make the changes (default: dry run)")
+    parser.add_argument("--add-rules", action="store_true",
+                        help="also add designed notification rules missing on a contact method that has others")
     parser.add_argument("--retry-intelligent-grouping", action="store_true",
-                        help="try intelligent alert grouping again on services that use time-based grouping")
+                        help="try intelligent alert grouping again where a service has time-based grouping")
     args = parser.parse_args()
 
     pd = PagerDuty(d.pagerduty_token(), writes=args.apply)
@@ -533,13 +608,19 @@ def main() -> int:
         raise Refused(f"the account has no priority {', '.join(missing)}: turn priorities on in PagerDuty first")
     users = read_users(pd)
 
-    team_id = ensure_team(pd, plan, users)
-    schedule_id = ensure_schedule(pd, plan, users, team_id)
-    policy_id = ensure_policy(pd, plan, users, team_id, schedule_id)
-    service_ids = ensure_services(pd, plan, policy_id, priorities, Grouping(args.retry_intelligent_grouping))
-    report_slack(pd, plan, service_ids, list(priorities.values()))
-    ensure_business_service(pd, plan, team_id, service_ids)
-    ensure_notification_rules(pd, plan, users)
+    stopped = None
+    try:
+        team_id = ensure_team(pd, plan, users)
+        schedule_id = ensure_schedule(pd, plan, users, team_id)
+        policy_id = ensure_policy(pd, plan, users, team_id, schedule_id)
+        service_ids = ensure_services(pd, plan, policy_id, priorities,
+                                      Grouping(pd, plan, args.retry_intelligent_grouping))
+        report_slack(pd, plan, service_ids, list(priorities.values()))
+        ensure_business_service(pd, plan, team_id, service_ids)
+        ensure_notification_rules(pd, plan, users, args.add_rules)
+    except Stop as e:
+        stopped = str(e)
+        out(f"stopped: {stopped} was refused, so nothing that depends on it was attempted")
 
     c = plan.counts
     if args.apply:
@@ -547,7 +628,9 @@ def main() -> int:
             f"refused {c['refused']}, by hand {c['person']}")
     else:
         out(f"summary: {c['create']} to create, {c['update']} to update, {c['ok']} ok, {c['kept']} kept, "
-            f"{c['person']} by hand")
+            f"{c['refused']} refused, {c['person']} by hand")
+    if stopped:
+        return 2
     return 1 if c["refused"] else 0
 
 

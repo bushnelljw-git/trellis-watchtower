@@ -15,19 +15,21 @@ a file, never printed. Google returns it masked; where the masked value shows an
 unreadable one is left alone unless --rekey sends the key again. The access token comes from
 `gcloud auth print-access-token` (run with no secret on its command line) and is never printed either.
 
-Output: progress on stderr; on stdout only the line tpa-platform's terraform.tfvars takes,
+Output: progress on stderr; on stdout only the line tpa-platform's terraform.tfvars takes (once tpa-platform declares
+alert_pagerduty_channel_ids, in its beta-alert-gaps work; before that, the line routes nothing),
 
     alert_pagerduty_channel_ids = { app = "123", phi = "456", cc = "789" }
 
-with null for a channel a dry run would create.
+with null for a channel a dry run would create or Google refused. A refused project does not stop the others.
 
 Usage:
   scripts/pagerduty/gcp_channels.py --app P --phi P --cc P            dry run: read both sides, print the plan
   scripts/pagerduty/gcp_channels.py --app P --phi P --cc P --apply    create or correct the three channels
   ... --rekey                                                         also send the key again to existing channels
 
-The PHI project sits inside the VPC Service Controls perimeter: its channel can be made only by a member of
-grp-platform-admin from the break-glass access level (tpa-platform's ing-monitoring rule), or the call is refused.
+Who runs it: the projects' owner during the setup runbook (docs/PAGERDUTY.md, "The Google Cloud half"). The PHI
+project's platform-admin role deliberately cannot make notification channels, and once its VPC Service Controls
+perimeter is enforced a call from outside must also meet the break-glass access level.
 """
 
 from __future__ import annotations
@@ -66,23 +68,28 @@ def desired_channel(role: str, service_name: str, key: str) -> dict:
     }
 
 
-def key_matches(masked: str, key: str) -> bool | None:
-    """Whether Google's (masked) service_key agrees with the key: True, False, or None when nothing is visible."""
-    if not masked:
-        return False
-    if masked == key:
-        return True
-    visible = [(i, c) for i, c in enumerate(masked) if c != "*"]
-    if not visible:
+def key_matches(masked, key: str) -> bool | None:
+    """What Google's service_key (returned masked) proves about the key.
+
+    True only when it shows the whole key and it is this one. False only when it proves a different key: the whole
+    value differs, or the visible tail after the stars is not this key's tail. None (unknown) for everything else:
+    empty, omitted, all stars, a matching tail (four characters prove nothing), or a shape not recognised. Unknown is
+    never re-sent by itself; --apply --rekey sends the key again.
+    """
+    if not isinstance(masked, str) or not masked:
         return None
-    if len(masked) == len(key):
-        return all(key[i] == c for i, c in visible)
-    return key.endswith(masked.lstrip("*"))
+    if "*" not in masked:
+        return (masked == key) if len(masked) == len(key) else None
+    tail = re.fullmatch(r"\*+([^*]+)", masked)
+    if tail is None:
+        return None
+    return None if key.endswith(tail.group(1)) else False
 
 
 def access_token() -> str:
     try:
-        got = subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True, text=True, timeout=60)
+        got = subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True, text=True, timeout=60,
+                             env=d.child_env())
     except FileNotFoundError:
         raise Refused("gcloud is not installed") from None
     except subprocess.TimeoutExpired:
@@ -185,13 +192,18 @@ def main() -> int:
     for role, (project, want, existing) in plans.items():
         what = f'{project}: channel "{want["displayName"]}"'
         if existing is None:
-            if args.apply:
-                made = mon.create(project, want)
-                ids[role] = numeric_id(made["name"])
-                err(f"created    {what} (id {ids[role]})")
-            else:
-                ids[role] = None
+            ids[role] = None
+            if not args.apply:
                 err(f"create     {what}")
+                continue
+            try:
+                made = mon.create(project, want)
+            except ApiError as e:
+                refused += 1
+                err(f"refused    {what}: {e}")
+                continue
+            ids[role] = numeric_id(made["name"])
+            err(f"created    {what} (id {ids[role]})")
             continue
         ids[role] = numeric_id(existing["name"])
         fields = []
@@ -201,24 +213,29 @@ def main() -> int:
             fields.append("user_labels")
         if existing.get("enabled") is False:
             fields.append("enabled")
-        match = key_matches((existing.get("labels") or {}).get("service_key", ""), keys[role])
+        match = key_matches((existing.get("labels") or {}).get("service_key"), keys[role])
         if args.rekey or match is False:
             fields.append("labels")
-        note = "" if match is not None or args.rekey else " (Google shows none of its key; --rekey sends it again)"
+        note = {True: "", False: " (Google holds a different key)",
+                None: " (key unknown: Google shows too little of it to prove it is this one; "
+                      "--apply --rekey sends it again)"}[match]
+        if args.rekey:
+            note = " (--rekey)"
         if not fields:
             err(f"ok         {what} (id {ids[role]}){note}")
-        elif args.apply:
+            continue
+        if args.apply:
             body = {**want, "name": existing["name"]}
             if "labels" not in fields:
                 body.pop("labels")  # the key travels only when it is being set
             try:
                 mon.patch(existing["name"], body, fields)
-                err(f"updated    {what} (id {ids[role]}): {', '.join(fields)}")
+                err(f"updated    {what} (id {ids[role]}): {', '.join(fields)}{note}")
             except ApiError as e:
                 refused += 1
                 err(f"refused    {what}: {e}")
         else:
-            err(f"update     {what} (id {ids[role]}): {', '.join(fields)}")
+            err(f"update     {what} (id {ids[role]}): {', '.join(fields)}{note}")
 
     def show(v):
         return "null" if v is None else f'"{v}"'

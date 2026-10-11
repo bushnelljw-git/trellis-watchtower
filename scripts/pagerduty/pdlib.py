@@ -109,6 +109,11 @@ BUSINESS_POINT_OF_CONTACT = "The TPA Platform team in PagerDuty"
 # Monitoring's policy severity, as it arrives in the event (custom_details.incident.severity), becomes the alert's
 # severity and the incident's priority. Anything else ("No severity", a hand-made policy) keeps PagerDuty's default
 # severity, critical, on purpose: it still pages at high urgency.
+#
+# The match ignores case and surrounding spaces. Google's guide never states the casing (its payload example writes
+# "no severity" in lower case), and a WARNING read as unmatched would page at high urgency. RE2's (?i) flag; the word
+# is written capitalised so that a lower-case test event proves the flag works (docs/PAGERDUTY.md, "Verified").
+# Spaces, not \s: PagerDuty's condition language refuses a backslash inside a quoted string (HTTP 400, 2026-10-11).
 SEVERITY_FIELD = "event.custom_details.incident.severity"
 SEVERITY_RULES = [
     {"monitoring": "Critical", "severity": "critical", "priority": "P1"},
@@ -118,7 +123,7 @@ SEVERITY_RULES = [
 
 
 def rule_expression(monitoring_severity: str) -> str:
-    return f"{SEVERITY_FIELD} matches part '{monitoring_severity}'"
+    return f"{SEVERITY_FIELD} matches regex '(?i)^ *{monitoring_severity} *$'"
 
 
 def rule_label(rule: dict) -> str:
@@ -129,7 +134,8 @@ def rule_label(rule: dict) -> str:
 EXPECTED_URGENCY = {"critical": "high", "error": "high", "warning": "low", "info": "low"}
 
 # Each person's notification rules, built only from contact methods they already have: minutes after an incident is
-# assigned to them. Phone and SMS are for high urgency only.
+# assigned to them. Phone and SMS are for high urgency only. A re-run adds rules only for a contact method that has
+# none at all (a newly added phone or app); a rule a person removed stays removed unless --add-rules is given.
 NOTIFY = {
     "high": {
         "push_notification_contact_method": 0,
@@ -221,6 +227,21 @@ def base_url(env_name: str, default: str) -> str:
 # ---- HTTP ------------------------------------------------------------------------------------------------------------
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: urllib would send the Authorization header on to wherever it points."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def child_env() -> dict:
+    """The environment for a child process (security, gcloud): never the PagerDuty key."""
+    return {k: v for k, v in os.environ.items() if k != "PAGERDUTY_TOKEN"}
+
+
 class ApiError(Exception):
     def __init__(self, status: int, message: str):
         super().__init__(f"HTTP {status}: {message}")
@@ -234,7 +255,7 @@ def http_json(method: str, url: str, headers: dict, body=None, timeout: float = 
     for attempt in range(4):
         req = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with _OPENER.open(req, timeout=timeout) as resp:
                 raw = resp.read()
         except urllib.error.HTTPError as e:
             raw = e.read()
@@ -276,7 +297,7 @@ def pagerduty_token() -> str:
         try:
             found = subprocess.run(
                 ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, timeout=30, env=child_env(),
             )
         except (FileNotFoundError, subprocess.TimeoutExpired):
             found = None
@@ -306,6 +327,8 @@ class PagerDuty:
         }
 
     def _url(self, path: str, params=None) -> str:
+        if "<" in path or ">" in path:
+            raise RuntimeError(f"refusing a URL built from a placeholder: {path}")
         url = self.base + path
         if params:
             url += ("&" if "?" in url else "?") + urllib.parse.urlencode(params, doseq=True)
@@ -323,6 +346,16 @@ class PagerDuty:
             if not page.get("more") or not got:
                 return items
             offset += len(got)
+
+    def list_cursor(self, path: str, key: str) -> list:
+        """A listing paged by cursor (`after`), such as /alert_grouping_settings."""
+        items, after = [], None
+        while True:
+            page = self.get(path, {"limit": self.PAGE, **({"after": after} if after else {})})
+            items.extend(page.get(key) or [])
+            after = page.get("after")
+            if not after or not page.get(key):
+                return items
 
     def slack_connections(self) -> list[dict]:
         """Every service-to-Slack-channel connection in every linked Slack workspace (read only)."""

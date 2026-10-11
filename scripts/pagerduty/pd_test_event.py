@@ -14,7 +14,8 @@ Usage:
   scripts/pagerduty/pd_test_event.py --role app --severity Critical --send    send it, read it back, resolve it
   ... --keep        leave the incident open (to see the page arrive on a phone); resolve it in PagerDuty afterwards
 
---role is app, phi or cc. --severity is what Monitoring sends: Critical, Error, Warning or "No severity".
+--role is app, phi or cc. --severity is the text Monitoring would send at details.incident.severity, in any letter case:
+Critical, error, WARNING, "No severity" and so on. The rules ignore case, so every casing must give the same result.
 Exit 0 when PagerDuty did what the design says, 1 when it did not.
 """
 
@@ -34,13 +35,12 @@ import pdlib as d  # noqa: E402
 from pdlib import PagerDuty, Refused, out  # noqa: E402
 
 SUMMARY = "TEST — PagerDuty setup check, please ignore"
-SEVERITIES = ["Critical", "Error", "Warning", "No severity"]
 
 
 def expected(severity: str) -> tuple[str, str, str | None]:
-    """(urgency, alert severity, priority name) the design gives a Monitoring severity."""
+    """(urgency, alert severity, priority name) the design gives a Monitoring severity, in any letter case."""
     for r in d.SEVERITY_RULES:
-        if r["monitoring"] == severity:
+        if r["monitoring"].lower() == severity.strip().lower():
             return d.EXPECTED_URGENCY[r["severity"]], r["severity"], r["priority"]
     return "high", "critical", None  # PagerDuty's default severity for an event with none mapped
 
@@ -112,7 +112,7 @@ def find_incident(pd: PagerDuty, service_id: str, incident_key: str, since: date
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--role", required=True, choices=[s["role"] for s in d.SERVICES])
-    parser.add_argument("--severity", required=True, choices=SEVERITIES)
+    parser.add_argument("--severity", required=True, help='e.g. Critical, warning, ERROR, "No severity"')
     parser.add_argument("--send", action="store_true", help="send the event (default: dry run)")
     parser.add_argument("--keep", action="store_true", help="leave the incident open")
     parser.add_argument("--wait", type=float, default=60, help="seconds to wait for PagerDuty (default 60)")
@@ -153,10 +153,11 @@ def main() -> int:
     send_event({"service_key": key, "event_type": "resolve", "incident_key": incident_key,
                 "description": f"{SUMMARY}: resolved by the test"})
     deadline = time.monotonic() + args.wait
-    status = incident.get("status")
-    while status != "resolved" and time.monotonic() < deadline:
-        time.sleep(3)
+    while True:
         status = pd.get(f"/incidents/{incident['id']}")["incident"].get("status")
+        if status == "resolved" or time.monotonic() > deadline:
+            break
+        time.sleep(3)
     out(f"resolved   incident #{incident.get('incident_number')}: status {status}")
     return 0 if ok and status == "resolved" else 1
 

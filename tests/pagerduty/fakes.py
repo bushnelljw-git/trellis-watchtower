@@ -3,8 +3,10 @@
 An automated gate only: one local HTTP server on 127.0.0.1 answering the calls the scripts make, holding its state in
 memory and recording every request. It also models what the design relies on, so the tests can check it end to end:
 a v1 event's `details` become `custom_details`; a service orchestration's first matching rule (`matches part` is a
-substring test) sets the alert's severity and the incident's priority; an event no rule matches keeps severity
-critical; a severity-based service pages critical and error at high urgency, warning and info at low.
+case-sensitive substring test, the cautious reading; `matches regex` is a regex search, so RE2's (?i) works) sets the
+alert's severity and the incident's priority; an event no rule matches keeps severity critical; a severity-based
+service pages critical and error at high urgency, warning and info at low. Error bodies echo what they were sent, as
+a careless API might, so the tests can prove the scripts never print a secret that comes back in one.
 
 The live account is the real proof (docs/PAGERDUTY.md, "Verified"); this is the model the scripts are tested against.
 """
@@ -28,13 +30,13 @@ ACTION_DEFAULTS = {
     "event_action": None, "variables": [], "extractions": [], "incident_custom_field_updates": [],
     "escalation_policy": None, "automation_action": None, "pagerduty_automation_action": None,
 }
-PCL = re.compile(r"^event\.custom_details\.([A-Za-z0-9_.]+) matches part '([^']*)'$")
+PCL = re.compile(r"^event\.custom_details\.([A-Za-z0-9_.]+) matches (part|regex) '([^']*)'$")
 
 
 class Fail(Exception):
-    def __init__(self, status: int, body: dict):
+    def __init__(self, status: int, body: dict | None, location: str | None = None):
         super().__init__(status)
-        self.status, self.body = status, body
+        self.status, self.body, self.location = status, body, location
 
 
 def not_found():
@@ -42,7 +44,8 @@ def not_found():
 
 
 class FakeState:
-    def __init__(self, refuse_intelligent=False, rich_contacts=False, mask="last4", forbidden_projects=()):
+    def __init__(self, refuse_intelligent=False, rich_contacts=False, mask="last4", forbidden_projects=(),
+                 fail_create_projects=(), refuse_team_create=False, grouping_error=None, redirect_pd=False):
         self.lock = threading.Lock()
         self.seq = itertools.count(1)
         self.requests: list[dict] = []
@@ -50,6 +53,11 @@ class FakeState:
         self.refuse_intelligent = refuse_intelligent
         self.mask = mask
         self.forbidden_projects = set(forbidden_projects)
+        self.fail_create_projects = set(fail_create_projects)
+        self.refuse_team_create = refuse_team_create
+        self.grouping_error = grouping_error  # (status, text) for any grouping-setting write
+        self.redirect_pd = redirect_pd
+        self.grouping: dict[str, dict] = {}
 
         self.priorities = [{"id": f"PRI{i}", "name": f"P{i}", "description": ""} for i in range(1, 6)]
         jon_methods = [
@@ -100,6 +108,10 @@ class FakeState:
     def new_id(self, prefix: str) -> str:
         return f"{prefix}{next(self.seq):04d}"
 
+    def delete_rule(self, uid, cm_id, urgency):
+        rules = self.users[uid]["notification_rules"]
+        rules[:] = [r for r in rules if not (r["contact_method"]["id"] == cm_id and r["urgency"] == urgency)]
+
     def add_rule(self, uid, cm_id, urgency, delay):
         user = self.users[uid]
         cm = next(c for c in user["contact_methods"] if c["id"] == cm_id)
@@ -124,6 +136,8 @@ class FakeState:
         return view
 
     def masked(self, key):
+        if self.mask == "empty":
+            return ""
         if self.mask == "all":
             return "*" * len(key)
         if self.mask == "none":
@@ -132,7 +146,8 @@ class FakeState:
 
     def channel_view(self, ch):
         view = {k: v for k, v in ch.items() if k != "_key"}
-        view["labels"] = {"service_key": self.masked(ch["_key"])}
+        if self.mask != "omit":
+            view["labels"] = {"service_key": self.masked(ch["_key"])}
         return view
 
     # ---- PagerDuty REST --------------------------------------------------------------------------------------------
@@ -176,6 +191,8 @@ class FakeState:
         if p == ["teams"]:
             if method == "GET":
                 return 200, self.page_of(list(self.teams.values()), "teams", query)
+            if self.refuse_team_create:
+                raise Fail(400, {"error": {"message": "Invalid Input Provided", "errors": ["Name is reserved"]}})
             team = {"id": self.new_id("PT"), **{k: body["team"][k] for k in ("name", "description")}}
             self.teams[team["id"]] = team
             self.members[team["id"]] = {}
@@ -216,6 +233,22 @@ class FakeState:
         if p[:1] == ["escalation_policies"] and len(p) == 2 and method == "PUT":
             self.policies[p[1]] = {"id": p[1], **body["escalation_policy"]}
             return 200, {"escalation_policy": self.policies[p[1]]}
+
+        if p == ["alert_grouping_settings"]:
+            if method == "GET":
+                items = list(self.grouping.values())
+                start = int(query.get("after", ["0"])[0])
+                chunk = items[start:start + self.page]
+                after = str(start + self.page) if start + self.page < len(items) else None
+                return 200, {"alert_grouping_settings": chunk, "after": after, "limit": self.page}
+            g = self.check_grouping(body["alert_grouping_setting"])
+            g["id"] = self.new_id("PG")
+            self.grouping[g["id"]] = g
+            return 201, {"alert_grouping_setting": g}
+        if p[:1] == ["alert_grouping_settings"] and len(p) == 2 and method == "PUT":
+            g = self.check_grouping(body["alert_grouping_setting"])
+            self.grouping[p[1]] = {**g, "id": p[1]}
+            return 200, {"alert_grouping_setting": self.grouping[p[1]]}
 
         if p == ["services"]:
             if method == "GET":
@@ -288,11 +321,18 @@ class FakeState:
         raise not_found()
 
     def check_service(self, svc):
-        g = svc.get("alert_grouping_parameters") or {}
+        if "alert_grouping_parameters" in svc:
+            raise Fail(400, {"error": {"message": "alert_grouping_parameters is deprecated in this fake"}})
+        return dict(svc)
+
+    def check_grouping(self, g):
+        if self.grouping_error:
+            status, text = self.grouping_error
+            raise Fail(status, {"error": {"message": "Invalid Input Provided", "errors": [text]}})
         if g.get("type") == "intelligent" and self.refuse_intelligent:
             raise Fail(400, {"error": {"message": "Invalid Input Provided", "code": 2001,
                                        "errors": ["Intelligent alert grouping is not available on this account"]}})
-        return dict(svc)
+        return dict(g)
 
     def store_schedule(self, sid, s):
         layers = []
@@ -308,6 +348,13 @@ class FakeState:
         return self.schedules[sid]
 
     def store_orchestration(self, path):
+        for s in path["sets"]:
+            for r in s.get("rules", []):
+                for c in r.get("conditions", []):
+                    if "\\" in c["expression"] or not PCL.match(c["expression"]):
+                        # Like the live parser (2026-10-11): no backslash inside a quoted string.
+                        raise Fail(400, {"error": {"message": "Invalid payload", "errors": [
+                            f"unexpected symbols in {c['expression']}"]}})
         sets = []
         for s in path["sets"]:
             rules = [{"id": self.new_id("r"), "label": r.get("label"), "conditions": r.get("conditions", []),
@@ -360,7 +407,11 @@ class FakeState:
         value = custom_details
         for part in m.group(1).split("."):
             value = value.get(part) if isinstance(value, dict) else None
-        return isinstance(value, str) and m.group(2) in value
+        if not isinstance(value, str):
+            return False
+        if m.group(2) == "part":
+            return m.group(3) in value
+        return re.search(m.group(3), value) is not None
 
     # ---- Cloud Monitoring ------------------------------------------------------------------------------------------
     def monitoring(self, method, parts, query, body):
@@ -376,6 +427,9 @@ class FakeState:
                 items = [c for c in items if c["type"] == "pagerduty"]
             return 200, {"notificationChannels": [self.channel_view(c) for c in items]}
         if len(parts) == 4 and method == "POST":
+            if project in self.fail_create_projects:
+                raise Fail(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT",
+                                           "message": f"Channel refused; request was {json.dumps(body)}"}})
             if body.get("type") != "pagerduty" or not (body.get("labels") or {}).get("service_key"):
                 raise Fail(400, {"error": {"message": "bad channel"}})
             name = f"projects/{project}/notificationChannels/{next(self.seq) + 1000000}"
@@ -421,10 +475,15 @@ class Server:
                     state_ref.requests.append({"method": self.command, "path": split.path, "query": split.query,
                                                "raw": raw.decode(errors="replace"),
                                                "authorization": self.headers.get("Authorization", "")})
+                    location = None
                     try:
                         if parts[0] == "pd":
-                            if self.headers.get("Authorization") != f"Token token={TOKEN}":
-                                raise Fail(401, {"error": {"message": "Unauthorized", "code": 2006}})
+                            if state_ref.redirect_pd:
+                                raise Fail(302, None, location="/capture" + split.path)
+                            presented = self.headers.get("Authorization", "")
+                            if presented != f"Token token={TOKEN}":
+                                raise Fail(401, {"error": {"message": f"Unauthorized: {presented} is not valid",
+                                                           "code": 2006}})
                             status, payload = state_ref.pagerduty(self.command, parts[1:], query, body)
                         elif parts[0] == "slack":
                             if self.headers.get("Authorization") != f"Token token={TOKEN}":
@@ -443,9 +502,11 @@ class Server:
                         else:
                             raise not_found()
                     except Fail as f:
-                        status, payload = f.status, f.body
+                        status, payload, location = f.status, f.body, f.location
                 data = b"" if payload is None else json.dumps(payload).encode()
                 self.send_response(status)
+                if location:
+                    self.send_header("Location", location)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
