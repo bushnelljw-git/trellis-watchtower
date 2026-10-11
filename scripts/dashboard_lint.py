@@ -7,8 +7,9 @@ Every dashboard fails when:
      Monitoring labels come from a closed allowlist (docs/SPEC.md, "Rules the implementation must keep"), so a
      panel that groups or filters on one of these is charting an id;
   2. it uses a datasource uid outside its set: a local dashboard (grafana/dashboards) `prometheus`, `loki` or `fly`;
-     a cloud dashboard (cloud/dashboards) exactly the uids declared under cloud/provisioning/datasources/;
-  3. it has no uid, or a uid another dashboard already uses;
+     a cloud dashboard (cloud/dashboards, and its no-cc/ variants) exactly the uids declared under
+     cloud/provisioning/datasources/;
+  3. it has no uid, or a uid another dashboard already uses (a no-cc/ variant has its page's uid, and nothing else);
   4. it is not valid JSON.
 
 A cloud dashboard (the production image, read by grp-platform through IAP) also fails when:
@@ -17,12 +18,19 @@ A cloud dashboard (the production image, read by grp-platform through IAP) also 
      fills it in at start). Not PromQL: Grafana 12.4 turns a failed PromQL request into an empty answer, so a broken
      panel would read as zero. Nothing here reads logs: the datasource has no log query, and a log-based metric is a
      metric;
-  6. a filter, a group-by or a legend (`{{...}}`) names a label outside the allowlist below; a resource label is used
-     without the query's `resource.type`; the metric is not a Google Cloud one; a filter is not `=` or `=~`; or any
-     Grafana variable appears in a query (no viewer can steer one);
+  6. a filter, a group-by or a legend (`{{...}}`, `${__field.labels.X}`) names a label outside the allowlist below,
+     or a legend names `__field.labels` without one allowed key; a resource label is used without the query's
+     `resource.type`; the metric is not a Google Cloud one; a filter is not `=` or `=~`; a cross-series reducer, primary
+     or secondary, is missing or REDUCE_NONE (which would return every label of every series); or any Grafana
+     variable appears in a query, so no dashboard query takes the viewer's input;
   7. a panel mixes datasources (so a PHI-project panel is `cloud-phi` and nothing else), or uses a panel type
      outside the allowlist;
-  8. it declares any template variable (so no viewer can type a filter or a project).
+  8. it declares any template variable (so no panel offers a viewer a filter or a project to change).
+
+These rules bound what the dashboards ask, not what a viewer can ask. Any signed-in viewer can post a query of their
+own to /api/ds/query (any filter, any reducer, another project), and Grafana 12.4 has no setting that limits a
+datasource to its saved panels. What a viewer can read is whatever sa-watchtower can read: cloud/README.md, "What a
+viewer can read".
 
 Usage:
   scripts/dashboard_lint.py                       lint grafana/dashboards/ (local) and cloud/dashboards/ (cloud)
@@ -69,7 +77,8 @@ METRIC_TYPE_RE = re.compile(r"^(logging|run|cloudsql|monitoring)\.googleapis\.co
 FILTER_OPERATORS = {"=", "=~"}
 CLOUD_PANEL_TYPES = {"row", "stat", "timeseries", "table", "state-timeline", "text", "bargauge"}
 ALIAS_RE = re.compile(r"\{\{\s*([^}\s]+)\s*\}\}")
-LEGEND_LABEL_RE = re.compile(r"\$\{__field\.labels\.([^}]+)\}")
+# Every mention of a field's labels in a legend or display name, with the key it names (None for the bare map).
+FIELD_LABELS_RE = re.compile(r"__field\.labels(?:\.([A-Za-z0-9_.]+))?")
 PROJECT_VAR_RE = re.compile(r"^\s*defaultProject:\s*\$\{([A-Z0-9_]+)\}\s*(#.*)?$")
 
 
@@ -214,11 +223,14 @@ def lint_cloud(path: Path, dashboard: dict, datasources: dict[str, str]) -> list
         if kind not in CLOUD_PANEL_TYPES:
             fail(where, f"panel type `{kind}` is not one a cloud dashboard uses ({', '.join(sorted(CLOUD_PANEL_TYPES))})")
 
-        # 6. Legends name allowed labels only.
-        for text in strings(panel.get("fieldConfig") or {}):
-            for label in LEGEND_LABEL_RE.findall(text):
-                if label not in ALLOWED_LABELS:
-                    fail(where, f"a legend names the label `{label}`, which is not on the allowlist")
+        # 6. Legends and display names name one allowed label each, never the bare label map.
+        for text in strings([panel.get("fieldConfig") or {}, panel.get("options") or {},
+                             panel.get("transformations") or []]):
+            for m in FIELD_LABELS_RE.finditer(text):
+                if m.group(1) is None:
+                    fail(where, "a legend names `__field.labels` without a key; name one allowed label")
+                elif m.group(1) not in ALLOWED_LABELS:
+                    fail(where, f"a legend names the label `{m.group(1)}`, which is not on the allowlist")
 
         targets = panel.get("targets") or []
         if kind in ("row", "text"):
@@ -279,9 +291,14 @@ def lint_cloud(path: Path, dashboard: dict, datasources: dict[str, str]) -> list
             for key in ("perSeriesAligner", "secondaryPerSeriesAligner"):
                 if key in tsl and not str(tsl[key]).startswith("ALIGN_"):
                     fail(where, f"query {ref}: {key} `{tsl[key]}` is not an aligner")
-            for key in ("crossSeriesReducer", "secondaryCrossSeriesReducer"):
-                if key in tsl and not str(tsl[key]).startswith("REDUCE_"):
-                    fail(where, f"query {ref}: {key} `{tsl[key]}` is not a reducer")
+            secondary = any(k.startswith("secondary") for k in tsl)
+            for key in ("crossSeriesReducer", *(("secondaryCrossSeriesReducer",) if secondary else ())):
+                reducer = tsl.get(key)
+                if not reducer:
+                    fail(where, f"query {ref}: has no {key}; reduce across series to the labels it groups by")
+                elif reducer == "REDUCE_NONE" or not str(reducer).startswith("REDUCE_"):
+                    fail(where, f"query {ref}: {key} `{reducer}` is not a reducer that groups (REDUCE_NONE returns "
+                                "every label of every series)")
     return errors
 
 
@@ -305,7 +322,7 @@ def main(argv: list[str]) -> int:
         else:
             into.append(Path(arg))
     if not argv:
-        local_targets, cloud_targets = [LOCAL_DIR], [CLOUD_DIR]
+        local_targets, cloud_targets = [LOCAL_DIR], [CLOUD_DIR, CLOUD_DIR / "no-cc"]
     missing = [str(t) for t in local_targets + cloud_targets if argv and not t.exists()]
     if missing:
         print("dashboard_lint: no such path: " + ", ".join(missing), file=sys.stderr)
@@ -325,10 +342,15 @@ def main(argv: list[str]) -> int:
             if not isinstance(dashboard, dict):
                 errors.append(f"{path}: not a dashboard object")
                 continue
-            # 3. uid present and unique.
+            # 3. uid present and unique; a no-cc/ variant has its page's uid.
             uid = dashboard.get("uid")
             if not isinstance(uid, str) or not uid.strip():
                 errors.append(f"{path}: dashboard has no uid")
+            elif cloud and path.parent.name == "no-cc":
+                page = path.parent.parent / path.name
+                page_uid = json.loads(page.read_text()).get("uid") if page.exists() else None
+                if uid != page_uid:
+                    errors.append(f"{path}: a no-cc variant needs the uid of {page} (`{page_uid}`), not `{uid}`")
             elif uid in seen_uids:
                 errors.append(f"{path}: uid `{uid}` is already used by {seen_uids[uid]}")
             else:

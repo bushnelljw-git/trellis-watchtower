@@ -3,8 +3,11 @@
 Run: python3 -m unittest discover -s tests/dashboards -v
 """
 
+import copy
+import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -74,6 +77,81 @@ class DashboardLintTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(ROOT / "scripts" / "cloud_dashboards.py"), "--check"],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+class CloudMutationTest(unittest.TestCase):
+    """Each mutation of a real cloud dashboard must fail the lint with its own message (the holes the review of
+    cfbc3a7 found by mutation)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.overview = json.loads((ROOT / "cloud" / "dashboards" / "overview.json").read_text())
+
+    def lint_mutated(self, mutate) -> tuple[int, str]:
+        dashboard = copy.deepcopy(self.overview)
+        mutate(dashboard)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "overview.json"
+            path.write_text(json.dumps(dashboard))
+            return lint("--cloud", path)
+
+    def panel(self, dashboard, title, row=None):
+        current = None
+        for p in dashboard["panels"]:
+            if p["type"] == "row":
+                current = p["title"]
+            elif p["title"] == title and (row is None or current.startswith(row)):
+                return p
+        raise KeyError(title)
+
+    def first_query(self, dashboard, title, row=None):
+        return self.panel(dashboard, title, row)["targets"][0]["timeSeriesList"]
+
+    def assertCaught(self, mutate, message):
+        code, out = self.lint_mutated(mutate)
+        self.assertEqual(code, 1, out)
+        self.assertIn(message, out)
+
+    def test_the_unmutated_dashboard_passes(self):
+        code, out = self.lint_mutated(lambda d: None)
+        self.assertEqual(code, 0, out)
+
+    def test_a_missing_reducer(self):
+        self.assertCaught(lambda d: self.first_query(d, "5xx (1 h)", "Sign-in").pop("crossSeriesReducer"),
+                          "has no crossSeriesReducer")
+
+    def test_reduce_none(self):
+        self.assertCaught(lambda d: self.first_query(d, "5xx (1 h)", "Sign-in").update(
+            crossSeriesReducer="REDUCE_NONE"), "crossSeriesReducer `REDUCE_NONE` is not a reducer that groups")
+
+    def test_secondary_reduce_none(self):
+        self.assertCaught(lambda d: self.first_query(d, "Error groups (24 h)", "Sign-in").update(
+            secondaryCrossSeriesReducer="REDUCE_NONE"),
+            "secondaryCrossSeriesReducer `REDUCE_NONE` is not a reducer that groups")
+
+    def test_a_secondary_aggregation_without_its_reducer(self):
+        self.assertCaught(lambda d: self.first_query(d, "Error groups (24 h)", "Sign-in").pop(
+            "secondaryCrossSeriesReducer"), "has no secondaryCrossSeriesReducer")
+
+    def test_bare_field_labels_in_a_display_name(self):
+        self.assertCaught(lambda d: self.panel(d, "Uptime checks passing (24 h)")["fieldConfig"]["defaults"].update(
+            displayName="${__field.labels}"), "a legend names `__field.labels` without a key")
+
+    def test_bare_field_labels_in_an_override(self):
+        def mutate(d):
+            self.panel(d, "Uptime checks passing (24 h)")["fieldConfig"]["overrides"].append(
+                {"matcher": {"id": "byFrameRefID", "options": "A"},
+                 "properties": [{"id": "displayName", "value": "host ${__field.labels}"}]})
+        self.assertCaught(mutate, "a legend names `__field.labels` without a key")
+
+    def test_a_field_label_off_the_allowlist(self):
+        self.assertCaught(lambda d: self.panel(d, "Uptime checks passing (24 h)")["fieldConfig"]["defaults"].update(
+            displayName="${__field.labels.revision_name}"), "a legend names the label `revision_name`")
+
+    def test_a_field_label_on_the_allowlist_passes(self):
+        code, out = self.lint_mutated(lambda d: self.panel(d, "Uptime checks passing (24 h)")[
+            "fieldConfig"]["defaults"].update(displayName="${__field.labels.resource.label.host}"))
+        self.assertEqual(code, 0, out)
 
 
 if __name__ == "__main__":
