@@ -2082,8 +2082,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Alert policy, channel or snooze changes",
-      "description": "Changes to this project's alert policies, notification channels or snoozes in the Admin Activity log, by method (`monitoring-changed`, D-137). The entry says who and what.",
+      "title": "Alert, snooze and log-counter changes",
+      "description": "Changes to this project's alert policies, notification channels or snoozes (`monitoring-changed`, D-137) and to its log-based counters (`log-counters-changed`, D-141), from the Admin Activity log, by method. The entry says who and what. No resource type is named: the catalogue has not yet confirmed which resource Google writes these on.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -2107,11 +2107,32 @@
             "filters": [
               "metric.type",
               "=",
-              "logging.googleapis.com/user/monitoring_changes",
-              "AND",
-              "resource.type",
+              "logging.googleapis.com/user/monitoring_changes"
+            ],
+            "groupBys": [
+              "metric.label.operation"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.operation}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
               "=",
-              "audited_resource"
+              "logging.googleapis.com/user/log_metric_changes"
             ],
             "groupBys": [
               "metric.label.operation"

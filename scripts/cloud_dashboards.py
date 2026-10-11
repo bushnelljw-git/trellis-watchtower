@@ -657,10 +657,12 @@ def records() -> dict:
                  name=alias("code", "service") + " dry run " + alias("outcome")),
                "VPC Service Controls violations logged in this project, by reason, service and whether it was a dry "
                "run (`perimeter-violations`).", bars=True),
-        series("Alert policy, channel or snooze changes", PHI,
-               q(log("monitoring_changes"), AUDITED, by=("operation",)),
-               "Changes to this project's alert policies, notification channels or snoozes in the Admin Activity "
-               "log, by method (`monitoring-changed`, D-137). The entry says who and what.", bars=True),
+        series("Alert, snooze and log-counter changes", PHI,
+               [q(log("monitoring_changes"), by=("operation",)), q(log("log_metric_changes"), by=("operation",))],
+               "Changes to this project's alert policies, notification channels or snoozes (`monitoring-changed`, "
+               "D-137) and to its log-based counters (`log-counters-changed`, D-141), from the Admin Activity log, "
+               "by method. The entry says who and what. No resource type is named: the catalogue has not yet "
+               "confirmed which resource Google writes these on.", bars=True),
         row("Protected jobs"),
         series("Executions, by job and result", PHI, executions(PHI_JOBS),
                "The migration, the nightly export, the chain head, beta's seed and the quarterly restore drill.",

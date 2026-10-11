@@ -1114,6 +1114,28 @@ projects:
         labels:
           operation: 'EXTRACT(protoPayload.methodName)'
 
+      # D-141 (the owner, 2026-10-11: "Yes, with an alert"): grp-platform-admin
+      # adds and changes this project's log metrics (tpaLogMetricWriter, row
+      # 174), and every change sends an alert so it is always visible. The
+      # three Admin Activity methods of MetricsServiceV2 (Cloud Logging's
+      # audit logging page: CreateLogMetric, UpdateLogMetric, which also
+      # creates one that does not exist, and DeleteLogMetric) are the filter,
+      # and the method the one label, as monitoring_changes'. Who and what
+      # stay in the entry. An apply of this catalogue opens it too.
+      log_metric_changes:
+        description: >-
+          A change to this project's log-based metrics in the Admin Activity
+          audit log: a log metric created, updated or deleted. By method
+          alone; the entry says who and what.
+        filter: |
+          log_id("cloudaudit.googleapis.com/activity")
+          AND protoPayload.serviceName="logging.googleapis.com"
+          AND (protoPayload.methodName="google.logging.v2.MetricsServiceV2.CreateLogMetric"
+            OR protoPayload.methodName="google.logging.v2.MetricsServiceV2.UpdateLogMetric"
+            OR protoPayload.methodName="google.logging.v2.MetricsServiceV2.DeleteLogMetric")
+        labels:
+          operation: 'EXTRACT(protoPayload.methodName)'
+
       scheduler_failures:
         description: >-
           A Cloud Scheduler attempt in this project that finished in error, by
@@ -1329,6 +1351,35 @@ projects:
             threshold:
               filter: >-
                 metric.type = "logging.googleapis.com/user/monitoring_changes" AND resource.type = "audited_resource"
+              group_by_fields: ["metric.label.operation"]
+
+      # D-141 (the owner, 2026-10-11: "Yes, with an alert"): the log metrics'
+      # own change alarm, beside monitoring-changed. Normal routing (a
+      # WARNING): a change is to be read, not an outage.
+      log-counters-changed:
+        display_name: "a log metric changed"
+        documentation: >-
+          A log-based metric in the PHI project was created, changed or
+          deleted (D-141). Its log metric writers (row 174, grp-platform-admin)
+          may add and change them, and every change sends this alert so it is
+          always visible; an apply of the catalogue changes them too. The
+          counters are what the PHI project's alerts read, so a counter whose
+          filter was narrowed or emptied silences its alert. Read the
+          project's Admin Activity log for the entry (the incident's label is
+          the method): who made it and what changed. A change nobody
+          announced, or one to `monitoring_changes` or `log_metric_changes`
+          themselves, is a finding; the next apply puts the catalogue's
+          counters back.
+        conditions:
+          # Cloud Logging writes a log metric's audit entries on its `metric`
+          # resource (Logging's resource list: "Metric Type", labels
+          # project_id and name), which is also a Cloud Monitoring resource
+          # type, so the counter's series lands there. UNVERIFIED until read:
+          # infra/README.md's "before you apply" reads one entry's type.
+          - name: "a log metric change in the Admin Activity log"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/log_metric_changes" AND resource.type = "metric"
               group_by_fields: ["metric.label.operation"]
 
       # Its own key since 2026-10-11, when `canary-sql` became the shared

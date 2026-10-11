@@ -34,7 +34,7 @@ incidents.
 | TPA overview (`tw-cloud-overview`), the home page | 44 | Open incidents (links: PagerDuty, and Google's incident list per project), uptime checks passing by host, every scheduled job's successful run within its missed-run deadline, and one row per area (Portal & API, Sign-in, Member records, Call centre, CRM): requests, 5xx, p95, error groups in 24 h, the database's up and disk (or instances), failed jobs and schedules in 24 h. |
 | Portal & API (`tw-cloud-portal-api`) | 13 | Uptime, IAP key refusals, requests and 5xx by service, Cloud Run p95 and tpa-api's own p50/p95, tpa-api calls by operation and outcome, instances, start-up and database-proxy failures, tpa-jobs run summaries, alerts raised, drain ticks that raised. |
 | Sign-in (`tw-cloud-sign-in`) | 15 | auth's requests, p95, refused sign-ins and lockouts, not-ready by check, unhandled by class, auth-db, 5xx, the sign-in messages' lag and the messenger's instances, credential tags, the membership reconcile, audit verify, auth's jobs and schedules. |
-| Member records (`tw-cloud-records`), `cloud-phi` only | 20 | records' requests, p95, refusals by gate and code (and operation), audit flush failed or database unreachable, rate limits, the mirror, SQLSTATE 08 and proxy errors, instances, tpa-db, 5xx, the chain head, connectors' heartbeat, deliveries, dead letters and refusals, perimeter violations, alert-policy changes, the protected jobs. |
+| Member records (`tw-cloud-records`), `cloud-phi` only | 20 | records' requests, p95, refusals by gate and code (and operation), audit flush failed or database unreachable, rate limits, the mirror, SQLSTATE 08 and proxy errors, instances, tpa-db, 5xx, the chain head, connectors' heartbeat, deliveries, dead letters and refusals, perimeter violations, changes to alert policies, snoozes and log counters, the protected jobs. |
 | Call centre (`tw-cloud-callcentre`) | 8 | svc-voice, svc-ops and the relay: requests, 5xx, the relay's p95, instances, errors by class, start-up and proxy failures, cc-db, migrate-cc. |
 | CRM (`tw-cloud-crm`) | 9 | The CRM host's uptime check, crm-web and engine: requests, 5xx, p95, instances, errors by class, start-up and proxy failures, crm-db, its jobs. |
 | Errors (`tw-cloud-errors`) | 10 | Every error counter's groups in the time range (service or job, then the counter's labels: class, operation or event, code, SQLSTATE), and ERROR lines by service or job. |
@@ -127,7 +127,7 @@ monitoring module), dashboards and datasources come from files, and users are re
   where it has one): `monitoring.timeSeries.list` is all the dashboards call. No `logging*` role and no invoker.
 - **The perimeter rule** (`ing-watch`): `sa-watchtower` from the watch service to `monitoring.googleapis.com` in the
   PHI project. The PHI project's metrics need it: records, connectors and their jobs (`errors`, `records_*`,
-  `connectors_*`, `perimeter_violations`, `monitoring_changes`, `scheduler_failures`, `run_system_errors`,
+  `connectors_*`, `perimeter_violations`, `monitoring_changes`, `log_metric_changes`, `scheduler_failures`, `run_system_errors`,
   `sql_proxy_errors`), Cloud Run's request, latency, instance and job metrics for them, and tpa-db's `database/up`
   and `disk/utilization`. Without it every `cloud-phi` panel shows the perimeter's refusal, and nothing else changes.
 - **The Cloud Run service** with the environment above, ingress from the internal load balancer only, `min=0`,
