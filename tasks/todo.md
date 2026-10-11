@@ -99,6 +99,23 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   - [ ] For the orchestrating session: carry §4 into trellis-security's hosted-grafana request file, whose status
     still reads "refused (for now)" from D-92.
 
+- [x] IMG (2026-10-11, for the orchestrating session) the cloud image made acceptable to tpa-platform's shared builder
+  (D-145; its `watchtower` row is held until this lands), branch `image-10001`:
+  - [x] `cloud/Dockerfile` runs as `10001:10001`. It writes `/var/lib/grafana` (10001's own, 700: sqlite, plugins,
+    the rendered dashboards) and `/tmp` (the render's scratch) alone; the base's other world-writable folders are
+    closed; config, provisioning, dashboards and entrypoint stay root's and read-only; the base stays pinned by digest.
+  - [x] The shell question: the builder's no-shell check covers tpa-platform's Python images and `web` only. Its
+    `watchtower` start check probes the image with `docker exec … wget`, so the base's busybox stays.
+  - [x] `security/scan-exceptions.yaml`: `[]`, in the builder's format (accepted by its own `read_exceptions`).
+  - [x] `make cloud-image-check`: the configured user, the digest pin, PID 1 as uid/gid 10001, the read-only files,
+    nothing writable but `/var/lib/grafana` and `/tmp`, plus the existing signed-token Viewer pass and the 401s.
+  - [x] tpa-platform's own `scripts/image_start_check.sh watchtower`, run on an unpacked `git archive` of the commit.
+  - [ ] **Still blocks the builder: its scan gate.** A local trivy scan of the base (Container Scanning may differ)
+    finds no CRITICAL but fixable HIGHs: Go stdlib 1.26.6 (CVE-2026-78667, CVE-2026-78669, CVE-2026-97031) in the
+    grafana binaries, golang.org/x/net (CVE-2026-78669), apache/thrift (CVE-2026-43871), grafana/tempo
+    (CVE-2026-21728, CVE-2026-28377), and OpenSSL libcrypto3/libssl3 (CVE-2026-14456). Grafana 12.4.12 clears only
+    OpenSSL; 13.2.3 adds more. No exception was added: a newer Grafana, or dated exceptions, is the owner's call.
+
 ## Review
 
 ### 2026-10-11 (cloud dashboards)

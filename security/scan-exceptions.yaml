@@ -1,0 +1,28 @@
+# Accepted exceptions to the vulnerability gate of this repository's one
+# cloud image, the monitoring website's Grafana (cloud/, D-145), which
+# tpa-platform's shared image builder builds and signs with this repository's
+# own key (image-signing/trellis-watchtower). The builder reads THIS file, at
+# the image's own commit, never another repository's.
+#
+# The builder's policy step fails an image, and nothing is signed or tagged,
+# when Container Analysis reports a finding whose effectiveSeverity is
+# CRITICAL, or HIGH with a fix available, or missing or unknown. An entry here
+# excepts one finding in one package, until its expiry date. Nothing else is
+# excepted, and MEDIUM and below never fail the gate.
+#
+# The format is the builder's strict subset of YAML (tpa-platform's
+# cloudbuild/pipeline.py, read_exceptions): printable ASCII only, no quotes,
+# anchors, aliases, tags, flow style, block scalars or trailing comments; each
+# entry exactly these four keys, once each, "- " starting it and two spaces
+# indenting the rest:
+#
+#   - id: CVE-2026-12345
+#     package: openssl
+#     reason: Why the image is not exposed, in one line.
+#     expires: 2026-12-31
+#
+# The id and the package must both match the finding exactly. An entry past
+# its expiry date fails the builder's exceptions step. At most 50 entries. A
+# list with no entries is written [] alone on its line, as below. Every change
+# here is a reviewed commit, like the image it excepts.
+[]

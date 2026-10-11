@@ -2,9 +2,12 @@
 # Build cloud/ under a throwaway tag, run it with no network (as cloud/README.md describes), check it, and remove
 # the containers and the image. Never pushes anything; nothing leaves this machine.
 #
+#  0. The image's configured user is exactly 10001:10001 (tpa-platform's shared builder refuses any other) and its base
+#     is pinned by digest.
 #  1. As it ships, set up as production-full (no call-centre project): Grafana starts, render-dashboards writes the
 #     eight production pages, the four datasources are inserted, /api/search answers 401 without an IAP assertion,
-#     and the config, provisioning and dashboards are root's and read-only to Grafana.
+#     Grafana (PID 1) runs as uid 10001 and gid 10001, the config, provisioning, dashboards and entrypoint are root's
+#     and read-only to it, and nothing in the image is writable by it but /tmp and /var/lib/grafana.
 #  2. As beta at rest (every database stopped, the O143 sweeps paused), signed in the way IAP signs people in: the
 #     shipped grafana.ini with one line changed, the key set read from a file (jwk_set_file) instead of Google's URL,
 #     and tokens signed here with a throwaway ES256 key. Checks:
@@ -54,6 +57,14 @@ fail() { echo "cloud_image_check: $*" >&2; exit 1; }
 echo "== build $tag"
 docker build -q -t "$tag" "$here/cloud" >/dev/null
 
+echo "== 0. the image's configuration"
+user="$(docker image inspect --format '{{.Config.User}}' "$tag")"
+[ "$user" = "10001:10001" ] || fail "the image runs as '${user:-root}', not 10001:10001 (the shared builder refuses it)"
+echo "   configured user: $user"
+grep -Eq '^FROM [^ ]+@sha256:[0-9a-f]{64}$' "$here/cloud/Dockerfile" || fail "cloud/Dockerfile's base is not pinned by digest"
+[ "$(grep -c '^FROM ' "$here/cloud/Dockerfile")" = 1 ] || fail "cloud/Dockerfile should have exactly one FROM"
+echo "   base pinned by digest: $(sed -n 's/^FROM //p' "$here/cloud/Dockerfile" | cut -c1-40)..."
+
 echo "== 1. as it ships, production-full, no network"
 docker run -d --name "$name" --network none "${common[@]}" "${production[@]}" "$tag" >/dev/null
 wait_up "$name"
@@ -68,16 +79,36 @@ inserted="$(grep -c '"msg":"inserting datasource from configuration"' <<<"$logs"
 echo "   datasources inserted: $inserted"
 [ "$inserted" = 4 ] || fail "expected 4 datasources"
 if grep -E '"level":"(error|crit)"' <<<"$logs" >&2; then fail "Grafana logged an error at start"; fi
+ids="$(docker exec "$name" awk '$1 == "Uid:" || $1 == "Gid:" { print $1, $2 }' /proc/1/status)"
+[ "$ids" = $'Uid: 10001\nGid: 10001' ] || fail "Grafana (PID 1) runs as '$ids', not uid 10001 and gid 10001"
+pid1="$(docker exec "$name" readlink /proc/1/exe)"
+case "$pid1" in */grafana) ;; *) fail "PID 1 is $pid1, not Grafana (render-dashboards must exec it)" ;; esac
+echo "   PID 1: $pid1, uid 10001, gid 10001"
 docker exec "$name" sh -c '
   for f in /etc/grafana/grafana.ini /etc/grafana/provisioning/datasources/cloud-monitoring.yml \
+           /etc/grafana/provisioning/dashboards/dashboards.yml \
            /etc/grafana/dashboards/overview.json /etc/grafana/dashboards/no-cc/overview.json \
            /usr/local/bin/render-dashboards; do
     [ "$(stat -c %u "$f")" = 0 ] || { echo "$f is not root'"'"'s"; exit 1; }
     [ -w "$f" ] && { echo "$f is writable by uid $(id -u)"; exit 1; }
   done
-  touch /etc/grafana/dashboards/x 2>/dev/null && { echo "/etc/grafana/dashboards is writable"; exit 1; }
+  for d in /etc/grafana /etc/grafana/provisioning /etc/grafana/provisioning/datasources /etc/grafana/dashboards \
+           /usr/local/bin /usr/share/grafana /var/log/grafana /usr/share/grafana/.aws /var/tmp; do
+    touch "$d/x" 2>/dev/null && { echo "$d is writable by uid $(id -u)"; exit 1; }
+  done
   exit 0' || fail "the baked files must be root's and read-only"
-echo "   config, provisioning, dashboards, entrypoint: root's, read-only to uid 472"
+echo "   config, provisioning, dashboards, entrypoint: root's, read-only to uid 10001"
+# Everything uid 10001 could write: what it owns, what its group owns, and what anyone may write. Only Grafana's data
+# folder (its sqlite, the plugins folder, the rendered dashboards) and /tmp (render-dashboards' scratch) may appear.
+writable="$(docker exec "$name" find / -xdev ! -type l \( -perm -0002 -o -user 10001 -o -group 10001 \) \
+  ! -path '/proc/*' ! -path '/sys/*' ! -path '/dev/*' 2>/dev/null || true)"
+unexpected="$(grep -Ev '^(/tmp|/var/lib/grafana)(/.*)?$' <<<"$writable" || true)"
+[ -z "$unexpected" ] || fail "writable by uid 10001 besides /tmp and /var/lib/grafana: $(tr '\n' ' ' <<<"$unexpected")"
+grep -qx /var/lib/grafana/grafana.db <<<"$writable" || fail "Grafana's sqlite is not in /var/lib/grafana"
+grep -qx /var/lib/grafana/dashboards/overview.json <<<"$writable" || fail "the rendered dashboards are not uid 10001's"
+data_mode="$(docker exec "$name" stat -c '%a %u:%g' /var/lib/grafana)"
+[ "$data_mode" = "700 10001:10001" ] || fail "/var/lib/grafana is '$data_mode', not '700 10001:10001'"
+echo "   writable by uid 10001: /var/lib/grafana (700, its own: sqlite, plugins, rendered dashboards) and /tmp alone"
 leftover="$(docker exec "$name" sh -c 'ls -d /tmp/tmp.* 2>/dev/null' || true)"
 [ -z "$leftover" ] || fail "render-dashboards left its scratch directory behind: $leftover"
 echo "   render-dashboards left nothing in /tmp"

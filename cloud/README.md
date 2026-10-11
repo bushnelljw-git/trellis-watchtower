@@ -16,7 +16,7 @@ host, the perimeter rule and the IAM rows. Nothing here is pushed or deployed fr
 
 | File | What it does |
 |---|---|
-| `Dockerfile` | `grafana/grafana:12.4.11` pinned by digest, config, provisioning and dashboards baked in, root's and read-only (Grafana, uid 472, writes only `/var/lib/grafana`), no plugins. Its entrypoint is `render-dashboards.sh`. Build context is `cloud/`. |
+| `Dockerfile` | `grafana/grafana:12.4.11` pinned by digest, config, provisioning and dashboards baked in, root's and read-only, no plugins. Runs as `10001:10001` (below, "The image's user and what it writes"). Its entrypoint is `render-dashboards.sh`. Build context is `cloud/`. |
 | `grafana.ini` | Sign-in by the IAP assertion only (`[auth.jwt]` on `X-Goog-Iap-Jwt-Assertion`, Google's IAP JWKS, `aud` and `iss` checked, email claim, auto sign-up as Viewer). Login form, basic auth and anonymous access off. No initial admin. Alerting, snapshots, public dashboards, Explore, query history, plugin downloads, update checks and reporting off. The home page is the cloud overview; no refresh faster than a minute. |
 | `provisioning/datasources/cloud-monitoring.yml` | Four Cloud Monitoring datasources, `cloud-app`, `cloud-crm`, `cloud-phi` and `cloud-cc`, using the attached identity (`authenticationType: gce`). Each sets both `defaultProject` and `gceDefaultProject`: under `gce` Grafana's browser side reads only the second, and without it all four would read the app project. `cloud-phi` works only once the perimeter rule admits `sa-watchtower` to the PHI project's Monitoring read. |
 | `provisioning/dashboards/dashboards.yml` | The file provider: dashboards from `/var/lib/grafana/dashboards` (as rendered at start), read-only in the UI. |
@@ -191,6 +191,30 @@ Grafana listens on 8080, Cloud Run's default. Its sqlite state is on the contain
 there is no Grafana alerting (production alerts are Cloud Monitoring alert policies, owned by tpa-platform's
 monitoring module), dashboards and datasources come from files, and users are re-created from the IAP assertion.
 
+## The image's user and what it writes
+
+tpa-platform's shared image builder (its `cloudbuild/pipeline.py` and `scripts/cloud_build_image.sh`, "Image
+pipelines" in its `infra/README.md`) builds and signs this image from a trellis-watchtower commit. Its policy, and how
+this image meets it:
+
+- **The user is `10001:10001`**, not the base's `grafana` user (472, in group root): the builder's start check and its
+  canonical step refuse any other configured user. The uid has no passwd entry and needs none; `/run.sh` sets `HOME`
+  to Grafana's home.
+- **It writes exactly two places.** `/var/lib/grafana` (`GF_PATHS_DATA`; `GF_PATHS_PLUGINS` is under it) is
+  10001's own, mode 700: the disposable sqlite, the empty plugins folder, and the dashboards `render-dashboards.sh`
+  writes at start. `/tmp` keeps the base's 1777 for the render's scratch folder, which is removed before Grafana
+  starts. The base's other world-writable folders (`/var/log/grafana`, unused with console logging;
+  `/usr/share/grafana/.aws`, unused; `/var/tmp`) are root's and closed. The config, provisioning, baked dashboards
+  and entrypoint are root's and read-only.
+- **The base is pinned by digest.** Nothing is installed at build time (no `apk`, no plugins), so there is no
+  dependency to hash-lock.
+- **A shell stays.** The builder's no-shell rule covers tpa-platform's own Python images and `web`, not this one:
+  its start check for `watchtower` builds the image, requires the user above, starts it with no network as beta's
+  `watch.tf` does, and asks `/api/health` and `/api/search` (401) through `docker exec … wget`, so it needs the
+  base's busybox. The entrypoint is a POSIX `sh` script too.
+- **`security/scan-exceptions.yaml`** (at this repository's root) is the builder's exceptions file for this image,
+  read at the image's own commit. It is `[]`: no exception.
+
 ## What tpa-platform's lane provides
 
 Filed as a request in [docs/REQUESTS.md §4](../docs/REQUESTS.md#4-the-hosted-dashboards-cloud-half-tpa-platform),
@@ -216,9 +240,13 @@ which also asks about Query Insights.
 `make cloud-image-check` (`scripts/cloud_image_check.sh`) builds this folder under a throwaway tag, runs it with no
 network, checks it, and removes the containers and the image. It never pushes.
 
+0. **The image's configuration.** Its configured user is exactly `10001:10001`, and the Dockerfile's one `FROM` is
+   pinned by digest.
 1. **As it ships, set up as production-full.** Grafana starts and `render-dashboards` writes the eight production
-   pages. Four datasources are inserted, `/api/search` answers 401 without an IAP assertion, and the baked files are
-   root's and read-only to Grafana.
+   pages. Four datasources are inserted and `/api/search` answers 401 without an IAP assertion. Grafana is PID 1, as
+   uid 10001 and gid 10001. The baked files are root's and read-only to it, and nothing in the image is writable by
+   uid 10001 but `/var/lib/grafana` (700, its own) and `/tmp` (owned, group-owned or world-writable, listed by
+   `find`).
 2. **As beta at rest, signed in as IAP signs people in.** The shipped `grafana.ini` is used with one line changed: the
    key set comes from a file (`jwk_set_file`) instead of Google's URL. Tokens are ES256-signed with a throwaway key.
    - A wrong audience, a wrong issuer, an expired token and another key's signature all answer 401.
@@ -243,3 +271,13 @@ docker stop "${tag//[:]/-}"; docker image rm "$tag"
 ```
 
 Never push it, and never reuse a tag another project uses.
+
+**The builder's own start check**, run against a commit of this repository without touching tpa-platform or sending
+anything: unpack the commit where the builder's upload puts it, then run tpa-platform's script on it. It builds by
+image id alone and removes the image again.
+
+```bash
+up="$(mktemp -d)"; mkdir -p "$up/.sources/trellis-watchtower"
+git archive <commit> | tar -x -C "$up/.sources/trellis-watchtower"
+bash ../tpa-platform/scripts/image_start_check.sh watchtower "$up"; rm -rf "$up"
+```
