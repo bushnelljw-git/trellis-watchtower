@@ -1,5 +1,6 @@
 # Cloud Monitoring (Grafana's core `stackdriver` datasource) for the four TPA projects, read with the identity
-# attached to the Cloud Run service (sa-watchtower, roles/monitoring.viewer on each project). No key file, no secret:
+# attached to the Cloud Run service (sa-watchtower, holding tpa-platform's custom role tpaMetricsReader on each project:
+# monitoring.timeSeries.list alone, not roles/monitoring.viewer). No key file, no secret:
 # authenticationType gce uses the metadata server.
 #
 # Project ids come from the service's environment (Grafana interpolates ${VAR} in provisioning files):

@@ -25,4 +25,32 @@
 # its expiry date fails the builder's exceptions step. At most 50 entries. A
 # list with no entries is written [] alone on its line, as below. Every change
 # here is a reviewed commit, like the image it excepts.
-[]
+#
+# The entries below: every fixable HIGH a scan of the base (grafana/grafana:12.4.12, linux/amd64 and arm64, by trivy
+# on 2026-10-11) reports, and nothing else. No CRITICAL. 12.4.12 already fixes 12.4.11's OpenSSL (CVE-2026-14456)
+# and apache/thrift (CVE-2026-43871) findings, so neither is excepted. The package names are the scanner's
+# (stdlib is Go's standard library); Container Scanning's names are checked at the first build's policy step.
+- id: CVE-2026-78667
+  package: stdlib
+  reason: Grafana 12.4.12 base, whose grafana binaries are built with Go 1.26.6; fixed upstream in Go 1.26.9 and 1.27.2, not yet in Grafana 12.4.12 or 13.2.3 (both Go 1.26.6), the newest releases; the website is behind IAP, read-only, with no internet egress; re-check on the next Grafana release. Ruled by delegation by the orchestrator, session bodyfirst-a9, 2026-10-11.
+  expires: 2026-11-10
+- id: CVE-2026-78669
+  package: stdlib
+  reason: Grafana 12.4.12 base, whose grafana binaries are built with Go 1.26.6; fixed upstream in Go 1.26.9 and 1.27.2, not yet in Grafana 12.4.12 or 13.2.3 (both Go 1.26.6), the newest releases; the website is behind IAP, read-only, with no internet egress; re-check on the next Grafana release. Ruled by delegation by the orchestrator, session bodyfirst-a9, 2026-10-11.
+  expires: 2026-11-10
+- id: CVE-2026-97031
+  package: stdlib
+  reason: Grafana 12.4.12 base, whose grafana binaries are built with Go 1.26.6; fixed upstream in Go 1.26.9 and 1.27.2, not yet in Grafana 12.4.12 or 13.2.3 (both Go 1.26.6), the newest releases; the website is behind IAP, read-only, with no internet egress; re-check on the next Grafana release. Ruled by delegation by the orchestrator, session bodyfirst-a9, 2026-10-11.
+  expires: 2026-11-10
+- id: CVE-2026-78669
+  package: golang.org/x/net
+  reason: Grafana 12.4.12 base, golang.org/x/net 0.58.0 compiled into the grafana binary; fixed upstream in 0.60.0, not yet in Grafana 12.4.12 or 13.2.3, the newest releases; the website is behind IAP, read-only, with no internet egress; re-check on the next Grafana release. Ruled by delegation by the orchestrator, session bodyfirst-a9, 2026-10-11.
+  expires: 2026-11-10
+- id: CVE-2026-21728
+  package: github.com/grafana/tempo
+  reason: Grafana 12.4.12 base, the Tempo library compiled into the grafana binary for the Tempo datasource, which this image never provisions and viewers cannot add; fixed upstream in Tempo 2.8.4, 2.9.2 and 2.10.2, not yet in Grafana 12.4.12 or 13.2.3, the newest releases; the website is behind IAP, read-only, with no internet egress; re-check on the next Grafana release. Ruled by delegation by the orchestrator, session bodyfirst-a9, 2026-10-11.
+  expires: 2026-11-10
+- id: CVE-2026-28377
+  package: github.com/grafana/tempo
+  reason: Grafana 12.4.12 base, the Tempo library compiled into the grafana binary for the Tempo datasource, which this image never provisions and viewers cannot add; fixed upstream in Tempo 2.10.3, not yet in Grafana 12.4.12 or 13.2.3, the newest releases; the website is behind IAP, read-only, with no internet egress; re-check on the next Grafana release. Ruled by delegation by the orchestrator, session bodyfirst-a9, 2026-10-11.
+  expires: 2026-11-10

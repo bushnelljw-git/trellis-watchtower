@@ -6,11 +6,13 @@
 #     is pinned by digest.
 #  1. As it ships, set up as production-full (no call-centre project): Grafana starts, render-dashboards writes the
 #     eight production pages, the four datasources are inserted, /api/search answers 401 without an IAP assertion,
-#     Grafana (PID 1) runs as uid 10001 and gid 10001, the config, provisioning, dashboards and entrypoint are root's
-#     and read-only to it, and nothing in the image is writable by it but /tmp and /var/lib/grafana.
+#     Grafana (PID 1) runs as uid 10001 and gid 10001, the config, IAP's pinned keys, provisioning, dashboards and
+#     entrypoint are root's and read-only to it, and nothing in the image is writable by it but /tmp and
+#     /var/lib/grafana. The image's grafana.ini and iap_keys.json are the committed ones: the key set is read from the
+#     file (jwk_set_file), never fetched, and a token under a pinned kid but signed by another key answers 401.
 #  2. As beta at rest (every database stopped, the O143 sweeps paused), signed in the way IAP signs people in: the
-#     shipped grafana.ini with one line changed, the key set read from a file (jwk_set_file) instead of Google's URL,
-#     and tokens signed here with a throwaway ES256 key. Checks:
+#     shipped grafana.ini unchanged, with the baked key file (/etc/grafana/iap_keys.json) replaced by a set holding a
+#     throwaway ES256 key, and tokens signed here with it. Checks:
 #     - a wrong audience, a wrong issuer, an expired token or another key's signature answer 401;
 #     - the right token signs a Viewer in, with no Explore permission, and every write answers 403;
 #     - the dashboards and datasources are there, rendered for beta at rest;
@@ -65,6 +67,51 @@ grep -Eq '^FROM [^ ]+@sha256:[0-9a-f]{64}$' "$here/cloud/Dockerfile" || fail "cl
 [ "$(grep -c '^FROM ' "$here/cloud/Dockerfile")" = 1 ] || fail "cloud/Dockerfile should have exactly one FROM"
 echo "   base pinned by digest: $(sed -n 's/^FROM //p' "$here/cloud/Dockerfile" | cut -c1-40)..."
 
+# A throwaway ES256 key ("good", whose set replaces the baked one in part 2), another ("other"), and the signer.
+mkdir -p "$work/check"
+WORK="$work" python3 - <<'EOF'
+import base64, json, os, subprocess
+work = os.environ["WORK"]
+b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+for key in ("good", "other"):
+    subprocess.run(["openssl", "ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", f"{work}/{key}.pem"],
+                   check=True)
+der = subprocess.run(["openssl", "ec", "-in", f"{work}/good.pem", "-pubout", "-outform", "DER"],
+                     capture_output=True, check=True).stdout
+point = der[-64:]   # the uncompressed point's x and y
+jwks = {"keys": [{"kty": "EC", "crv": "P-256", "kid": "check", "alg": "ES256", "use": "sig",
+                  "x": b64(point[:32]), "y": b64(point[32:])}]}
+open(f"{work}/check/iap_keys.json", "w").write(json.dumps(jwks))
+EOF
+chmod 755 "$work/check" && chmod 644 "$work/check"/*
+cat > "$work/iap_token.py" <<'EOF'
+"""A JWT as IAP writes one, ES256-signed with a key made here. `iap_token.py KEY KID` prints one."""
+import base64, json, os, subprocess, sys, time
+
+AUDIENCE, ISSUER = "/projects/0/global/backendServices/0", "https://cloud.google.com/iap"
+WORK = os.path.dirname(os.path.abspath(__file__))
+b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def token(key="good", kid="check", **claims):
+    now = int(time.time())
+    body = {"aud": AUDIENCE, "iss": ISSUER, "email": "viewer@example.invalid", "sub": "accounts.google.com:1",
+            "iat": now, "exp": now + 600, **claims}
+    signing = f"{b64(json.dumps({'alg': 'ES256', 'kid': kid, 'typ': 'JWT'}).encode())}.{b64(json.dumps(body).encode())}"
+    der = subprocess.run(["openssl", "dgst", "-sha256", "-sign", f"{WORK}/{key}.pem"], input=signing.encode(),
+                         capture_output=True, check=True).stdout
+    # DER SEQUENCE { INTEGER r, INTEGER s } -> r || s, 32 bytes each.
+    i = 2 if der[1] < 0x80 else 3
+    r_len = der[i + 1]
+    r = der[i + 2:i + 2 + r_len]
+    s = der[i + 2 + r_len + 2:]
+    return f"{signing}.{b64(r[-32:].rjust(32, b'\0') + s[-32:].rjust(32, b'\0'))}"
+
+
+if __name__ == "__main__":
+    print(token(sys.argv[1], sys.argv[2]))
+EOF
+
 echo "== 1. as it ships, production-full, no network"
 docker run -d --name "$name" --network none "${common[@]}" "${production[@]}" "$tag" >/dev/null
 wait_up "$name"
@@ -85,7 +132,8 @@ pid1="$(docker exec "$name" readlink /proc/1/exe)"
 case "$pid1" in */grafana) ;; *) fail "PID 1 is $pid1, not Grafana (render-dashboards must exec it)" ;; esac
 echo "   PID 1: $pid1, uid 10001, gid 10001"
 docker exec "$name" sh -c '
-  for f in /etc/grafana/grafana.ini /etc/grafana/provisioning/datasources/cloud-monitoring.yml \
+  for f in /etc/grafana/grafana.ini /etc/grafana/iap_keys.json \
+           /etc/grafana/provisioning/datasources/cloud-monitoring.yml \
            /etc/grafana/provisioning/dashboards/dashboards.yml \
            /etc/grafana/dashboards/overview.json /etc/grafana/dashboards/no-cc/overview.json \
            /usr/local/bin/render-dashboards; do
@@ -97,7 +145,18 @@ docker exec "$name" sh -c '
     touch "$d/x" 2>/dev/null && { echo "$d is writable by uid $(id -u)"; exit 1; }
   done
   exit 0' || fail "the baked files must be root's and read-only"
-echo "   config, provisioning, dashboards, entrypoint: root's, read-only to uid 10001"
+echo "   config, IAP's keys, provisioning, dashboards, entrypoint: root's, read-only to uid 10001"
+for f in grafana.ini iap_keys.json; do
+  docker exec "$name" cat "/etc/grafana/$f" | cmp -s - "$here/cloud/$f" || fail "the image's /etc/grafana/$f is not cloud/$f"
+done
+grep -qx 'jwk_set_file = /etc/grafana/iap_keys.json' "$here/cloud/grafana.ini" || fail "grafana.ini does not read the pinned keys"
+if grep -q '^jwk_set_url' "$here/cloud/grafana.ini"; then fail "grafana.ini fetches IAP's keys (jwk_set_url)"; fi
+pinned_kid="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["keys"][0]["kid"])' "$here/cloud/iap_keys.json")"
+forged="$(python3 "$work/iap_token.py" other "$pinned_kid")"
+status="$(docker exec "$name" curl -s -o /dev/null -w '%{http_code}' -H "X-Goog-Iap-Jwt-Assertion: $forged" \
+  http://127.0.0.1:8080/api/user)"
+[ "$status" = 401 ] || fail "a token under pinned kid $pinned_kid signed by another key answered $status, not 401"
+echo "   IAP's keys: the committed set, from jwk_set_file (no URL); pinned kid $pinned_kid, another key's signature: 401"
 # Everything uid 10001 could write: what it owns, what its group owns, and what anyone may write. Only Grafana's data
 # folder (its sqlite, the plugins folder, the rendered dashboards) and /tmp (render-dashboards' scratch) may appear.
 writable="$(docker exec "$name" find / -xdev ! -type l \( -perm -0002 -o -user 10001 -o -group 10001 \) \
@@ -119,59 +178,22 @@ grep -q "TPA_STOPPED_DATABASES must be empty with TPA_ENVIRONMENT=production" <<
 echo "   production with TPA_STOPPED_DATABASES set: refused before Grafana starts"
 docker rm -f "$name" >/dev/null
 
-echo "== 2. beta at rest, a signed-in Viewer (jwk_set_file), no network"
-mkdir -p "$work/check"
-sed 's|^jwk_set_url = https://www.gstatic.com/iap/verify/public_key-jwk$|jwk_set_file = /etc/grafana-check/jwks.json|' \
-  "$here/cloud/grafana.ini" > "$work/check/grafana.ini"
-changed="$(diff "$here/cloud/grafana.ini" "$work/check/grafana.ini" | grep -c '^[<>]' || true)"
-[ "$changed" = 2 ] || fail "the check's grafana.ini must differ from the shipped one in the key line alone"
-WORK="$work" python3 - <<'EOF'
-import base64, json, os, subprocess
-work = os.environ["WORK"]
-b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
-for key in ("good", "other"):
-    subprocess.run(["openssl", "ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", f"{work}/{key}.pem"],
-                   check=True)
-der = subprocess.run(["openssl", "ec", "-in", f"{work}/good.pem", "-pubout", "-outform", "DER"],
-                     capture_output=True, check=True).stdout
-point = der[-64:]   # the uncompressed point's x and y
-jwks = {"keys": [{"kty": "EC", "crv": "P-256", "kid": "check", "alg": "ES256", "use": "sig",
-                  "x": b64(point[:32]), "y": b64(point[32:])}]}
-open(f"{work}/check/jwks.json", "w").write(json.dumps(jwks))
-EOF
-chmod 755 "$work/check" && chmod 644 "$work/check"/*
-docker create --name "$name-viewer" --network none "${common[@]}" "${beta_at_rest[@]}" \
-  -e GF_PATHS_CONFIG=/etc/grafana-check/grafana.ini "$tag" >/dev/null
-docker cp "$work/check" "$name-viewer:/etc/grafana-check" >/dev/null
+echo "== 2. beta at rest, a signed-in Viewer (the shipped grafana.ini; the baked key file holds a throwaway key), no network"
+docker create --name "$name-viewer" --network none "${common[@]}" "${beta_at_rest[@]}" "$tag" >/dev/null
+docker cp "$work/check/iap_keys.json" "$name-viewer:/etc/grafana/iap_keys.json" >/dev/null
 docker start "$name-viewer" >/dev/null
 wait_up "$name-viewer"
 docker logs "$name-viewer" 2>&1 | grep 'render-dashboards: rendered' | sed 's/^/   /'
 
 CONTAINER="$name-viewer" WORK="$work" EXPECTED="$(ls "$here"/cloud/dashboards/*.json | wc -l | tr -d ' ')" \
   python3 - <<'EOF'
-import base64, json, os, subprocess, sys, time
+import json, os, subprocess, sys, time
 
 container, work, expected = os.environ["CONTAINER"], os.environ["WORK"], int(os.environ["EXPECTED"])
-audience, issuer = "/projects/0/global/backendServices/0", "https://cloud.google.com/iap"
+sys.path.insert(0, work)
+from iap_token import token  # noqa: E402  (the signer written above; kid "check", the throwaway key's)
 projects = {"cloud-app": "check-tpa-app", "cloud-crm": "check-tpa-app", "cloud-phi": "check-tpa-phi",
             "cloud-cc": "check-callcentre"}
-b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
-
-
-def token(key="good", **claims):
-    """A JWT as IAP writes one, ES256-signed with a throwaway key."""
-    now = int(time.time())
-    body = {"aud": audience, "iss": issuer, "email": "viewer@example.invalid", "sub": "accounts.google.com:1",
-            "iat": now, "exp": now + 600, **claims}
-    signing = f"{b64(json.dumps({'alg': 'ES256', 'kid': 'check', 'typ': 'JWT'}).encode())}.{b64(json.dumps(body).encode())}"
-    der = subprocess.run(["openssl", "dgst", "-sha256", "-sign", f"{work}/{key}.pem"], input=signing.encode(),
-                         capture_output=True, check=True).stdout
-    # DER SEQUENCE { INTEGER r, INTEGER s } -> r || s, 32 bytes each.
-    i = 2 if der[1] < 0x80 else 3
-    r_len = der[i + 1]
-    r = der[i + 2:i + 2 + r_len]
-    s = der[i + 2 + r_len + 2:]
-    return f"{signing}.{b64(r[-32:].rjust(32, b'\0') + s[-32:].rjust(32, b'\0'))}"
 
 
 def api(path, jwt, method="GET", body=None):

@@ -7,13 +7,13 @@
 #
 # No plugins: GF_INSTALL_PLUGINS is never set, the plugin catalogue is off and Grafana 12's plugin preinstall is
 # disabled in grafana.ini. Only the core stackdriver (Cloud Monitoring) datasource is used.
-FROM grafana/grafana:12.4.11@sha256:3ea272e5cab64a4a62240c682e2c62433b25614d956d44c299a10cb6994f6f2e
+FROM grafana/grafana:12.4.12@sha256:83be3e511ede559bee80e2215bb1987cb1246075461cb961beb515b0341e7aea
 
 # The image runs as 10001:10001, the uid and gid tpa-platform's shared builder requires of every image it builds
 # (its canonical step refuses any other configured user), not the base's grafana user (472, in group root). That user
 # has no passwd entry and needs none: Grafana reads no name for it, and run.sh sets HOME to GF_PATHS_HOME.
 #
-# Config, provisioning, the dashboards as committed and the entrypoint are root's and read-only: Grafana can change
+# Config, IAP's pinned keys, provisioning, the dashboards as committed and the entrypoint are root's and read-only: Grafana can change
 # none of them. It writes exactly two places:
 #   /var/lib/grafana   (GF_PATHS_DATA) 10001's own, 0700: the disposable sqlite, the plugins folder (empty: core
 #                      plugins only) and the dashboards render-dashboards.sh writes there at start, with each query's
@@ -24,6 +24,7 @@ FROM grafana/grafana:12.4.11@sha256:3ea272e5cab64a4a62240c682e2c62433b25614d956d
 # folder, unused; /var/tmp) is root's and closed here, so nothing else in the image is writable by 10001.
 USER root
 COPY grafana.ini /etc/grafana/grafana.ini
+COPY iap_keys.json /etc/grafana/iap_keys.json
 COPY provisioning/ /etc/grafana/provisioning/
 COPY dashboards/*.json /etc/grafana/dashboards/
 COPY dashboards/no-cc/*.json /etc/grafana/dashboards/no-cc/
