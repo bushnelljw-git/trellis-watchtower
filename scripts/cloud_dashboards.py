@@ -12,6 +12,14 @@ Not MQL: Google has deprecated it. Every metric a query names is checked against
 (tests/cloud/test_catalogue.py) and every label against the allowlist (scripts/dashboard_lint.py). Each query names
 its datasource's project as a placeholder, which the image fills in at start (cloud/render-dashboards.sh).
 
+The image also settles three things at start, from the service's environment, so that one image serves every
+environment: tiles of a sweep that is paused (TPA_PAUSED_JOBS) or of a database that is stopped
+(TPA_STOPPED_DATABASES) read neutral "paused" or "database stopped" instead of red; the uptime tile's wording
+(TPA_ENVIRONMENT); and, with no call-centre project (TPA_CC_PROJECT_ID empty, production-full), the variants in
+cloud/dashboards/no-cc/ replace the pages that have a call-centre part, and the call-centre page is left out. Each such
+string is a token, `@@R,deps,@@normal@@`, `@@F,deps,@@quiet@@normal@@` or `@@E@@production@@beta@@`, that the
+render step resolves (when_quiet, per_environment below).
+
 Usage:
   scripts/cloud_dashboards.py           write cloud/dashboards/*.json
   scripts/cloud_dashboards.py --check   exit 1 when a committed dashboard differs from what this writes
@@ -26,6 +34,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "cloud" / "dashboards"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from catalogue import Catalogue  # noqa: E402
 from dashboard_lint import RESOURCE_LABELS, cloud_datasources, project_placeholder  # noqa: E402
 
 PROJECT = {uid: project_placeholder(var) for uid, var in cloud_datasources().items()}
@@ -45,15 +54,39 @@ CC_SERVICES = "svc-voice|svc-ops|svc-twilio-rest"
 TPA_SCHEDULES = "erisa-clocks|nightly-anomalies|stoploss-surveillance|accumulator-reconcile|workload-audit|member-access"
 AUTH_SCHEDULES = "auth-.*"
 PHI_SCHEDULES = "tpa-db-export|records-chain-head|restore-drill"
-# Each scheduled job's missed-run deadline (beta's terraform.tfvars.example `missed_run_after`, about one and a half
-# times its cadence; docs/infra/monitoring.md §5), as a Grafana relative time. The monthly verify and the quarterly
-# drill have none.
-DEADLINES = [(APP, "auth-publisher", "3m"), (APP, "tpa-jobs-erisa-clocks", "23m"),
-             (APP, "tpa-jobs-nightly-anomalies", "90m"), (APP, "auth-sweeper", "90m"),
-             (APP, "tpa-jobs-stoploss-surveillance", "36h"), (APP, "tpa-jobs-accumulator-reconcile", "36h"),
-             (APP, "tpa-jobs-workload-audit", "36h"), (APP, "tpa-jobs-member-access", "36h"),
-             (APP, "auth-audit-head", "36h"), (APP, "auth-audit-verify", "36h"),
-             (PHI, "tpa-db-export", "36h"), (PHI, "records-chain-head", "36h")]
+# What TPA_PAUSED_JOBS and TPA_STOPPED_DATABASES may name (render-dashboards.sh refuses anything else; the render
+# test holds its lists to these): the sweeps tpa-platform's beta can pause (var.tpa_jobs_paused, keys of
+# local.sweeps) and the four Cloud SQL instances (local.database_stopped, auth_db as auth-db).
+SWEEPS = ("erisa-clocks", "nightly-anomalies", "stoploss-surveillance", "accumulator-reconcile", "workload-audit",
+          "member-access")
+DATABASES = ("auth-db", "tpa-db", "crm-db", "cc-db")
+SWEEP_DBS = ("auth-db", "tpa-db")   # a sweep's run needs auth (its token) and records (tpa-db)
+# Each scheduled job's missed-run deadline in minutes (beta's terraform.tfvars.example `missed_run_after`, about one
+# and a half times its cadence; docs/infra/monitoring.md §5), and what it needs to run: its sweep's name while it can
+# be paused, and the databases it reads (tpa-platform's database_dependent_jobs). The monthly verify and the
+# quarterly drill have none.
+DEADLINES = [(APP, "auth-publisher", 3, ("auth-db",)),
+             (APP, "tpa-jobs-erisa-clocks", 23, ("erisa-clocks", *SWEEP_DBS)),
+             (APP, "tpa-jobs-nightly-anomalies", 90, ("nightly-anomalies", *SWEEP_DBS)),
+             (APP, "auth-sweeper", 90, ("auth-db",)),
+             (APP, "tpa-jobs-stoploss-surveillance", 2160, ("stoploss-surveillance", *SWEEP_DBS)),
+             (APP, "tpa-jobs-accumulator-reconcile", 2160, ("accumulator-reconcile", *SWEEP_DBS)),
+             (APP, "tpa-jobs-workload-audit", 2160, ("workload-audit", *SWEEP_DBS)),
+             (APP, "tpa-jobs-member-access", 2160, ("member-access", *SWEEP_DBS)),
+             (APP, "auth-audit-head", 2160, ("auth-db",)), (APP, "auth-audit-verify", 2160, ("auth-db",)),
+             (PHI, "tpa-db-export", 2160, ("tpa-db",)), (PHI, "records-chain-head", 2160, ("tpa-db",))]
+# Cloud Run's job metrics can reach Cloud Monitoring up to 180 s after the run, so a deadline tile looks back its
+# deadline plus this, or a run on time would read MISSED for up to three minutes.
+METRIC_DELAY_MINUTES = 3
+
+CATALOGUE = Catalogue()
+# The CRM's error class is grouped only while the catalogue's extractor for it is anchored. On 2026-10-11 it is not
+# ("...\nfor Jane Doe" gives class "Doe"), and tpa-platform is asked to anchor it as the call centre's is. Re-vendoring
+# an anchored catalogue and running this brings the class back; tests/cloud/test_catalogue.py refuses it until then.
+CRM_ERROR_LABELS = ("service_name",) + (() if "class" in CATALOGUE.unanchored_labels("crm", "errors") else ("class",))
+CRM_CLASS = "class" in CRM_ERROR_LABELS
+CRM_CLASS_NOTE = ("" if CRM_CLASS else " By service only: the catalogue's CRM class extractor is not "
+                  "anchored, so its class could be a word out of free text (until tpa-platform anchors it).")
 
 RUN_REQUESTS = "run.googleapis.com/request_count"
 RUN_LATENCY = "run.googleapis.com/request_latencies"
@@ -113,9 +146,17 @@ def five_xx(services, period=AUTO):
     return requests(services, period, response_code_class="5xx")
 
 
-def p95(services, period=AUTO, metric=RUN_LATENCY):
-    return q(metric, REV, align="ALIGN_PERCENTILE_95", period=period, reduce="REDUCE_MAX", by=("service_name",),
-             service_name=Re(services))
+def p95(services, period=AUTO):
+    """Cloud Run's p95 by service: its revisions' distributions merged, then the 95th percentile, as `canary-latency`
+    (histogram_quantile over the buckets summed by service) reads it."""
+    return q(RUN_LATENCY, REV, align="ALIGN_DELTA", period=period, reduce="REDUCE_PERCENTILE_95",
+             by=("service_name",), service_name=Re(services))
+
+
+def tpa_api_p95(period=AUTO):
+    """tpa-api's own p95 (its request line), read as `tpa-api-latency` reads it."""
+    return q(log("tpa_api_latency"), REV, align="ALIGN_PERCENTILE_95", period=period, reduce="REDUCE_MAX",
+             by=("service_name",))
 
 
 def instances(services, period=AUTO):
@@ -156,7 +197,7 @@ def error_counts(metric, labels, period=AUTO, resources=(REV, JOB), groups=False
     return out
 
 
-def crm_errors(period=AUTO, by=("service_name", "class"), groups=False):
+def crm_errors(period=AUTO, by=CRM_ERROR_LABELS, groups=False):
     """The CRM's counter is `crm_errors` where the CRM shares the app project (beta, R282: a later role's colliding
     name takes its role as a prefix) and `errors` in a CRM project of its own; each query finds the other empty."""
     return [q(log("crm_errors"), REV, period=period, by=by, groups=groups, name="groups" if groups else None),
@@ -188,6 +229,50 @@ def by_ref(ref: str, **props) -> dict:
 # value" text (shown in the base colour) is never a measurement, and a query that failed shows it too, beside
 # Grafana's error triangle: so the base colour is neutral, never green.
 NEUTRAL = "text"
+
+def when_quiet(deps, normal: str, quiet: str | None = None) -> str:
+    """A string render-dashboards.sh settles at start: `normal`, or, while one of `deps` (a sweep in
+    TPA_PAUSED_JOBS, a database in TPA_STOPPED_DATABASES) is quiet, `quiet`, or by default the reason ("paused",
+    "database stopped")."""
+    names = "," + ",".join(deps) + ","
+    for text in (normal, quiet or ""):
+        assert "@" not in text, text
+    return f"@@R{names}@@{normal}@@" if quiet is None else f"@@F{names}@@{quiet}@@{normal}@@"
+
+
+def per_environment(production: str, beta: str) -> str:
+    """A string render-dashboards.sh settles from TPA_ENVIRONMENT (`production` or `beta`)."""
+    assert "@" not in production + beta
+    return f"@@E@@{production}@@{beta}@@"
+
+
+def quieten(p: dict, deps) -> dict:
+    """A tile that says it is quiet: while one of `deps` is paused or stopped it shows the reason (with its number,
+    if it has one) and no colour, because a stopped database's readers fail on purpose and a paused sweep runs nothing.
+    production-full, which pauses and stops nothing, always shows the tile as built."""
+    # value_and_name, not name: with no data the "no value" text is the value, and "name" would hide it (the
+    # pixels showed blank tiles); with data the number shows, in no colour, under the reason.
+    p["options"]["textMode"] = when_quiet(deps, p["options"]["textMode"], "value_and_name")
+    defaults = p["fieldConfig"]["defaults"]
+    defaults["displayName"] = when_quiet(deps, defaults.get("displayName", ""))
+    defaults["noValue"] = when_quiet(deps, defaults.get("noValue", ""))
+    for step in defaults["thresholds"]["steps"]:
+        step["color"] = when_quiet(deps, step["color"], NEUTRAL)
+    for override in p["fieldConfig"]["overrides"]:
+        for prop in override["properties"]:
+            if prop["id"] == "displayName":
+                prop["value"] = when_quiet(deps, prop["value"])
+            elif prop["id"] == "thresholds":
+                for step in prop["value"]["steps"]:
+                    step["color"] = when_quiet(deps, step["color"], NEUTRAL)
+    paused = [d for d in deps if d in SWEEPS]
+    stopped = [d for d in deps if d in DATABASES]
+    p["description"] += (" Reads \"paused\" or \"database stopped\", in no colour, while " +
+                         " or ".join(f"`{d}`" for d in paused + stopped) + " is " +
+                         ("paused or stopped" if paused and stopped else "paused" if paused else "stopped") +
+                         " on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).")
+    return p
+
 
 UP_MAPPING = [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red", "index": 0},
                                             "1": {"text": "up", "color": "green", "index": 1}}}]
@@ -222,12 +307,13 @@ def panel(kind: str, title: str, ds: str | None, queries, description: str, *, w
     return p
 
 
-def stat(title, ds, queries, description, *, w=4, h=5, calc="sum", text_mode="auto", value_size=None, **kw):
-    return panel("stat", title, ds, queries, description, w=w, h=h, options={
+def stat(title, ds, queries, description, *, w=4, h=5, calc="sum", text_mode="auto", value_size=None, deps=(), **kw):
+    p = panel("stat", title, ds, queries, description, w=w, h=h, options={
         "reduceOptions": {"calcs": [calc], "fields": "", "values": False},
         **({"text": {"valueSize": value_size}} if value_size else {}),
         "orientation": "auto", "textMode": text_mode, "colorMode": "value", "graphMode": "none",
         "justifyMode": "auto", "wideLayout": True, "showPercentChange": False}, **kw)
+    return quieten(p, deps) if deps else p
 
 
 def series(title, ds, queries, description, *, w=12, h=8, bars=False, line=None, **kw):
@@ -322,8 +408,9 @@ def dashboard(uid: str, title: str, description: str, tags: list[str], items: li
 # ---- Shared panels and wording -------------------------------------------------------------------------------------
 NOTHING_BUT_METRICS = ("Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters "
                        "tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.")
-STOPPED_DB = ("No value: the instance is stopped on purpose between test sessions (beta's "
-              "database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).")
+STOPPED_DB = ("\"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy "
+              "NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: "
+              "not built (cc-db exists with the staffed desk only), or reporting nothing.")
 
 
 def db_stat(title: str, ds: str, instance: str, *, w=4, h=5) -> dict:
@@ -331,50 +418,55 @@ def db_stat(title: str, ds: str, instance: str, *, w=4, h=5) -> dict:
                 f"Cloud SQL's own signals for {instance}: `database/up` (the urgent `{instance}-down` pages below 1 "
                 f"for five minutes) and disk used (`{instance}-disk` at 85% for ten minutes). " + STOPPED_DB,
                 w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from="15m",
-                no_value="stopped or not built",
+                no_value=when_quiet((instance,), "not reporting"),
                 overrides=[by_ref("A", name="up", mappings=UP_MAPPING, unit="none",
                                   thresholds=thresholds("red", (1, "green"))),
                            by_ref("B", name="disk", unit="percentunit", decimals=0,
                                   thresholds=thresholds("green", (0.75, "orange"), (0.85, "red")))])
 
 
-def jobs_stat(title: str, ds: str, jobs: str, schedules: str | None) -> dict:
+def jobs_stat(title: str, ds: str, jobs: str, schedules: str | None, deps) -> dict:
     queries = [executions(jobs, "failed", "+3600s", by=(), name="failed")]
     if schedules:
         queries.append(schedule_failures(schedules, "+3600s", by=(), name="schedule failed"))
     return stat(title, ds, queries, "Last 24 h: executions that failed after their retries (`jobs-failed`)" +
                 (", and schedules that could not start their job (`scheduler-failed`)" if schedules else "") +
                 ". A missed run is the Scheduled runs row above.", time_from="24h", no_value="0",
-                text_mode="value_and_name", steps=thresholds(NEUTRAL, (1, "red")))
+                text_mode="value_and_name", steps=thresholds(NEUTRAL, (1, "red")), deps=deps)
 
 
-def groups_stat(title: str, ds: str, queries: list[dict], counter: str) -> dict:
+def groups_stat(title: str, ds: str, queries: list[dict], counter: str, deps) -> dict:
     return stat(title, ds, queries,
                 f"Error groups of `{counter}` seen in the last 24 h: one per Cloud Run service or job and the "
                 "counter's labels, the same group the new-group and spike policies read. The Errors page lists them.",
                 calc="lastNotNull", time_from="24h", no_value="0", text_mode="value_and_name",
-                steps=thresholds(NEUTRAL, (1, "orange")))
+                steps=thresholds(NEUTRAL, (1, "orange")), deps=deps)
 
 
 def deadline_stats(w: int, h: int) -> list[dict]:
     """One stat per scheduled job: its successful executions within its missed-run deadline, the module's own
     condition (`missed run (<job>)`). None at all reads MISSED."""
     out = []
-    for ds, job, deadline in DEADLINES:
+    for ds, job, deadline, deps in DEADLINES:
+        window = deadline + METRIC_DELAY_MINUTES
         out.append(stat(job.removeprefix("tpa-jobs-"), ds,
-                        executions(job, "succeeded", "+60s" if deadline.endswith("m") else "+3600s", by=(),
-                                   name="runs"),
-                        f"Successful executions of `{job}` in the last {deadline}, its missed-run deadline (about "
-                        "one and a half cadences). MISSED: none, so its `missed run` policy is open or about to "
-                        "be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED "
-                        "while paused; their alerts are off.", w=w, h=h, time_from=deadline, no_value="MISSED",
-                        steps=thresholds("red", (1, "green"))))
+                        executions(job, "succeeded", "+60s" if window <= 120 else "+3600s", by=(), name="runs"),
+                        f"Successful executions of `{job}` in the last {window} minutes: its missed-run deadline "
+                        f"({deadline} minutes, about one and a half cadences) plus three, because Cloud Run's job "
+                        "metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is "
+                        "open or about to be.", w=w, h=h, time_from=f"{window}m", no_value="MISSED",
+                        steps=thresholds("red", (1, "green")), deps=deps))
     return out
 
 
 # ---- The pages -----------------------------------------------------------------------------------------------------
-def overview() -> dict:
-    def area(name, ds, services, p95_query, p95_desc, groups, fifth, jobs):
+UPTIME_WORDING = per_environment(
+    "Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.",
+    "Beta's hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.")
+
+
+def overview(cc: bool = True) -> dict:
+    def area(name, ds, services, deps, p95_query, p95_desc, groups, fifth, jobs):
         return [
             row(name),
             stat("Requests (1 h)", ds, requests(services, "+300s"),
@@ -382,7 +474,7 @@ def overview() -> dict:
                  no_value="0"),
             stat("5xx (1 h)", ds, five_xx(services, "+300s"), "5xx answers in the last hour. `canary-5xx` opens "
                  "above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx.",
-                 time_from="1h", no_value="0", steps=thresholds(NEUTRAL, (1, "orange"), (5, "red"))),
+                 time_from="1h", no_value="0", steps=thresholds(NEUTRAL, (1, "orange"), (5, "red")), deps=deps),
             stat("p95 (1 h)", ds, p95_query, p95_desc, unit="ms", calc="max", time_from="1h",
                  no_value="no requests", steps=thresholds(NEUTRAL, (1000, "orange"), (2000, "red"))),
             groups, fifth, jobs]
@@ -393,7 +485,8 @@ def overview() -> dict:
         "Google's own list, per project: "
         "[app](https://console.cloud.google.com/monitoring/alerting/incidents?project=__TPA_APP_PROJECT_ID__) · "
         "[member records](https://console.cloud.google.com/monitoring/alerting/incidents?project=__TPA_PHI_PROJECT_ID__)"
-        " · [call centre](https://console.cloud.google.com/monitoring/alerting/incidents?project=__TPA_CC_PROJECT_ID__)"
+        + (" · [call centre](https://console.cloud.google.com/monitoring/alerting/incidents?project=__TPA_CC_PROJECT_ID__)"
+           if cc else "") +
         " · [CRM](https://console.cloud.google.com/monitoring/alerting/incidents?project=__TPA_CRM_PROJECT_ID__).\n\n"
         "This site reads metrics only: Grafana's Cloud Monitoring datasource cannot list incidents. "
         + NOTHING_BUT_METRICS)
@@ -402,53 +495,49 @@ def overview() -> dict:
         text("Open incidents", incidents, w=10, h=7),
         stat("Uptime checks passing (24 h)", APP,
              q(UPTIME, URL, align="ALIGN_FRACTION_TRUE", period="+3600s", reduce="REDUCE_MEAN", by=("host",)),
-             "Share of uptime checks that passed in the last 24 h, by host. Behind IAP a check passes only on "
-             "Google's sign-in page, so this proves the address, the certificate, Cloud Armor and IAP, never the "
-             "service behind them (that is the 5xx and instance panels). An outage pages when more than one "
-             "region fails.", w=14, h=7, calc="mean", value_size=40, time_from="24h", unit="percentunit", decimals=2,
+             "Share of uptime checks that passed in the last 24 h, by host. " + UPTIME_WORDING, w=14, h=7, calc="mean", value_size=40, time_from="24h", unit="percentunit", decimals=2,
              no_value="no uptime checks", text_mode="value_and_name",
              steps=thresholds("red", (0.95, "orange"), (0.999, "green"))),
         row("Scheduled runs: a successful run within each job's deadline"),
         *deadline_stats(w=4, h=4),
-        *area("Portal & API (web, tpa-api, model-gateway; tpa-jobs)", APP, WEB_API,
-              p95("tpa-api", "+3600s", metric=log("tpa_api_latency")),
+        *area("Portal & API (web, tpa-api, model-gateway; tpa-jobs)", APP, WEB_API, SWEEP_DBS, tpa_api_p95("+3600s"),
               "tpa-api's own p95 time to answer (its request line, without the streams, the file transfers and the "
               "model-backed rows): `tpa-api-latency` opens above 2 s for ten minutes. Cloud Run's own p95 for web "
               "and tpa-api counts the desk's 40-second streams, so it is on the Portal & API page only.",
               groups_stat("Error groups (24 h)", APP,
                           error_counts("errors", ("service", "class", "operation", "code"), "+86400s", groups=True),
-                          "errors"),
+                          "errors", SWEEP_DBS),
               stat("Instances now", APP, instances(APP_SERVICES, "+60s"), "Cloud Run instances per service. Zero "
                    "is how a scale-to-zero service idles; a service kept warm with none is the urgent `no instance` "
                    "policy.", calc="lastNotNull", time_from="15m", no_value="0"),
-              jobs_stat("tpa-jobs (24 h)", APP, TPA_JOBS, TPA_SCHEDULES)),
-        *area("Sign-in (auth, its messenger and jobs)", APP, AUTH_SERVICES, p95("auth", "+3600s"),
+              jobs_stat("tpa-jobs (24 h)", APP, TPA_JOBS, TPA_SCHEDULES, SWEEP_DBS)),
+        *area("Sign-in (auth, its messenger and jobs)", APP, AUTH_SERVICES, ("auth-db",), p95("auth", "+3600s"),
               "auth's p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
               groups_stat("Error groups (24 h)", APP,
                           error_counts("auth_errors", ("class", "operation", "code"), "+86400s", groups=True),
-                          "auth_errors"),
+                          "auth_errors", ("auth-db",)),
               db_stat("auth-db", APP, "auth-db"),
-              jobs_stat("auth jobs (24 h)", APP, AUTH_JOBS, AUTH_SCHEDULES)),
-        *area("Member records (records, connectors)", PHI, PHI_SERVICES, p95("records", "+3600s"),
+              jobs_stat("auth jobs (24 h)", APP, AUTH_JOBS, AUTH_SCHEDULES, ("auth-db",))),
+        *area("Member records (records, connectors)", PHI, PHI_SERVICES, ("tpa-db",), p95("records", "+3600s"),
               "records' p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
               groups_stat("Error groups (24 h)", PHI,
                           error_counts("errors", ("service", "class", "operation", "code", "sqlstate"), "+86400s",
-                                       groups=True), "errors"),
+                                       groups=True), "errors", ("tpa-db",)),
               db_stat("tpa-db", PHI, "tpa-db"),
-              jobs_stat("Jobs (24 h)", PHI, PHI_JOBS, PHI_SCHEDULES)),
-        *area("Call centre (svc-voice, svc-ops, relay)", CC, CC_SERVICES, p95("svc-twilio-rest", "+3600s"),
+              jobs_stat("Jobs (24 h)", PHI, PHI_JOBS, PHI_SCHEDULES, ("tpa-db",))),
+        *(area("Call centre (svc-voice, svc-ops, relay)", CC, CC_SERVICES, ("cc-db",), p95("svc-twilio-rest", "+3600s"),
               "The relay's p95 request latency. svc-voice holds a call's socket for up to an hour and svc-ops the "
               "desk's streams, so their latency is left out, as `canary-latency` leaves them out.",
               groups_stat("Error groups (24 h)", CC, error_counts("errors", ("class",), "+86400s", groups=True),
-                          "errors"),
+                          "errors", ("cc-db",)),
               db_stat("cc-db", CC, "cc-db"),
-              jobs_stat("migrate-cc (24 h)", CC, "migrate-cc", None)),
-        *area("CRM (crm-web, engine)", CRM, CRM_SERVICES, p95(CRM_SERVICES, "+3600s"),
+              jobs_stat("migrate-cc (24 h)", CC, "migrate-cc", None, ("cc-db",))) if cc else []),
+        *area("CRM (crm-web, engine)", CRM, CRM_SERVICES, ("crm-db",), p95(CRM_SERVICES, "+3600s"),
               "The CRM's p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
               groups_stat("Error groups (24 h)", CRM, crm_errors("+86400s", groups=True),
-                          "crm_errors (beta) or errors"),
+                          "crm_errors (beta) or errors", ("crm-db",)),
               db_stat("crm-db", CRM, "crm-db"),
-              jobs_stat("CRM jobs (24 h)", CRM, CRM_JOBS, None)),
+              jobs_stat("CRM jobs (24 h)", CRM, CRM_JOBS, None, ("crm-db",))),
     ]
     return dashboard("tw-cloud-overview", "TPA overview (cloud)",
                      "Home: every TPA area at a glance, read from Cloud Monitoring. " + NOTHING_BUT_METRICS,
@@ -460,8 +549,7 @@ def portal_api() -> dict:
         row("Way in"),
         series("Uptime checks passing, by host", APP,
                q(UPTIME, URL, align="ALIGN_FRACTION_TRUE", reduce="REDUCE_MEAN", by=("host",)),
-               "Share of checker regions passing, by host. Behind IAP the check passes on Google's sign-in page: it "
-               "proves the edge and IAP, never web itself.", unit="percentunit"),
+               "Share of checker regions passing, by host. " + UPTIME_WORDING, unit="percentunit"),
         series("IAP assertions refused, and stale pinned keys", APP,
                [q(log("iap_unknown_key"), REV, by=("service_name",), name=alias("service_name", prefix="refused: ")),
                 q(log("iap_pinned_keys_stale"), REV, by=("service_name",),
@@ -723,9 +811,9 @@ def crm() -> dict:
                "Cloud Run's p95 request latency. `canary-latency` opens above 2 s for ten minutes.", unit="ms",
                line=2000),
         series("Instances, by service", CRM, instances(CRM_SERVICES), "Cloud Run instances."),
-        series("Errors, by class", CRM, crm_errors(),
-               "The CRM's lines at ERROR, by the class at the start of the exception's last line. Beta counts them "
-               "as `crm_errors` (the CRM shares the app project); a CRM project of its own as `errors`.", bars=True),
+        series("Errors, by class" if CRM_CLASS else "Errors, by service", CRM, crm_errors(),
+               "The CRM's lines at ERROR. Beta counts them as `crm_errors` (the CRM shares the app project); a CRM "
+               "project of its own as `errors`." + CRM_CLASS_NOTE, bars=True),
         series("Start-up or runtime failures, and database proxy refusals", CRM,
                [q(log("run_system_errors"), REV, by=("service_name",), service_name=Re(CRM_SERVICES),
                   name=alias("service_name", prefix="system: ")),
@@ -748,7 +836,7 @@ def crm() -> dict:
                      "then reads.", ["crm"], items)
 
 
-def errors() -> dict:
+def errors(cc: bool = True) -> dict:
     run = {"service_name": "Cloud Run service", "job_name": "Cloud Run job"}
 
     def section(name, ds, metric, labels, columns):
@@ -773,11 +861,12 @@ def errors() -> dict:
                  ("service", "class", "operation", "code", "sqlstate"),
                  {"service": "Service", "class": "Class", "operation": "Operation", "code": "Code",
                   "sqlstate": "SQLSTATE"}),
-        *section("Call centre (call-centre project)", CC, "errors", ("class",), {"class": "Class"}),
+        *(section("Call centre (call-centre project)", CC, "errors", ("class",), {"class": "Class"}) if cc else []),
         row("CRM"),
         table("Error groups in the time range (crm_errors or errors)", CRM, crm_errors(),
-              "The CRM's error groups: the service and the exception class. Beta counts them as `crm_errors`.",
-              columns={"service_name": "Cloud Run service", "class": "Class"}, w=16, h=9),
+              "The CRM's error groups: the service" + (" and the exception class" if CRM_CLASS else "") +
+              ". Beta counts them as `crm_errors`." + CRM_CLASS_NOTE,
+              columns={"service_name": "Cloud Run service", **({"class": "Class"} if CRM_CLASS else {})}, w=16, h=9),
         series("ERROR lines, by service", CRM, crm_errors(by=("service_name",)),
                "The CRM's ERROR lines per interval.", bars=True, w=8, h=9),
     ]
@@ -787,12 +876,13 @@ def errors() -> dict:
                      "else.", ["errors"], items, time="now-24h")
 
 
-def databases() -> dict:
+def databases(cc: bool = True) -> dict:
     items = []
     for name, ds, who in (("auth-db", APP, "auth and its jobs; app project"),
                           ("tpa-db", PHI, "records and its jobs; PHI project"),
                           ("crm-db", CRM, "the CRM; the app project in beta"),
-                          ("cc-db", CC, "the call centre's staffed desk and svc-voice's hand-off ledger")):
+                          *((("cc-db", CC, "the call centre's staffed desk and svc-voice's hand-off ledger"),)
+                            if cc else ())):
         items += [
             row(f"{name} ({who})"),
             timeline("Up", ds, db_up(name), f"Cloud SQL's `database/up` for {name}, the lowest in each interval. "
@@ -803,11 +893,11 @@ def databases() -> dict:
             db_stat("Now", ds, name, w=4, h=5),
         ]
     return dashboard("tw-cloud-databases", "Databases (cloud)",
-                     "The four Cloud SQL instances: up, and disk used. " + STOPPED_DB, ["databases"], items,
+                     f"The {'four' if cc else 'three'} Cloud SQL instances: up, and disk used. " + STOPPED_DB, ["databases"], items,
                      time="now-24h")
 
 
-def jobs() -> dict:
+def jobs(cc: bool = True) -> dict:
     items = [
         row("Scheduled runs: a successful run within each job's deadline"),
         *deadline_stats(w=4, h=4),
@@ -838,8 +928,9 @@ def jobs() -> dict:
                "migrate-tpa, seed-tpa, tpa-db-export, records-chain-head and the restore drill.", bars=True),
         series("Schedules that could not start their job", PHI, schedule_failures(PHI_SCHEDULES),
                "`scheduler-failed` in the PHI project; `audit-chain` for the chain head.", bars=True),
-        row("Call centre and CRM jobs"),
-        series("migrate-cc", CC, executions("migrate-cc"), "cc-db's migration, run by a person.", bars=True),
+        row("Call centre and CRM jobs" if cc else "CRM jobs"),
+        *([series("migrate-cc", CC, executions("migrate-cc"), "cc-db's migration, run by a person.", bars=True)]
+          if cc else []),
         series("migrate-crm and seed-crm", CRM, executions(CRM_JOBS), "The CRM's jobs, each run by a person.",
                bars=True),
     ]
@@ -852,8 +943,16 @@ PAGES = {"overview": overview, "portal-api": portal_api, "sign-in": sign_in, "re
          "callcentre": call_centre, "crm": crm, "errors": errors, "databases": databases, "jobs": jobs}
 
 
+# production-full has no call-centre project: these pages are written again without their call-centre part, into
+# no-cc/, and render-dashboards.sh uses them (and leaves out callcentre.json) when TPA_CC_PROJECT_ID is empty.
+NO_CC = {"overview": overview, "errors": errors, "databases": databases, "jobs": jobs}
+
+
 def render() -> dict[str, str]:
-    return {f"{name}.json": json.dumps(build(), indent=2, ensure_ascii=False) + "\n" for name, build in PAGES.items()}
+    """Relative path -> JSON, every dashboard and every no-cc variant."""
+    out = {f"{name}.json": build() for name, build in PAGES.items()}
+    out.update({f"no-cc/{name}.json": build(cc=False) for name, build in NO_CC.items()})
+    return {path: json.dumps(d, indent=2, ensure_ascii=False) + "\n" for path, d in out.items()}
 
 
 def main(argv: list[str]) -> int:
@@ -861,7 +960,8 @@ def main(argv: list[str]) -> int:
     if argv == ["--check"]:
         stale = [name for name, body in pages.items()
                  if not (OUT / name).exists() or (OUT / name).read_text() != body]
-        extra = sorted(p.name for p in OUT.glob("*.json") if p.name not in pages)
+        extra = sorted(str(p.relative_to(OUT)) for p in [*OUT.glob("*.json"), *OUT.glob("no-cc/*.json")]
+                       if str(p.relative_to(OUT)) not in pages)
         for name in stale:
             print(f"cloud_dashboards: cloud/dashboards/{name} differs from scripts/cloud_dashboards.py; run it")
         for name in extra:
@@ -870,7 +970,7 @@ def main(argv: list[str]) -> int:
     if argv:
         print(__doc__, file=sys.stderr)
         return 2
-    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / "no-cc").mkdir(parents=True, exist_ok=True)
     for name, body in pages.items():
         (OUT / name).write_text(body)
     print(f"cloud_dashboards: wrote {len(pages)} dashboards to {OUT.relative_to(ROOT)}")

@@ -9,12 +9,18 @@
 # disabled in grafana.ini. Only the core stackdriver (Cloud Monitoring) datasource is used.
 FROM grafana/grafana:12.4.11@sha256:3ea272e5cab64a4a62240c682e2c62433b25614d956d44c299a10cb6994f6f2e
 
-COPY --chown=472:0 grafana.ini /etc/grafana/grafana.ini
-COPY --chown=472:0 provisioning/ /etc/grafana/provisioning/
-# The dashboards as committed, with a project placeholder in every query; render-dashboards.sh writes them into
-# /var/lib/grafana/dashboards with this environment's project ids before Grafana starts.
-COPY --chown=472:0 dashboards/*.json /etc/grafana/dashboards/
-COPY --chmod=0555 render-dashboards.sh /usr/local/bin/render-dashboards
+# Config, provisioning, the dashboards as committed and the entrypoint are root's and read-only: the Grafana process
+# (uid 472) reads them and can change none of them. It writes only /var/lib/grafana: its disposable sqlite and the
+# dashboards render-dashboards.sh writes there at start, with each query's project and this environment's settings.
+USER root
+COPY grafana.ini /etc/grafana/grafana.ini
+COPY provisioning/ /etc/grafana/provisioning/
+COPY dashboards/*.json /etc/grafana/dashboards/
+COPY dashboards/no-cc/*.json /etc/grafana/dashboards/no-cc/
+COPY render-dashboards.sh /usr/local/bin/render-dashboards
+RUN chown -R root:root /etc/grafana /usr/local/bin/render-dashboards \
+ && chmod -R a-w,a+rX /etc/grafana \
+ && chmod 0555 /usr/local/bin/render-dashboards
 
 ENV GF_PATHS_CONFIG=/etc/grafana/grafana.ini \
     GF_PATHS_PROVISIONING=/etc/grafana/provisioning \

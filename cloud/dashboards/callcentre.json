@@ -348,8 +348,8 @@
             "groupBys": [
               "resource.label.service_name"
             ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_95",
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
             "alignmentPeriod": "grafana-auto",
             "view": "FULL",
             "preprocessor": "none"
@@ -772,7 +772,7 @@
     {
       "type": "stat",
       "title": "cc-db",
-      "description": "Cloud SQL's own signals for cc-db: `database/up` (the urgent `cc-db-down` pages below 1 for five minutes) and disk used (`cc-db-disk` at 85% for ten minutes). No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's own signals for cc-db: `database/up` (the urgent `cc-db-down` pages below 1 for five minutes) and disk used (`cc-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 7,
         "w": 6,
@@ -870,7 +870,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "stopped or not built"
+          "noValue": "@@R,cc-db,@@not reporting@@"
         },
         "overrides": [
           {

@@ -1,7 +1,8 @@
-"""Read the vendored metric catalogue (cloud/catalogue/monitoring.yml) far enough to check the cloud dashboards
-against it. Standard library only: the system Python here has no YAML parser, and the catalogue's shape is fixed by
-tpa-platform's own shape test (block mappings, block scalars for filters and descriptions, lists only inside alert
-policies). tests/cloud/test_catalogue.py checks this reader against the file's known facts.
+"""Read the vendored metric catalogue (cloud/catalogue/monitoring.yml) far enough to write the cloud dashboards
+(scripts/cloud_dashboards.py) and check them against it (tests/cloud/test_catalogue.py). Standard library only: the
+system Python here has no YAML parser, and the catalogue's shape is fixed by tpa-platform's own shape test (block
+mappings, block scalars for filters and descriptions, lists only inside alert policies). The test checks this reader
+against the file's known facts.
 """
 
 from __future__ import annotations
@@ -10,12 +11,16 @@ import hashlib
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 CATALOGUE = ROOT / "cloud" / "catalogue" / "monitoring.yml"
 SOURCE = ROOT / "cloud" / "catalogue" / "SOURCE"
 
 KEY_RE = re.compile(r"^(?P<key>[A-Za-z0-9_.-]+):(?:\s+(?P<value>.*?))?\s*$")
 BLOCK_SCALAR_RE = re.compile(r"^[|>][-+]?\s*(#.*)?$")
+# A label extractor's regular expression is anchored when it can only start matching at the start of the field or of
+# a line: `^...`, or `(?:^|\n)...` (the call centre's form; written `\\n` inside the YAML's single quotes). An
+# unanchored one can take a word out of free text (the CRM's, 2026-10-11: "...\nfor Jane Doe" gave class "Doe").
+ANCHORS = ("^", r"(?:^|\\n)", r"(?:^|\n)", "(?m)^")
 
 
 def git_blob_sha(data: bytes) -> str:
@@ -86,10 +91,21 @@ class Catalogue:
 
     @staticmethod
     def _metrics(section: dict) -> dict[str, dict]:
-        """name -> {labels: set of label keys, distribution: bool}"""
+        """name -> {labels: set of label keys, extractors: {label: extractor}, distribution: bool}"""
         return {name: {"labels": set((body.get("labels") or {}).keys()),
+                       "extractors": {k: str(v).strip("'\"") for k, v in (body.get("labels") or {}).items()},
                        "distribution": "value_extractor" in body}
                 for name, body in section.items()}
+
+    def unanchored_labels(self, role: str, name: str) -> set[str]:
+        """The labels of a role's metric whose extractor is a REGEXP_EXTRACT that is not anchored (ANCHORS). A
+        dashboard never groups, filters or names such a label: its value may be a word out of free text."""
+        found = set()
+        for label, extractor in (self.metric(role, name) or {}).get("extractors", {}).items():
+            m = re.match(r'^REGEXP_EXTRACT\([^,]+,\s*"(.*)"\)$', extractor)
+            if m and not m.group(1).startswith(ANCHORS):
+                found.add(label)
+        return found
 
     def metric(self, role: str, name: str) -> dict | None:
         return self.roles.get(role, {}).get(name) or self.shared.get(name)

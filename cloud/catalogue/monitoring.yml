@@ -1345,8 +1345,9 @@ projects:
           apply puts Terraform's policies back.
         conditions:
           # Cloud Monitoring writes its audit entries on audited_resource, as
-          # VPC Service Controls does (UNVERIFIED until the first apply that
-          # changes a PHI policy: it should open this once).
+          # VPC Service Controls does (UNVERIFIED until read: infra/README.md's
+          # "before you apply" reads one entry's type from the 2026-10-09
+          # apply's own entries before this is applied).
           - name: "a policy or channel change in the Admin Activity log"
             threshold:
               filter: >-

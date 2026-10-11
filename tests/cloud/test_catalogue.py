@@ -13,18 +13,21 @@ from __future__ import annotations
 import json
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import catalogue as cat  # noqa: E402
+import cloud_dashboards as gen  # noqa: E402
 import dashboard_lint as lint  # noqa: E402
 
-DASHBOARDS = sorted((ROOT / "cloud" / "dashboards").glob("*.json"))
+# Every page, and the no-cc/ variants production-full renders (scripts/cloud_dashboards.py NO_CC).
+PAGES = sorted((ROOT / "cloud" / "dashboards").glob("*.json"))
+DASHBOARDS = PAGES + sorted((ROOT / "cloud" / "dashboards" / "no-cc").glob("*.json"))
 ROLE = {"cloud-app": "app", "cloud-phi": "phi", "cloud-crm": "crm", "cloud-cc": "cc"}
 LOG_PREFIX = "logging.googleapis.com/user/"
 
@@ -87,14 +90,15 @@ NAMES = {
 }
 
 
-def queries():
-    """(dashboard file, panel title, refId, datasource uid, aligner, query facts) for every cloud query."""
-    for path in DASHBOARDS:
+def queries(paths=None):
+    """(dashboard file, panel title, refId, datasource uid, (aligner, reducer), query facts) for every cloud query."""
+    for path in DASHBOARDS if paths is None else paths:
         for panel in lint.panels(json.loads(path.read_text())):
             for target in panel.get("targets") or []:
                 tsl = target.get("timeSeriesList") or {}
-                yield (path.name, panel.get("title"), target.get("refId"), (target.get("datasource") or {}).get("uid"),
-                       tsl.get("perSeriesAligner"), lint.query_facts(tsl))
+                yield (str(path.relative_to(ROOT / "cloud" / "dashboards")), panel.get("title"), target.get("refId"),
+                       (target.get("datasource") or {}).get("uid"),
+                       (tsl.get("perSeriesAligner"), tsl.get("crossSeriesReducer")), lint.query_facts(tsl))
 
 
 class CatalogueTest(unittest.TestCase):
@@ -129,14 +133,16 @@ class CatalogueTest(unittest.TestCase):
 
     def test_every_metric_a_dashboard_queries_is_in_the_catalogue(self):
         problems = []
-        for name, title, ref, uid, aligner, facts in queries():
+        for name, title, ref, uid, (aligner, reducer), facts in queries():
             metric, where = facts["metric"], f"{name}: {title} ({ref}) on {uid}"
+            # A distribution is also read whole: merged across series, then a percentile (canary-latency's way).
+            merged = aligner == "ALIGN_DELTA" and str(reducer).startswith("REDUCE_PERCENTILE_")
             if metric.startswith(LOG_PREFIX):
                 found = self._log_metric(ROLE[uid], metric[len(LOG_PREFIX):])
                 if found is None:
                     problems.append(f"{where}: `{metric}` is not a log metric of the {ROLE[uid]} role (nor the "
                                     "shared list) in the catalogue")
-                elif found["distribution"] and aligner not in DISTRIBUTION_ALIGNERS:
+                elif found["distribution"] and aligner not in DISTRIBUTION_ALIGNERS and not merged:
                     problems.append(f"{where}: `{metric}` is a distribution; read it with a percentile or its mean, "
                                     f"not {aligner}")
                 elif not found["distribution"] and aligner not in COUNTER_ALIGNERS:
@@ -146,7 +152,7 @@ class CatalogueTest(unittest.TestCase):
                         and promql_name(metric) not in self.catalogue.text:
                     problems.append(f"{where}: `{metric}` is read by no catalogue policy")
                 kind = BUILTIN[metric][1]
-                if aligner not in ALIGNERS[kind]:
+                if aligner not in ALIGNERS[kind] and not (kind == "distribution" and merged):
                     problems.append(f"{where}: `{metric}` is a {kind}; {aligner} does not read one")
             else:
                 problems.append(f"{where}: `{metric}` is neither a log metric nor a known Google metric")
@@ -158,7 +164,11 @@ class CatalogueTest(unittest.TestCase):
             metric = facts["metric"]
             if metric.startswith(LOG_PREFIX):
                 found = self._log_metric(ROLE[uid], metric[len(LOG_PREFIX):])
-                metric_labels = found["labels"] if found else set()
+                # A label whose extractor is an unanchored regular expression may hold a word out of free text
+                # (the CRM's class, 2026-10-11): never charted until the vendored catalogue anchors it.
+                base = self.valid[ROLE[uid]].get(metric[len(LOG_PREFIX):])
+                unsafe = self.catalogue.unanchored_labels(ROLE[uid], base) if base else set()
+                metric_labels = (found["labels"] if found else set()) - unsafe
             else:
                 metric_labels = BUILTIN.get(metric, (set(), None))[0]
             allowed = {f"metric.label.{x}" for x in metric_labels} | \
@@ -199,7 +209,7 @@ class CatalogueTest(unittest.TestCase):
 
     def test_every_catalogue_metric_is_charted(self):
         charted: dict[str, set[str]] = {role: set() for role in ROLE.values()}
-        for _name, _title, _ref, uid, _aligner, facts in queries():
+        for _name, _title, _ref, uid, _aligner, facts in queries(PAGES):
             if facts["metric"].startswith(LOG_PREFIX):
                 base = facts["metric"][len(LOG_PREFIX):]
                 charted[ROLE[uid]].add(self.valid[ROLE[uid]].get(base, base))
@@ -217,6 +227,47 @@ class CatalogueTest(unittest.TestCase):
             if base in phi_only and uid != "cloud-phi":
                 problems.append(f"{name}: {title} ({ref}) reads the PHI project's `{base}` on {uid}")
         self.assertEqual(problems, [], "\n".join(problems))
+
+    def test_an_unanchored_extractor_keeps_its_label_off_and_an_anchored_one_lets_it_back(self):
+        # Today's catalogue: the CRM's class is unanchored, so no dashboard groups by it...
+        self.assertEqual(self.catalogue.unanchored_labels("crm", "errors"), {"class"})
+        crm_class = [(n, t) for n, t, _r, uid, _a, f in queries() if uid == "cloud-crm"
+                     and "metric.label.class" in f["labels"]]
+        self.assertEqual(crm_class, [])
+        # ...and the moment the vendored catalogue anchors it (as the call centre's is), the rule allows it.
+        anchored = self.catalogue.text.replace(
+            'REGEXP_EXTRACT(jsonPayload.exc, "([A-Za-z_]', 'REGEXP_EXTRACT(jsonPayload.exc, "(?:^|\\\\n)([A-Za-z_]')
+        self.assertNotEqual(anchored, self.catalogue.text, "the CRM extractor's text moved; update this test")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "monitoring.yml"
+            path.write_text(anchored)
+            self.assertEqual(cat.Catalogue(path).unanchored_labels("crm", "errors"), set())
+        self.assertEqual(self.catalogue.unanchored_labels("cc", "errors"), set(), "the call centre's is anchored")
+
+    def test_every_quiet_token_names_a_known_sweep_or_database(self):
+        known = set(gen.SWEEPS) | set(gen.DATABASES)
+        problems = []
+        for path in DASHBOARDS:
+            for token in re.findall(r"@@[RF](,[a-z0-9,-]*,)@@", path.read_text()):
+                unknown = set(token.strip(",").split(",")) - known
+                if unknown:
+                    problems.append(f"{path.name}: {sorted(unknown)}")
+        self.assertEqual(problems, [])
+
+    def test_the_render_script_knows_exactly_the_generators_names(self):
+        script = (ROOT / "cloud" / "render-dashboards.sh").read_text()
+        sweeps = re.search(r'^KNOWN_SWEEPS="([^"]*)"', script, re.M).group(1).split()
+        databases = re.search(r'^KNOWN_DATABASES="([^"]*)"', script, re.M).group(1).split()
+        self.assertEqual(sweeps, list(gen.SWEEPS))
+        self.assertEqual(databases, list(gen.DATABASES))
+
+    def test_no_cc_variants_read_no_call_centre_project(self):
+        variants = [p for p in DASHBOARDS if p.parent.name == "no-cc"]
+        self.assertEqual(sorted(p.stem for p in variants), sorted(gen.NO_CC))
+        for path in variants:
+            text = path.read_text()
+            self.assertNotIn("cloud-cc", text, path)
+            self.assertNotIn("__TPA_CC_PROJECT_ID__", text, path)
 
     def _log_metric(self, role: str, name: str) -> dict | None:
         """The catalogue entry a dashboard's log metric name reads in this role's project."""

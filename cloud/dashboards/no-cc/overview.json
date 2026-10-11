@@ -1,0 +1,4371 @@
+{
+  "uid": "tw-cloud-overview",
+  "title": "TPA overview (cloud)",
+  "description": "Home: every TPA area at a glance, read from Cloud Monitoring. Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.",
+  "tags": [
+    "trellis-watchtower",
+    "cloud",
+    "overview"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "5m",
+  "schemaVersion": 41,
+  "version": 1,
+  "timezone": "browser",
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "weekStart": "",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m",
+      "30m"
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Overview",
+      "type": "link",
+      "url": "/d/tw-cloud-overview",
+      "icon": "dashboard",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "tags": [],
+      "asDropdown": false,
+      "tooltip": ""
+    },
+    {
+      "title": "Pages",
+      "type": "dashboards",
+      "tags": [
+        "cloud"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link",
+      "url": "",
+      "tooltip": ""
+    },
+    {
+      "title": "PagerDuty incidents",
+      "type": "link",
+      "url": "https://app.pagerduty.com/incidents",
+      "icon": "bolt",
+      "keepTime": false,
+      "includeVars": false,
+      "targetBlank": true,
+      "tags": [],
+      "asDropdown": false,
+      "tooltip": "Open incidents page through PagerDuty; this site cannot list them"
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Now",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1
+    },
+    {
+      "type": "text",
+      "title": "Open incidents",
+      "gridPos": {
+        "h": 7,
+        "w": 10,
+        "x": 0,
+        "y": 1
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Open incidents are in PagerDuty**, not here: [PagerDuty incidents](https://app.pagerduty.com/incidents). Every Cloud Monitoring alert policy in a TPA project pages through it (urgent ones as high urgency). Google's own list, per project: [app](https://console.cloud.google.com/monitoring/alerting/incidents?project=__TPA_APP_PROJECT_ID__) · [member records](https://console.cloud.google.com/monitoring/alerting/incidents?project=__TPA_PHI_PROJECT_ID__) · [CRM](https://console.cloud.google.com/monitoring/alerting/incidents?project=__TPA_CRM_PROJECT_ID__).\n\nThis site reads metrics only: Grafana's Cloud Monitoring datasource cannot list incidents. Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.",
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        }
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Uptime checks passing (24 h)",
+      "description": "Share of uptime checks that passed in the last 24 h, by host. @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@Beta's hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
+      "gridPos": {
+        "h": 7,
+        "w": 14,
+        "x": 10,
+        "y": 1
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "monitoring.googleapis.com/uptime_check/check_passed",
+              "AND",
+              "resource.type",
+              "=",
+              "uptime_url"
+            ],
+            "groupBys": [
+              "resource.label.host"
+            ],
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "perSeriesAligner": "ALIGN_FRACTION_TRUE",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.host}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.95
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 2,
+          "noValue": "no uptime checks"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {
+          "valueSize": 40
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 3
+    },
+    {
+      "type": "row",
+      "title": "Scheduled runs: a successful run within each job's deadline",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "auth-publisher",
+      "description": "Successful executions of `auth-publisher` in the last 6 minutes: its missed-run deadline (3 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 9
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "auth-publisher",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "6m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,auth-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,auth-db,@@MISSED@@",
+          "displayName": "@@R,auth-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 5
+    },
+    {
+      "type": "stat",
+      "title": "erisa-clocks",
+      "description": "Successful executions of `tpa-jobs-erisa-clocks` in the last 26 minutes: its missed-run deadline (23 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `erisa-clocks` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 9
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "tpa-jobs-erisa-clocks",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "26m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,erisa-clocks,auth-db,tpa-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,erisa-clocks,auth-db,tpa-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,erisa-clocks,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,erisa-clocks,auth-db,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,erisa-clocks,auth-db,tpa-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 6
+    },
+    {
+      "type": "stat",
+      "title": "nightly-anomalies",
+      "description": "Successful executions of `tpa-jobs-nightly-anomalies` in the last 93 minutes: its missed-run deadline (90 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `nightly-anomalies` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 9
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "tpa-jobs-nightly-anomalies",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "93m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,nightly-anomalies,auth-db,tpa-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,nightly-anomalies,auth-db,tpa-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,nightly-anomalies,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,nightly-anomalies,auth-db,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,nightly-anomalies,auth-db,tpa-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 7
+    },
+    {
+      "type": "stat",
+      "title": "auth-sweeper",
+      "description": "Successful executions of `auth-sweeper` in the last 93 minutes: its missed-run deadline (90 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 9
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "auth-sweeper",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "93m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,auth-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,auth-db,@@MISSED@@",
+          "displayName": "@@R,auth-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 8
+    },
+    {
+      "type": "stat",
+      "title": "stoploss-surveillance",
+      "description": "Successful executions of `tpa-jobs-stoploss-surveillance` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `stoploss-surveillance` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 9
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "tpa-jobs-stoploss-surveillance",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "2163m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,stoploss-surveillance,auth-db,tpa-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,stoploss-surveillance,auth-db,tpa-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,stoploss-surveillance,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,stoploss-surveillance,auth-db,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,stoploss-surveillance,auth-db,tpa-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 9
+    },
+    {
+      "type": "stat",
+      "title": "accumulator-reconcile",
+      "description": "Successful executions of `tpa-jobs-accumulator-reconcile` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `accumulator-reconcile` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 9
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "tpa-jobs-accumulator-reconcile",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "2163m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,accumulator-reconcile,auth-db,tpa-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,accumulator-reconcile,auth-db,tpa-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,accumulator-reconcile,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,accumulator-reconcile,auth-db,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,accumulator-reconcile,auth-db,tpa-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 10
+    },
+    {
+      "type": "stat",
+      "title": "workload-audit",
+      "description": "Successful executions of `tpa-jobs-workload-audit` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `workload-audit` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "tpa-jobs-workload-audit",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "2163m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,workload-audit,auth-db,tpa-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,workload-audit,auth-db,tpa-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,workload-audit,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,workload-audit,auth-db,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,workload-audit,auth-db,tpa-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 11
+    },
+    {
+      "type": "stat",
+      "title": "member-access",
+      "description": "Successful executions of `tpa-jobs-member-access` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `member-access` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 13
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "tpa-jobs-member-access",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "2163m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,member-access,auth-db,tpa-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,member-access,auth-db,tpa-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,member-access,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,member-access,auth-db,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,member-access,auth-db,tpa-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 12
+    },
+    {
+      "type": "stat",
+      "title": "auth-audit-head",
+      "description": "Successful executions of `auth-audit-head` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 13
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "auth-audit-head",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "2163m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,auth-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,auth-db,@@MISSED@@",
+          "displayName": "@@R,auth-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 13
+    },
+    {
+      "type": "stat",
+      "title": "auth-audit-verify",
+      "description": "Successful executions of `auth-audit-verify` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 13
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "auth-audit-verify",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "2163m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,auth-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,auth-db,@@MISSED@@",
+          "displayName": "@@R,auth-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 14
+    },
+    {
+      "type": "stat",
+      "title": "tpa-db-export",
+      "description": "Successful executions of `tpa-db-export` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 13
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "tpa-db-export",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "2163m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,tpa-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,tpa-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,tpa-db,@@MISSED@@",
+          "displayName": "@@R,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,tpa-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 15
+    },
+    {
+      "type": "stat",
+      "title": "records-chain-head",
+      "description": "Successful executions of `records-chain-head` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 13
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "records-chain-head",
+              "AND",
+              "metric.label.result",
+              "=",
+              "succeeded"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "runs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "2163m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,tpa-db,@@text@@red@@",
+                "value": null
+              },
+              {
+                "color": "@@F,tpa-db,@@text@@green@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,tpa-db,@@MISSED@@",
+          "displayName": "@@R,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,tpa-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 16
+    },
+    {
+      "type": "row",
+      "title": "Portal & API (web, tpa-api, model-gateway; tpa-jobs)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 17
+    },
+    {
+      "type": "stat",
+      "title": "Requests (1 h)",
+      "description": "Requests Cloud Run answered in the last hour (web, tpa-api, model-gateway).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 18
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "web|tpa-api|model-gateway"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 18
+    },
+    {
+      "type": "stat",
+      "title": "5xx (1 h)",
+      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 18
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "web|tpa-api|model-gateway",
+              "AND",
+              "metric.label.response_code_class",
+              "=",
+              "5xx"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,auth-db,tpa-db,@@text@@orange@@",
+                "value": 1
+              },
+              {
+                "color": "@@F,auth-db,tpa-db,@@text@@red@@",
+                "value": 5
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,auth-db,tpa-db,@@0@@",
+          "displayName": "@@R,auth-db,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,auth-db,tpa-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 19
+    },
+    {
+      "type": "stat",
+      "title": "p95 (1 h)",
+      "description": "tpa-api's own p95 time to answer (its request line, without the streams, the file transfers and the model-backed rows): `tpa-api-latency` opens above 2 s for ten minutes. Cloud Run's own p95 for web and tpa-api counts the desk's 40-second streams, so it is on the Portal & API page only.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 18
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/tpa_api_latency",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_95",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1000
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "no requests"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "max"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 20
+    },
+    {
+      "type": "stat",
+      "title": "Error groups (24 h)",
+      "description": "Error groups of `errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 18
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/errors",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "resource.label.service_name",
+              "metric.label.service",
+              "metric.label.class",
+              "metric.label.operation",
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none",
+            "secondaryCrossSeriesReducer": "REDUCE_COUNT",
+            "secondaryPerSeriesAligner": "ALIGN_SUM",
+            "secondaryAlignmentPeriod": "+86400s",
+            "secondaryGroupBys": []
+          },
+          "aliasBy": "in services"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/errors",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name",
+              "metric.label.service",
+              "metric.label.class",
+              "metric.label.operation",
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none",
+            "secondaryCrossSeriesReducer": "REDUCE_COUNT",
+            "secondaryPerSeriesAligner": "ALIGN_SUM",
+            "secondaryAlignmentPeriod": "+86400s",
+            "secondaryGroupBys": []
+          },
+          "aliasBy": "in jobs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,auth-db,tpa-db,@@text@@orange@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,auth-db,tpa-db,@@0@@",
+          "displayName": "@@R,auth-db,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,auth-db,tpa-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 21
+    },
+    {
+      "type": "stat",
+      "title": "Instances now",
+      "description": "Cloud Run instances per service. Zero is how a scale-to-zero service idles; a service kept warm with none is the urgent `no instance` policy.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 18
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "web|tpa-api|model-gateway|tpa-jobs-drains"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "15m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 22
+    },
+    {
+      "type": "stat",
+      "title": "tpa-jobs (24 h)",
+      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 18
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "tpa-jobs-.*",
+              "AND",
+              "metric.label.result",
+              "=",
+              "failed"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/scheduler_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_scheduler_job",
+              "AND",
+              "resource.label.job_id",
+              "=~",
+              "erisa-clocks|nightly-anomalies|stoploss-surveillance|accumulator-reconcile|workload-audit|member-access"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "schedule failed"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,auth-db,tpa-db,@@text@@red@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,auth-db,tpa-db,@@0@@",
+          "displayName": "@@R,auth-db,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,auth-db,tpa-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 23
+    },
+    {
+      "type": "row",
+      "title": "Sign-in (auth, its messenger and jobs)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "id": 24
+    },
+    {
+      "type": "stat",
+      "title": "Requests (1 h)",
+      "description": "Requests Cloud Run answered in the last hour (auth, auth-outbox-publisher).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "auth|auth-outbox-publisher"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 25
+    },
+    {
+      "type": "stat",
+      "title": "5xx (1 h)",
+      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 24
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "auth|auth-outbox-publisher",
+              "AND",
+              "metric.label.response_code_class",
+              "=",
+              "5xx"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,auth-db,@@text@@orange@@",
+                "value": 1
+              },
+              {
+                "color": "@@F,auth-db,@@text@@red@@",
+                "value": 5
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,auth-db,@@0@@",
+          "displayName": "@@R,auth-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 26
+    },
+    {
+      "type": "stat",
+      "title": "p95 (1 h)",
+      "description": "auth's p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 24
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_latencies",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "auth"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1000
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "no requests"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "max"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 27
+    },
+    {
+      "type": "stat",
+      "title": "Error groups (24 h)",
+      "description": "Error groups of `auth_errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 24
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_errors",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "resource.label.service_name",
+              "metric.label.class",
+              "metric.label.operation",
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none",
+            "secondaryCrossSeriesReducer": "REDUCE_COUNT",
+            "secondaryPerSeriesAligner": "ALIGN_SUM",
+            "secondaryAlignmentPeriod": "+86400s",
+            "secondaryGroupBys": []
+          },
+          "aliasBy": "in services"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_errors",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name",
+              "metric.label.class",
+              "metric.label.operation",
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none",
+            "secondaryCrossSeriesReducer": "REDUCE_COUNT",
+            "secondaryPerSeriesAligner": "ALIGN_SUM",
+            "secondaryAlignmentPeriod": "+86400s",
+            "secondaryGroupBys": []
+          },
+          "aliasBy": "in jobs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,auth-db,@@text@@orange@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,auth-db,@@0@@",
+          "displayName": "@@R,auth-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 28
+    },
+    {
+      "type": "stat",
+      "title": "auth-db",
+      "description": "Cloud SQL's own signals for auth-db: `database/up` (the urgent `auth-db-down` pages below 1 for five minutes) and disk used (`auth-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 24
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/up",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MIN",
+            "perSeriesAligner": "ALIGN_MIN",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth-db up"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth-db disk"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "15m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,auth-db,@@not reporting@@"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "up"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "DOWN",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "up",
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "disk"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.75
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.85
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 29
+    },
+    {
+      "type": "stat",
+      "title": "auth jobs (24 h)",
+      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 24
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "migrate-auth|auth-.*",
+              "AND",
+              "metric.label.result",
+              "=",
+              "failed"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/scheduler_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_scheduler_job",
+              "AND",
+              "resource.label.job_id",
+              "=~",
+              "auth-.*"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "schedule failed"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,auth-db,@@text@@red@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,auth-db,@@0@@",
+          "displayName": "@@R,auth-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 30
+    },
+    {
+      "type": "row",
+      "title": "Member records (records, connectors)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "id": 31
+    },
+    {
+      "type": "stat",
+      "title": "Requests (1 h)",
+      "description": "Requests Cloud Run answered in the last hour (records, connectors).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 30
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "records|connectors"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 32
+    },
+    {
+      "type": "stat",
+      "title": "5xx (1 h)",
+      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 30
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "records|connectors",
+              "AND",
+              "metric.label.response_code_class",
+              "=",
+              "5xx"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,tpa-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,tpa-db,@@text@@orange@@",
+                "value": 1
+              },
+              {
+                "color": "@@F,tpa-db,@@text@@red@@",
+                "value": 5
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,tpa-db,@@0@@",
+          "displayName": "@@R,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,tpa-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 33
+    },
+    {
+      "type": "stat",
+      "title": "p95 (1 h)",
+      "description": "records' p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 30
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_latencies",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "records"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1000
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "no requests"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "max"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 34
+    },
+    {
+      "type": "stat",
+      "title": "Error groups (24 h)",
+      "description": "Error groups of `errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 30
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/errors",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "resource.label.service_name",
+              "metric.label.service",
+              "metric.label.class",
+              "metric.label.operation",
+              "metric.label.code",
+              "metric.label.sqlstate"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none",
+            "secondaryCrossSeriesReducer": "REDUCE_COUNT",
+            "secondaryPerSeriesAligner": "ALIGN_SUM",
+            "secondaryAlignmentPeriod": "+86400s",
+            "secondaryGroupBys": []
+          },
+          "aliasBy": "in services"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/errors",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name",
+              "metric.label.service",
+              "metric.label.class",
+              "metric.label.operation",
+              "metric.label.code",
+              "metric.label.sqlstate"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none",
+            "secondaryCrossSeriesReducer": "REDUCE_COUNT",
+            "secondaryPerSeriesAligner": "ALIGN_SUM",
+            "secondaryAlignmentPeriod": "+86400s",
+            "secondaryGroupBys": []
+          },
+          "aliasBy": "in jobs"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,tpa-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,tpa-db,@@text@@orange@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,tpa-db,@@0@@",
+          "displayName": "@@R,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,tpa-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 35
+    },
+    {
+      "type": "stat",
+      "title": "tpa-db",
+      "description": "Cloud SQL's own signals for tpa-db: `database/up` (the urgent `tpa-db-down` pages below 1 for five minutes) and disk used (`tpa-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 30
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/up",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MIN",
+            "perSeriesAligner": "ALIGN_MIN",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-db up"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-db disk"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "15m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,tpa-db,@@not reporting@@"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "up"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "DOWN",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "up",
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "disk"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.75
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.85
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 36
+    },
+    {
+      "type": "stat",
+      "title": "Jobs (24 h)",
+      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 30
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "migrate-tpa|seed-tpa|tpa-db-export|restore-drill|records-chain-head",
+              "AND",
+              "metric.label.result",
+              "=",
+              "failed"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/scheduler_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_scheduler_job",
+              "AND",
+              "resource.label.job_id",
+              "=~",
+              "tpa-db-export|records-chain-head|restore-drill"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "schedule failed"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,tpa-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,tpa-db,@@text@@red@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,tpa-db,@@0@@",
+          "displayName": "@@R,tpa-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,tpa-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 37
+    },
+    {
+      "type": "row",
+      "title": "CRM (crm-web, engine)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "id": 38
+    },
+    {
+      "type": "stat",
+      "title": "Requests (1 h)",
+      "description": "Requests Cloud Run answered in the last hour (crm-web, engine).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 36
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "crm-web|engine"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 39
+    },
+    {
+      "type": "stat",
+      "title": "5xx (1 h)",
+      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 36
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "crm-web|engine",
+              "AND",
+              "metric.label.response_code_class",
+              "=",
+              "5xx"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,crm-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,crm-db,@@text@@orange@@",
+                "value": 1
+              },
+              {
+                "color": "@@F,crm-db,@@text@@red@@",
+                "value": 5
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,crm-db,@@0@@",
+          "displayName": "@@R,crm-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,crm-db,@@value_and_name@@auto@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 40
+    },
+    {
+      "type": "stat",
+      "title": "p95 (1 h)",
+      "description": "The CRM's p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 36
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_latencies",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "crm-web|engine"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "1h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1000
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "no requests"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "max"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 41
+    },
+    {
+      "type": "stat",
+      "title": "Error groups (24 h)",
+      "description": "Error groups of `crm_errors (beta) or errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 36
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/crm_errors",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none",
+            "secondaryCrossSeriesReducer": "REDUCE_COUNT",
+            "secondaryPerSeriesAligner": "ALIGN_SUM",
+            "secondaryAlignmentPeriod": "+86400s",
+            "secondaryGroupBys": []
+          },
+          "aliasBy": "groups"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/errors",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "crm-web|engine"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none",
+            "secondaryCrossSeriesReducer": "REDUCE_COUNT",
+            "secondaryPerSeriesAligner": "ALIGN_SUM",
+            "secondaryAlignmentPeriod": "+86400s",
+            "secondaryGroupBys": []
+          },
+          "aliasBy": "groups"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,crm-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,crm-db,@@text@@orange@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,crm-db,@@0@@",
+          "displayName": "@@R,crm-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,crm-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 42
+    },
+    {
+      "type": "stat",
+      "title": "crm-db",
+      "description": "Cloud SQL's own signals for crm-db: `database/up` (the urgent `crm-db-down` pages below 1 for five minutes) and disk used (`crm-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 36
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/up",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MIN",
+            "perSeriesAligner": "ALIGN_MIN",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crm-db up"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crm-db disk"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "15m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,crm-db,@@not reporting@@"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "up"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "DOWN",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "up",
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "disk"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.75
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.85
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 43
+    },
+    {
+      "type": "stat",
+      "title": "CRM jobs (24 h)",
+      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 36
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/completed_execution_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=~",
+              "migrate-crm|seed-crm",
+              "AND",
+              "metric.label.result",
+              "=",
+              "failed"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,crm-db,@@text@@text@@",
+                "value": null
+              },
+              {
+                "color": "@@F,crm-db,@@text@@red@@",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,crm-db,@@0@@",
+          "displayName": "@@R,crm-db,@@@@"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "@@F,crm-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 44
+    }
+  ]
+}

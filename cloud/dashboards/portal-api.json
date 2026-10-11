@@ -104,7 +104,7 @@
     {
       "type": "timeseries",
       "title": "Uptime checks passing, by host",
-      "description": "Share of checker regions passing, by host. Behind IAP the check passes on Google's sign-in page: it proves the edge and IAP, never web itself.",
+      "description": "Share of checker regions passing, by host. @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@Beta's hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -584,8 +584,8 @@
             "groupBys": [
               "resource.label.service_name"
             ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_95",
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
             "alignmentPeriod": "grafana-auto",
             "view": "FULL",
             "preprocessor": "none"

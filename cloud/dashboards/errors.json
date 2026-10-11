@@ -1324,7 +1324,7 @@
     {
       "type": "table",
       "title": "Error groups in the time range (crm_errors or errors)",
-      "description": "The CRM's error groups: the service and the exception class. Beta counts them as `crm_errors`.",
+      "description": "The CRM's error groups: the service. Beta counts them as `crm_errors`. By service only: the catalogue's CRM class extractor is not anchored, so its class could be a word out of free text (until tpa-platform anchors it).",
       "gridPos": {
         "h": 9,
         "w": 16,
@@ -1355,8 +1355,7 @@
               "cloud_run_revision"
             ],
             "groupBys": [
-              "resource.label.service_name",
-              "metric.label.class"
+              "resource.label.service_name"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
@@ -1364,7 +1363,7 @@
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "{{resource.label.service_name}} {{metric.label.class}}"
+          "aliasBy": "{{resource.label.service_name}}"
         },
         {
           "refId": "B",
@@ -1389,8 +1388,7 @@
               "crm-web|engine"
             ],
             "groupBys": [
-              "resource.label.service_name",
-              "metric.label.class"
+              "resource.label.service_name"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
@@ -1398,7 +1396,7 @@
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "{{resource.label.service_name}} {{metric.label.class}}"
+          "aliasBy": "{{resource.label.service_name}}"
         }
       ],
       "interval": "1m",
@@ -1467,13 +1465,11 @@
             },
             "renameByName": {
               "resource.label.service_name": "Cloud Run service",
-              "metric.label.class": "Class",
               "Total": "Count"
             },
             "indexByName": {
               "Cloud Run service": 0,
-              "Class": 1,
-              "Count": 2
+              "Count": 1
             }
           }
         }

@@ -124,7 +124,7 @@
     {
       "type": "stat",
       "title": "Uptime checks passing (24 h)",
-      "description": "Share of uptime checks that passed in the last 24 h, by host. Behind IAP a check passes only on Google's sign-in page, so this proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.",
+      "description": "Share of uptime checks that passed in the last 24 h, by host. @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@Beta's hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
       "gridPos": {
         "h": 7,
         "w": 14,
@@ -235,7 +235,7 @@
     {
       "type": "stat",
       "title": "auth-publisher",
-      "description": "Successful executions of `auth-publisher` in the last 3m, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `auth-publisher` in the last 6 minutes: its missed-run deadline (3 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -284,7 +284,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "3m",
+      "timeFrom": "6m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -296,17 +296,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,auth-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,auth-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,auth-db,@@MISSED@@",
+          "displayName": "@@R,auth-db,@@@@"
         },
         "overrides": []
       },
@@ -319,7 +320,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -331,7 +332,7 @@
     {
       "type": "stat",
       "title": "erisa-clocks",
-      "description": "Successful executions of `tpa-jobs-erisa-clocks` in the last 23m, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `tpa-jobs-erisa-clocks` in the last 26 minutes: its missed-run deadline (23 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `erisa-clocks` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -380,7 +381,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "23m",
+      "timeFrom": "26m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -392,17 +393,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,erisa-clocks,auth-db,tpa-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,erisa-clocks,auth-db,tpa-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,erisa-clocks,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,erisa-clocks,auth-db,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -415,7 +417,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,erisa-clocks,auth-db,tpa-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -427,7 +429,7 @@
     {
       "type": "stat",
       "title": "nightly-anomalies",
-      "description": "Successful executions of `tpa-jobs-nightly-anomalies` in the last 90m, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `tpa-jobs-nightly-anomalies` in the last 93 minutes: its missed-run deadline (90 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `nightly-anomalies` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -476,7 +478,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "90m",
+      "timeFrom": "93m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -488,17 +490,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,nightly-anomalies,auth-db,tpa-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,nightly-anomalies,auth-db,tpa-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,nightly-anomalies,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,nightly-anomalies,auth-db,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -511,7 +514,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,nightly-anomalies,auth-db,tpa-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -523,7 +526,7 @@
     {
       "type": "stat",
       "title": "auth-sweeper",
-      "description": "Successful executions of `auth-sweeper` in the last 90m, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `auth-sweeper` in the last 93 minutes: its missed-run deadline (90 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -572,7 +575,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "90m",
+      "timeFrom": "93m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -584,17 +587,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,auth-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,auth-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,auth-db,@@MISSED@@",
+          "displayName": "@@R,auth-db,@@@@"
         },
         "overrides": []
       },
@@ -607,7 +611,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -619,7 +623,7 @@
     {
       "type": "stat",
       "title": "stoploss-surveillance",
-      "description": "Successful executions of `tpa-jobs-stoploss-surveillance` in the last 36h, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `tpa-jobs-stoploss-surveillance` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `stoploss-surveillance` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -668,7 +672,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "36h",
+      "timeFrom": "2163m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -680,17 +684,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,stoploss-surveillance,auth-db,tpa-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,stoploss-surveillance,auth-db,tpa-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,stoploss-surveillance,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,stoploss-surveillance,auth-db,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -703,7 +708,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,stoploss-surveillance,auth-db,tpa-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -715,7 +720,7 @@
     {
       "type": "stat",
       "title": "accumulator-reconcile",
-      "description": "Successful executions of `tpa-jobs-accumulator-reconcile` in the last 36h, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `tpa-jobs-accumulator-reconcile` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `accumulator-reconcile` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -764,7 +769,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "36h",
+      "timeFrom": "2163m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -776,17 +781,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,accumulator-reconcile,auth-db,tpa-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,accumulator-reconcile,auth-db,tpa-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,accumulator-reconcile,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,accumulator-reconcile,auth-db,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -799,7 +805,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,accumulator-reconcile,auth-db,tpa-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -811,7 +817,7 @@
     {
       "type": "stat",
       "title": "workload-audit",
-      "description": "Successful executions of `tpa-jobs-workload-audit` in the last 36h, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `tpa-jobs-workload-audit` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `workload-audit` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -860,7 +866,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "36h",
+      "timeFrom": "2163m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -872,17 +878,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,workload-audit,auth-db,tpa-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,workload-audit,auth-db,tpa-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,workload-audit,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,workload-audit,auth-db,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -895,7 +902,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,workload-audit,auth-db,tpa-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -907,7 +914,7 @@
     {
       "type": "stat",
       "title": "member-access",
-      "description": "Successful executions of `tpa-jobs-member-access` in the last 36h, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `tpa-jobs-member-access` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `member-access` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -956,7 +963,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "36h",
+      "timeFrom": "2163m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -968,17 +975,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,member-access,auth-db,tpa-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,member-access,auth-db,tpa-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,member-access,auth-db,tpa-db,@@MISSED@@",
+          "displayName": "@@R,member-access,auth-db,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -991,7 +999,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,member-access,auth-db,tpa-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -1003,7 +1011,7 @@
     {
       "type": "stat",
       "title": "auth-audit-head",
-      "description": "Successful executions of `auth-audit-head` in the last 36h, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `auth-audit-head` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -1052,7 +1060,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "36h",
+      "timeFrom": "2163m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -1064,17 +1072,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,auth-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,auth-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,auth-db,@@MISSED@@",
+          "displayName": "@@R,auth-db,@@@@"
         },
         "overrides": []
       },
@@ -1087,7 +1096,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -1099,7 +1108,7 @@
     {
       "type": "stat",
       "title": "auth-audit-verify",
-      "description": "Successful executions of `auth-audit-verify` in the last 36h, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `auth-audit-verify` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -1148,7 +1157,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "36h",
+      "timeFrom": "2163m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -1160,17 +1169,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,auth-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,auth-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,auth-db,@@MISSED@@",
+          "displayName": "@@R,auth-db,@@@@"
         },
         "overrides": []
       },
@@ -1183,7 +1193,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -1195,7 +1205,7 @@
     {
       "type": "stat",
       "title": "tpa-db-export",
-      "description": "Successful executions of `tpa-db-export` in the last 36h, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `tpa-db-export` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -1244,7 +1254,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "36h",
+      "timeFrom": "2163m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -1256,17 +1266,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,tpa-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,tpa-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,tpa-db,@@MISSED@@",
+          "displayName": "@@R,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -1279,7 +1290,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,tpa-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -1291,7 +1302,7 @@
     {
       "type": "stat",
       "title": "records-chain-head",
-      "description": "Successful executions of `records-chain-head` in the last 36h, its missed-run deadline (about one and a half cadences). MISSED: none, so its `missed run` policy is open or about to be. Beta's paused sweeps (O143: nightly-anomalies, accumulator-reconcile) read MISSED while paused; their alerts are off.",
+      "description": "Successful executions of `records-chain-head` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -1340,7 +1351,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "36h",
+      "timeFrom": "2163m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -1352,17 +1363,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "@@F,tpa-db,@@text@@red@@",
                 "value": null
               },
               {
-                "color": "green",
+                "color": "@@F,tpa-db,@@text@@green@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "MISSED"
+          "noValue": "@@R,tpa-db,@@MISSED@@",
+          "displayName": "@@R,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -1375,7 +1387,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,tpa-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -1490,7 +1502,7 @@
     {
       "type": "stat",
       "title": "5xx (1 h)",
-      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx.",
+      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -1553,21 +1565,22 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,auth-db,tpa-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "@@F,auth-db,tpa-db,@@text@@orange@@",
                 "value": 1
               },
               {
-                "color": "red",
+                "color": "@@F,auth-db,tpa-db,@@text@@red@@",
                 "value": 5
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,auth-db,tpa-db,@@0@@",
+          "displayName": "@@R,auth-db,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -1580,7 +1593,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,auth-db,tpa-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -1620,11 +1633,7 @@
               "AND",
               "resource.type",
               "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=~",
-              "tpa-api"
+              "cloud_run_revision"
             ],
             "groupBys": [
               "resource.label.service_name"
@@ -1690,7 +1699,7 @@
     {
       "type": "stat",
       "title": "Error groups (24 h)",
-      "description": "Error groups of `errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them.",
+      "description": "Error groups of `errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -1790,17 +1799,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,auth-db,tpa-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "@@F,auth-db,tpa-db,@@text@@orange@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,auth-db,tpa-db,@@0@@",
+          "displayName": "@@R,auth-db,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -1813,7 +1823,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "value_and_name",
+        "textMode": "@@F,auth-db,tpa-db,@@value_and_name@@value_and_name@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -1915,7 +1925,7 @@
     {
       "type": "stat",
       "title": "tpa-jobs (24 h)",
-      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above.",
+      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -2007,17 +2017,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,auth-db,tpa-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "@@F,auth-db,tpa-db,@@text@@red@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,auth-db,tpa-db,@@0@@",
+          "displayName": "@@R,auth-db,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -2030,7 +2041,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "value_and_name",
+        "textMode": "@@F,auth-db,tpa-db,@@value_and_name@@value_and_name@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -2145,7 +2156,7 @@
     {
       "type": "stat",
       "title": "5xx (1 h)",
-      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx.",
+      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -2208,21 +2219,22 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,auth-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "@@F,auth-db,@@text@@orange@@",
                 "value": 1
               },
               {
-                "color": "red",
+                "color": "@@F,auth-db,@@text@@red@@",
                 "value": 5
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,auth-db,@@0@@",
+          "displayName": "@@R,auth-db,@@@@"
         },
         "overrides": []
       },
@@ -2235,7 +2247,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,auth-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -2284,8 +2296,8 @@
             "groupBys": [
               "resource.label.service_name"
             ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_95",
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
             "alignmentPeriod": "+3600s",
             "view": "FULL",
             "preprocessor": "none"
@@ -2345,7 +2357,7 @@
     {
       "type": "stat",
       "title": "Error groups (24 h)",
-      "description": "Error groups of `auth_errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them.",
+      "description": "Error groups of `auth_errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -2443,17 +2455,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,auth-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "@@F,auth-db,@@text@@orange@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,auth-db,@@0@@",
+          "displayName": "@@R,auth-db,@@@@"
         },
         "overrides": []
       },
@@ -2466,7 +2479,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "value_and_name",
+        "textMode": "@@F,auth-db,@@value_and_name@@value_and_name@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -2478,7 +2491,7 @@
     {
       "type": "stat",
       "title": "auth-db",
-      "description": "Cloud SQL's own signals for auth-db: `database/up` (the urgent `auth-db-down` pages below 1 for five minutes) and disk used (`auth-db-disk` at 85% for ten minutes). No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's own signals for auth-db: `database/up` (the urgent `auth-db-down` pages below 1 for five minutes) and disk used (`auth-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -2576,7 +2589,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "stopped or not built"
+          "noValue": "@@R,auth-db,@@not reporting@@"
         },
         "overrides": [
           {
@@ -2694,7 +2707,7 @@
     {
       "type": "stat",
       "title": "auth jobs (24 h)",
-      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above.",
+      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -2786,17 +2799,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,auth-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "@@F,auth-db,@@text@@red@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,auth-db,@@0@@",
+          "displayName": "@@R,auth-db,@@@@"
         },
         "overrides": []
       },
@@ -2809,7 +2823,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "value_and_name",
+        "textMode": "@@F,auth-db,@@value_and_name@@value_and_name@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -2924,7 +2938,7 @@
     {
       "type": "stat",
       "title": "5xx (1 h)",
-      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx.",
+      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -2987,21 +3001,22 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,tpa-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "@@F,tpa-db,@@text@@orange@@",
                 "value": 1
               },
               {
-                "color": "red",
+                "color": "@@F,tpa-db,@@text@@red@@",
                 "value": 5
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,tpa-db,@@0@@",
+          "displayName": "@@R,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -3014,7 +3029,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,tpa-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -3063,8 +3078,8 @@
             "groupBys": [
               "resource.label.service_name"
             ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_95",
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
             "alignmentPeriod": "+3600s",
             "view": "FULL",
             "preprocessor": "none"
@@ -3124,7 +3139,7 @@
     {
       "type": "stat",
       "title": "Error groups (24 h)",
-      "description": "Error groups of `errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them.",
+      "description": "Error groups of `errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -3226,17 +3241,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,tpa-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "@@F,tpa-db,@@text@@orange@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,tpa-db,@@0@@",
+          "displayName": "@@R,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -3249,7 +3265,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "value_and_name",
+        "textMode": "@@F,tpa-db,@@value_and_name@@value_and_name@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -3261,7 +3277,7 @@
     {
       "type": "stat",
       "title": "tpa-db",
-      "description": "Cloud SQL's own signals for tpa-db: `database/up` (the urgent `tpa-db-down` pages below 1 for five minutes) and disk used (`tpa-db-disk` at 85% for ten minutes). No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's own signals for tpa-db: `database/up` (the urgent `tpa-db-down` pages below 1 for five minutes) and disk used (`tpa-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -3359,7 +3375,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "stopped or not built"
+          "noValue": "@@R,tpa-db,@@not reporting@@"
         },
         "overrides": [
           {
@@ -3477,7 +3493,7 @@
     {
       "type": "stat",
       "title": "Jobs (24 h)",
-      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above.",
+      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -3569,17 +3585,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,tpa-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "@@F,tpa-db,@@text@@red@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,tpa-db,@@0@@",
+          "displayName": "@@R,tpa-db,@@@@"
         },
         "overrides": []
       },
@@ -3592,7 +3609,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "value_and_name",
+        "textMode": "@@F,tpa-db,@@value_and_name@@value_and_name@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -3707,7 +3724,7 @@
     {
       "type": "stat",
       "title": "5xx (1 h)",
-      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx.",
+      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -3770,21 +3787,22 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,cc-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "@@F,cc-db,@@text@@orange@@",
                 "value": 1
               },
               {
-                "color": "red",
+                "color": "@@F,cc-db,@@text@@red@@",
                 "value": 5
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,cc-db,@@0@@",
+          "displayName": "@@R,cc-db,@@@@"
         },
         "overrides": []
       },
@@ -3797,7 +3815,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,cc-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -3846,8 +3864,8 @@
             "groupBys": [
               "resource.label.service_name"
             ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_95",
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
             "alignmentPeriod": "+3600s",
             "view": "FULL",
             "preprocessor": "none"
@@ -3907,7 +3925,7 @@
     {
       "type": "stat",
       "title": "Error groups (24 h)",
-      "description": "Error groups of `errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them.",
+      "description": "Error groups of `errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -4001,17 +4019,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,cc-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "@@F,cc-db,@@text@@orange@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,cc-db,@@0@@",
+          "displayName": "@@R,cc-db,@@@@"
         },
         "overrides": []
       },
@@ -4024,7 +4043,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "value_and_name",
+        "textMode": "@@F,cc-db,@@value_and_name@@value_and_name@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -4036,7 +4055,7 @@
     {
       "type": "stat",
       "title": "cc-db",
-      "description": "Cloud SQL's own signals for cc-db: `database/up` (the urgent `cc-db-down` pages below 1 for five minutes) and disk used (`cc-db-disk` at 85% for ten minutes). No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's own signals for cc-db: `database/up` (the urgent `cc-db-down` pages below 1 for five minutes) and disk used (`cc-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -4134,7 +4153,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "stopped or not built"
+          "noValue": "@@R,cc-db,@@not reporting@@"
         },
         "overrides": [
           {
@@ -4252,7 +4271,7 @@
     {
       "type": "stat",
       "title": "migrate-cc (24 h)",
-      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`). A missed run is the Scheduled runs row above.",
+      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -4313,17 +4332,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,cc-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "@@F,cc-db,@@text@@red@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,cc-db,@@0@@",
+          "displayName": "@@R,cc-db,@@@@"
         },
         "overrides": []
       },
@@ -4336,7 +4356,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "value_and_name",
+        "textMode": "@@F,cc-db,@@value_and_name@@value_and_name@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -4451,7 +4471,7 @@
     {
       "type": "stat",
       "title": "5xx (1 h)",
-      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx.",
+      "description": "5xx answers in the last hour. `canary-5xx` opens above 0.1% (and five); the urgent liveness policies when every answer for ten minutes was a 5xx. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -4514,21 +4534,22 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,crm-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "@@F,crm-db,@@text@@orange@@",
                 "value": 1
               },
               {
-                "color": "red",
+                "color": "@@F,crm-db,@@text@@red@@",
                 "value": 5
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,crm-db,@@0@@",
+          "displayName": "@@R,crm-db,@@@@"
         },
         "overrides": []
       },
@@ -4541,7 +4562,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "@@F,crm-db,@@value_and_name@@auto@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -4590,8 +4611,8 @@
             "groupBys": [
               "resource.label.service_name"
             ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_95",
+            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "perSeriesAligner": "ALIGN_DELTA",
             "alignmentPeriod": "+3600s",
             "view": "FULL",
             "preprocessor": "none"
@@ -4651,7 +4672,7 @@
     {
       "type": "stat",
       "title": "Error groups (24 h)",
-      "description": "Error groups of `crm_errors (beta) or errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them.",
+      "description": "Error groups of `crm_errors (beta) or errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -4682,8 +4703,7 @@
               "cloud_run_revision"
             ],
             "groupBys": [
-              "resource.label.service_name",
-              "metric.label.class"
+              "resource.label.service_name"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
@@ -4720,8 +4740,7 @@
               "crm-web|engine"
             ],
             "groupBys": [
-              "resource.label.service_name",
-              "metric.label.class"
+              "resource.label.service_name"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
@@ -4749,17 +4768,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,crm-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "orange",
+                "color": "@@F,crm-db,@@text@@orange@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,crm-db,@@0@@",
+          "displayName": "@@R,crm-db,@@@@"
         },
         "overrides": []
       },
@@ -4772,7 +4792,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "value_and_name",
+        "textMode": "@@F,crm-db,@@value_and_name@@value_and_name@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -4784,7 +4804,7 @@
     {
       "type": "stat",
       "title": "crm-db",
-      "description": "Cloud SQL's own signals for crm-db: `database/up` (the urgent `crm-db-down` pages below 1 for five minutes) and disk used (`crm-db-disk` at 85% for ten minutes). No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's own signals for crm-db: `database/up` (the urgent `crm-db-down` pages below 1 for five minutes) and disk used (`crm-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -4882,7 +4902,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "stopped or not built"
+          "noValue": "@@R,crm-db,@@not reporting@@"
         },
         "overrides": [
           {
@@ -5000,7 +5020,7 @@
     {
       "type": "stat",
       "title": "CRM jobs (24 h)",
-      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`). A missed run is the Scheduled runs row above.",
+      "description": "Last 24 h: executions that failed after their retries (`jobs-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -5061,17 +5081,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "@@F,crm-db,@@text@@text@@",
                 "value": null
               },
               {
-                "color": "red",
+                "color": "@@F,crm-db,@@text@@red@@",
                 "value": 1
               }
             ]
           },
           "mappings": [],
-          "noValue": "0"
+          "noValue": "@@R,crm-db,@@0@@",
+          "displayName": "@@R,crm-db,@@@@"
         },
         "overrides": []
       },
@@ -5084,7 +5105,7 @@
           "values": false
         },
         "orientation": "auto",
-        "textMode": "value_and_name",
+        "textMode": "@@F,crm-db,@@value_and_name@@value_and_name@@",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",

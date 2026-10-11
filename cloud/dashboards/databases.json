@@ -1,7 +1,7 @@
 {
   "uid": "tw-cloud-databases",
   "title": "Databases (cloud)",
-  "description": "The four Cloud SQL instances: up, and disk used. No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+  "description": "The four Cloud SQL instances: up, and disk used. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
   "tags": [
     "trellis-watchtower",
     "cloud",
@@ -104,7 +104,7 @@
     {
       "type": "state-timeline",
       "title": "Up",
-      "description": "Cloud SQL's `database/up` for auth-db, the lowest in each interval. `auth-db-down` (urgent) pages below 1 for five minutes. No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's `database/up` for auth-db, the lowest in each interval. `auth-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 12,
@@ -318,7 +318,7 @@
     {
       "type": "stat",
       "title": "Now",
-      "description": "Cloud SQL's own signals for auth-db: `database/up` (the urgent `auth-db-down` pages below 1 for five minutes) and disk used (`auth-db-disk` at 85% for ten minutes). No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's own signals for auth-db: `database/up` (the urgent `auth-db-down` pages below 1 for five minutes) and disk used (`auth-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -416,7 +416,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "stopped or not built"
+          "noValue": "@@R,auth-db,@@not reporting@@"
         },
         "overrides": [
           {
@@ -547,7 +547,7 @@
     {
       "type": "state-timeline",
       "title": "Up",
-      "description": "Cloud SQL's `database/up` for tpa-db, the lowest in each interval. `tpa-db-down` (urgent) pages below 1 for five minutes. No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's `database/up` for tpa-db, the lowest in each interval. `tpa-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 12,
@@ -761,7 +761,7 @@
     {
       "type": "stat",
       "title": "Now",
-      "description": "Cloud SQL's own signals for tpa-db: `database/up` (the urgent `tpa-db-down` pages below 1 for five minutes) and disk used (`tpa-db-disk` at 85% for ten minutes). No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's own signals for tpa-db: `database/up` (the urgent `tpa-db-down` pages below 1 for five minutes) and disk used (`tpa-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -859,7 +859,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "stopped or not built"
+          "noValue": "@@R,tpa-db,@@not reporting@@"
         },
         "overrides": [
           {
@@ -990,7 +990,7 @@
     {
       "type": "state-timeline",
       "title": "Up",
-      "description": "Cloud SQL's `database/up` for crm-db, the lowest in each interval. `crm-db-down` (urgent) pages below 1 for five minutes. No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's `database/up` for crm-db, the lowest in each interval. `crm-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 12,
@@ -1204,7 +1204,7 @@
     {
       "type": "stat",
       "title": "Now",
-      "description": "Cloud SQL's own signals for crm-db: `database/up` (the urgent `crm-db-down` pages below 1 for five minutes) and disk used (`crm-db-disk` at 85% for ten minutes). No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's own signals for crm-db: `database/up` (the urgent `crm-db-down` pages below 1 for five minutes) and disk used (`crm-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -1302,7 +1302,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "stopped or not built"
+          "noValue": "@@R,crm-db,@@not reporting@@"
         },
         "overrides": [
           {
@@ -1433,7 +1433,7 @@
     {
       "type": "state-timeline",
       "title": "Up",
-      "description": "Cloud SQL's `database/up` for cc-db, the lowest in each interval. `cc-db-down` (urgent) pages below 1 for five minutes. No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's `database/up` for cc-db, the lowest in each interval. `cc-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 12,
@@ -1647,7 +1647,7 @@
     {
       "type": "stat",
       "title": "Now",
-      "description": "Cloud SQL's own signals for cc-db: `database/up` (the urgent `cc-db-down` pages below 1 for five minutes) and disk used (`cc-db-disk` at 85% for ten minutes). No value: the instance is stopped on purpose between test sessions (beta's database_activation_policy NEVER), or not built (cc-db exists with the staffed desk only).",
+      "description": "Cloud SQL's own signals for cc-db: `database/up` (the urgent `cc-db-down` pages below 1 for five minutes) and disk used (`cc-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -1745,7 +1745,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "stopped or not built"
+          "noValue": "@@R,cc-db,@@not reporting@@"
         },
         "overrides": [
           {

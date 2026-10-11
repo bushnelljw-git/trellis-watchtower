@@ -2,7 +2,7 @@
 # Written by scripts/vendor_catalogue.sh; monitoring.yml beside it is that blob, verbatim.
 repository=tpa-platform
 ref=beta-alert-gaps
-commit=d88305dbe0eeef8bd9d0965481207ed31336c641
+commit=64a144b99b30305fe762e7357b99b02e0e432c6f
 path=infra/monitoring.yml
-blob=3e19a7d0b664deefd01c6a237b433894e6883a7d
+blob=4ad1353ee89e06b023fdd4f699c2694d044a0aff
 vendored=2026-10-11
