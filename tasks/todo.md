@@ -85,6 +85,13 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     changed comments only). **Re-vendor from tpa-platform master when that branch lands**:
     `scripts/vendor_catalogue.sh --check ../tpa-platform origin/master`, then without `--check`, then `make lint`.
 
+- [x] CR2 (2026-10-11) the re-review of `cloud-dashboards` @ c4abcc6: production refuses `TPA_PAUSED_JOBS` and
+  `TPA_STOPPED_DATABASES` (render test, and the image check starts production with one set); the scratch directory is
+  removed before `exec /run.sh` (the image check finds nothing in /tmp); the tpa-platform asks are filed in
+  docs/REQUESTS.md §4 (the role, its projects, the access level, `ing-watch`, the environment, Query Insights).
+  - [ ] For the orchestrating session: carry §4 into trellis-security's hosted-grafana request file, whose status
+    still reads "refused (for now)" from D-92.
+
 ## Review
 
 ### 2026-10-11 (cloud dashboards)

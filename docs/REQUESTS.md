@@ -5,7 +5,8 @@ trellis-watchtower watches these repos but changes none of them. What it needs f
 - **Non-TPA repos** (bodyf1rst-network, health-forge, bodyf1rst-enroll): the requests are in this file, because those
   repos have no security session.
 - **TPA repos** (tpa-platform, auth-notary, records-service, trellis): the requests are files in trellis-security
-  `requests/`, listed at the end.
+  `requests/`, listed at the end. The hosted dashboard's cloud half (§4) is written here in full, for the
+  orchestrating session to carry into that request file.
 
 Written 2026-09-24 by the watchtower session. Every file:line below was read at the commit named for its repo.
 
@@ -106,6 +107,67 @@ The follow-up ask, once files exist, is class-only exception logging, as tpa_com
 
 ---
 
+## 4. The hosted dashboard's cloud half (tpa-platform)
+
+**Why.** The owner ruled the hosted dashboard yes on 2026-10-11 ("Yes, everything": charts for the app, CRM and call
+centre, and health numbers for the member-records area, never member data, through a narrow read-only opening into
+the protected area). That reverses tpa-platform D-92. trellis-watchtower has built the image (`cloud/`, branch
+`cloud-dashboards`); everything below is tpa-platform's to build, after its `beta-alert-gaps` work lands. It
+supersedes the Ask in trellis-security's `2026-09-24-watchtower-to-tpa-platform-hosted-grafana-iap.md` where the two
+differ. That file's status still reads "refused (for now)" from D-92; bringing it up to date with the owner's ruling is
+for its owners (the orchestrating session or sec-tpa-platform).
+
+**What bounds a viewer.** A signed-in viewer can post their own query to Grafana's `/api/ds/query`, not only the
+dashboards' ones. That means any filter, every label, even another project. Grafana 12.4.11 has no setting that
+limits a datasource to its saved panels (`cloud/README.md`, "What a viewer can read"; `make cloud-image-check` shows
+it on every run). So what a viewer can read is exactly what `sa-watchtower` can read, and the asks below are what
+bound it.
+
+**The asks:**
+
+1. **`sa-watchtower` holds a custom role with `monitoring.timeSeries.list` alone**, not `roles/monitoring.viewer`.
+   That role also reads alert policies, notification channels, uptime-check configs, dashboards and groups. Viewing
+   the pages needs nothing more: a signed-in browser made no datasource resource call, and the backend calls only
+   `projects.timeSeries.list`. Add `monitoring.metricDescriptors.list` only if a later Grafana needs it; the query
+   editor uses it, and viewers have none.
+2. **That role is granted on the four TPA projects alone:** app, PHI, beta's call-centre project, and the CRM's where
+   it has a project of its own. Never on a folder or the organisation. No `logging*` role, no invoker, nothing else.
+3. **The IAP `watch` host is under the same access level as `ing-monitoring`**, so only the people who may already read
+   the PHI project's monitoring reach a page that can. The host is for `grp-platform`, the IAP accessor.
+4. **`ing-watch`**: one ingress rule admitting `sa-watchtower`, from the watch service, to `monitoring.googleapis.com`
+   in the PHI project, for Monitoring read only.
+   - Monitoring takes no method selectors in a perimeter rule, so the read-only part is the role in ask 1.
+   - Without the rule, every `cloud-phi` panel shows the perimeter's refusal and nothing else changes.
+   - The PHI project's metrics it opens: records, connectors and their jobs (`errors`, `records_*`, `connectors_*`,
+     `perimeter_violations`, `monitoring_changes`, `log_metric_changes`, `scheduler_failures`, `run_system_errors`,
+     `sql_proxy_errors`), Cloud Run's request, latency, instance and job metrics for them, and tpa-db's `database/up`
+     and `disk/utilization`.
+5. **The Cloud Run service** (ingress from the internal load balancer only, `min=0`, `max=1`, the image by digest from
+   a trellis-watchtower commit pinned in `releases/<id>.json`) **with this environment.** None of it is secret. The
+   image checks every value at start and refuses to start on a wrong one.
+
+   | Variable | beta | production-full |
+   |---|---|---|
+   | `WATCH_HOST` | `watch.<domain>` | `watch.<domain>` |
+   | `IAP_AUDIENCE` | `/projects/<number>/global/backendServices/<bes-watch id>` | the same |
+   | `TPA_APP_PROJECT_ID` | the app project | the app project |
+   | `TPA_CRM_PROJECT_ID` | **the app project** (the CRM shares it, R282) | the CRM project |
+   | `TPA_PHI_PROJECT_ID` | the PHI project | the PHI project |
+   | `TPA_CC_PROJECT_ID` | the call-centre project | empty (no call-centre project: its page and parts are left out) |
+   | `TPA_ENVIRONMENT` | `beta` | `production` (`local.env`) |
+   | `TPA_PAUSED_JOBS` | `join(",", var.tpa_jobs_paused)` | empty: refused otherwise |
+   | `TPA_STOPPED_DATABASES` | `join(",", [for db, stopped in local.database_stopped : db if stopped])` | empty: refused otherwise |
+
+   The last two come from the same variables that pause the sweeps and stop the databases, so the pages follow each
+   apply. In beta at rest the affected tiles read "paused" or "database stopped" instead of red.
+6. **Query Insights: turn it off on auth-db, crm-db and cc-db, or accept the residual.** With ask 1 a viewer can still
+   read every metric in the four projects, and Query Insights' per-query metrics carry normalised query text as a
+   label. It is already off on tpa-db (`insights_config`, "a sampled query text is a member id in a Google console").
+   Normalised text replaces values with placeholders, so it should hold no member data. Turning it off on the other
+   three would close the path; keeping it is the owner's to accept, as a residual written down.
+
+---
+
 ## Requests to the TPA repos
 
 They are in trellis-security `requests/`. There are no doorbell messages. The trellis-security SessionStart hook lists
@@ -116,7 +178,7 @@ owning session assigns its id.
 |---|---|---|---|
 | tpa-platform | `2026-09-24-watchtower-to-tpa-platform-caddy-log-query-strings.md` | 1 | Strip query strings and headers from Caddy's access logs. Proposes two findings: the logged URLs and CSRF header, and the stale model-gateway container. |
 | tpa-platform | `2026-09-24-watchtower-to-tpa-platform-drains-health-window.md` | 1 | A drains `/health` that fails within minutes, not ~56. Proposes a finding. |
-| tpa-platform | `2026-09-24-watchtower-to-tpa-platform-hosted-grafana-iap.md` | 3 | Hosted Grafana behind IAP on `watch.${domain}` (the P3 change list). Awaiting the owner. |
+| tpa-platform | `2026-09-24-watchtower-to-tpa-platform-hosted-grafana-iap.md` | 3 | Hosted Grafana behind IAP on `watch.${domain}` (the P3 change list). The file says refused (D-92); the owner ruled yes on 2026-10-11, and §4 above is the current Ask. |
 | tpa-platform | `2026-09-24-watchtower-to-tpa-platform-client-errors-route.md` | 2 | `POST /tpa/api/v1/client-errors`: name, route template, component and release only. |
 | tpa-platform | `2026-09-24-watchtower-to-tpa-platform-exception-where.md` | 1 | A `where` fact (module:function:line) in `exception_facts`. |
 | auth-notary | `2026-09-24-watchtower-to-auth-notary-worker-logging.md` | 1 | Configure logging in the four workers. Proposes a finding. |

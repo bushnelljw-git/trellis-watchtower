@@ -131,8 +131,8 @@ purpose their readers fail. So the service says which are stopped or paused (`TP
 - the database's own tile.
 
 A paused sweep wins over a stopped database ("paused"). A name the image does not know is refused at start, so a typo
-can never quietly turn a red tile neutral. production-full pauses and stops nothing, so it shows every tile as built:
-red when it should be.
+can never quietly turn a red tile neutral. production-full pauses and stops nothing: with `TPA_ENVIRONMENT=production`
+either list set is refused at start, so production shows every tile as built, red when it should be.
 
 ## What a viewer can read
 
@@ -184,14 +184,17 @@ like one, the environment is one of the two words, and a paused or stopped name 
 | `TPA_PHI_PROJECT_ID` | the PHI project's id |
 | `TPA_CC_PROJECT_ID` | beta's call-centre project; empty in production-full, which has none: the Call centre page and every call-centre part of the other pages are left out |
 | `TPA_ENVIRONMENT` | `beta` or `production` (tpa-platform's `local.env`): beta's uptime checks pass on IAP's sign-in page, production-full's on the public hosts' `/health`, and the uptime tiles say which |
-| `TPA_PAUSED_JOBS` | comma list of sweeps paused on purpose: tpa-platform fills it from `var.tpa_jobs_paused` (beta's default `nightly-anomalies,accumulator-reconcile`; production-full has no such variable, so empty) |
-| `TPA_STOPPED_DATABASES` | comma list of Cloud SQL instances stopped on purpose: tpa-platform fills it from beta's `local.database_stopped` (`join(",", [for db, stopped in local.database_stopped : db if stopped])`; `auth_db` and `auth-db` both work); empty in production-full |
+| `TPA_PAUSED_JOBS` | comma list of sweeps paused on purpose: tpa-platform fills it from `var.tpa_jobs_paused` (beta's default `nightly-anomalies,accumulator-reconcile`). Must be empty with `TPA_ENVIRONMENT=production`: the image refuses to start otherwise |
+| `TPA_STOPPED_DATABASES` | comma list of Cloud SQL instances stopped on purpose: tpa-platform fills it from beta's `local.database_stopped` (`join(",", [for db, stopped in local.database_stopped : db if stopped])`; `auth_db` and `auth-db` both work). Must be empty with `TPA_ENVIRONMENT=production`: the image refuses to start otherwise |
 
 Grafana listens on 8080, Cloud Run's default. Its sqlite state is on the container's own disk and is disposable:
 there is no Grafana alerting (production alerts are Cloud Monitoring alert policies, owned by tpa-platform's
 monitoring module), dashboards and datasources come from files, and users are re-created from the IAP assertion.
 
 ## What tpa-platform's lane provides
+
+Filed as a request in [docs/REQUESTS.md §4](../docs/REQUESTS.md#4-the-hosted-dashboards-cloud-half-tpa-platform),
+which also asks about Query Insights.
 
 - **`sa-watchtower`** with a custom role holding `monitoring.timeSeries.list` alone (not `roles/monitoring.viewer`),
   granted on the app, PHI and call-centre projects (and the CRM project where it has one) and nowhere else. No
