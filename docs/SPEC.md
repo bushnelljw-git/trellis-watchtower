@@ -169,9 +169,10 @@ The research found five constraints that shape the design:
 - **`infra/modules/monitoring/`**, one project per call:
   - log-based counter metrics with allowlisted label extractors;
   - alert policies;
-  - email and SMS channels, plus the Slack channel and (2026-10-11) the PagerDuty channel by ID
-    (`alert_pagerduty_channel_ids`; a person makes the PagerDuty channel with `scripts/pagerduty/gcp_channels.py`, so
-    its key never enters Terraform);
+  - email and SMS channels, plus the Slack channel by ID and (2026-10-11, D-142 and D-143) a PagerDuty channel per
+    project, made by Terraform (`alert_pagerduty_enabled`). Its key is kept in Terraform's state, marked sensitive
+    (the owner's Ruling K), and reaches only the apply that creates or rotates it, through
+    `scripts/pagerduty/tf_with_keys.py`;
   - uptime checks;
   - validations that refuse labels outside the allowlist, channel types with sensitive labels, and PHI as a monitored project.
 - **`infra/envs/{staging,production}/main.tf`:**

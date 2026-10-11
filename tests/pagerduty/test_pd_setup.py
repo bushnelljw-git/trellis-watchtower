@@ -30,7 +30,6 @@ def run(server, script, *args, token=fakes.TOKEN, path_prefix=None):
     env.update({
         "PAGERDUTY_API_URL": server.url("pd"),
         "PAGERDUTY_EVENTS_URL": server.url("events"),
-        "MONITORING_API_URL": server.url("gcp"),
         "PAGERDUTY_SLACK_API_URL": server.url("slack"),
     })
     if token is not None:
@@ -68,7 +67,7 @@ class Base(unittest.TestCase):
     def assert_no_secret_printed(self):
         keys = [i["integration_key"] for items in self.state.integrations.values() for i in items]
         for text in self.outputs:
-            for value in [fakes.TOKEN, fakes.GOOGLE_TOKEN, fakes.KEY_PREFIX, *keys, *self.extra_secrets]:
+            for value in [fakes.TOKEN, fakes.KEY_PREFIX, *keys, *self.extra_secrets]:
                 self.assertNotIn(value, text)
 
     def summary(self, result) -> str:

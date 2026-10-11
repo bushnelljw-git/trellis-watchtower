@@ -110,8 +110,9 @@ PHI, docs/REQUESTS.md asks the TPA repos for a fourth exception fact: the innerm
 - **Paging.** Each TPA project's alert policies page through the TPA's PagerDuty account. Each project has one
   service. Urgency follows the policy's severity, and an urgent page that nobody acknowledges escalates from the
   on-call schedule to a second person after 15 minutes. Slack messages come from PagerDuty. `scripts/pagerduty/pd_setup.py` keeps the PagerDuty side as code
-  (applied 2026-10-11). `scripts/pagerduty/gcp_channels.py` makes each project's `pagerduty` notification channel,
-  run by a person with Monitoring rights there. See [docs/PAGERDUTY.md](docs/PAGERDUTY.md).
+  (applied 2026-10-11). tpa-platform's Terraform makes each project's `pagerduty` notification channel (D-142); the
+  apply that creates or rotates them runs through `scripts/pagerduty/tf_with_keys.py`, which puts the services' keys
+  in Terraform's environment only. See [docs/PAGERDUTY.md](docs/PAGERDUTY.md).
 - **Hosted Grafana.** [cloud/](cloud/) is the production image: Grafana 12 pinned by digest, signed in only by the
   IAP assertion on `watch.${domain}` for `grp-platform`, reading Cloud Monitoring for the app, CRM, PHI and
   call-centre projects, with nine dashboards checked against tpa-platform's metric catalogue. The owner ruled yes on

@@ -40,10 +40,17 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   - Connect the three services to Slack #tpa-beta-alerts.
   - The owner installs the app and adds a phone, then re-runs `pd_setup.py --apply` and sends a test page.
   - Rafeale accepts his invitation.
-  - The projects' owner runs `gcp_channels.py --apply` during the setup runbook, before the PHI perimeter is enforced,
-    and fires one Monitoring test in the app and cc projects only (step 5). tpa-platform takes `alert_pagerduty_channel_ids` once its
-    `beta-alert-gaps` work lands.
-  - After the test page reaches the owner's phone, tpa-platform sets `alert_sms_number = null`.
+  - Once tpa-platform's `beta-alert-gaps` work lands: `alert_pagerduty_enabled = true` and the first apply through
+    `tf_with_keys.py`; then the test page (`alert_pagerduty_test_enabled`, app and cc only, never PHI), on for one
+    apply and off in the next (docs/PAGERDUTY.md, "The Google Cloud half").
+  - After a PagerDuty page reaches the owner's phone, tpa-platform sets `alert_sms_number = null`.
+- [x] PD Terraform keys (2026-10-11, the owner: "all changes must be done to terraform … never modify the project
+  directly"; Ruling K), branch `pagerduty-tf-keys`:
+  - `gcp_channels.py` and its tests removed: it made the channels by API.
+  - `scripts/pagerduty/tf_with_keys.py` reads the three integration keys and runs one `terraform plan|apply` with
+    `TF_VAR_pagerduty_service_keys` in the child's environment only. It refuses other commands, `-out`, `TF_LOG*` and
+    another environment's root, and stops before Terraform if a key is missing. `--env` picks the service names.
+  - docs/PAGERDUTY.md's Google Cloud half rewritten for Terraform. Tests: `tests/pagerduty/test_tf_with_keys.py`.
 - [x] CD (2026-10-11, the owner: hosted dashboard "Yes, everything") the cloud dashboards, branch `cloud-dashboards`:
   - [x] Vendored tpa-platform's `infra/monitoring.yml` (beta-alert-gaps `d88305db`, blob `3e19a7d0`, D-141 included) into
     `cloud/catalogue/`; `scripts/vendor_catalogue.sh` re-vendors from committed objects only and checks drift.

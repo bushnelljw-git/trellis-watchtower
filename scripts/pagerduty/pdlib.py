@@ -1,13 +1,13 @@
 """Shared pieces of the PagerDuty scripts: the design, the secrets and the HTTP client. Standard library only.
 
-The design (docs/PAGERDUTY.md) is the constants below. pd_setup.py makes PagerDuty match it, gcp_channels.py points
-each Google Cloud project's `pagerduty` notification channel at its service, and pd_test_event.py sends one
-Monitoring-shaped test event through a service's integration.
+The design (docs/PAGERDUTY.md) is the constants below. pd_setup.py makes PagerDuty match it, tf_with_keys.py hands
+the services' integration keys to the tpa-platform Terraform apply that makes each project's `pagerduty` notification
+channel, and pd_test_event.py sends one Monitoring-shaped test event through a service's integration.
 
 Secrets. The PagerDuty REST API key comes from PAGERDUTY_TOKEN, or else from the macOS login keychain (generic password,
-service "tpa-pagerduty-api"). It and every integration key and Google access token the scripts handle are registered
-with `secret()`, and everything the scripts print goes through `scrub()`, which replaces each of them. Nothing is
-written to a file, and no secret is ever put on a command line.
+service "tpa-pagerduty-api"). It and every integration key the scripts handle are registered with `secret()`, and
+everything the scripts print goes through `scrub()`, which replaces each of them. Nothing is written to a file, and no
+secret is ever put on a command line.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ VENDOR_ID = "PUCLE3C"  # PagerDuty's "Google Cloud Monitoring" vendor (generic_s
 INTEGRATION_TYPE = "generic_events_api_inbound_integration"
 INTEGRATION_NAME = "Google Cloud Monitoring"
 
-# One service per Google Cloud project. `role` is the key tpa-platform's tfvars use for that project.
+# One service per Google Cloud project. `role` is that project's key in tpa-platform's `pagerduty_service_keys`.
 SERVICES = [
     {
         "role": "app",
@@ -240,7 +240,7 @@ _OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 def child_env() -> dict:
-    """The environment for a child process (security, gcloud): never the PagerDuty key."""
+    """The environment for a child process (security, terraform): never the PagerDuty key."""
     return {k: v for k, v in os.environ.items() if k != "PAGERDUTY_TOKEN"}
 
 

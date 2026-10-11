@@ -9,7 +9,7 @@ to Slack.
 
 ```
 alert policy (severity CRITICAL or WARNING)
-  -> the project's `pagerduty` notification channel          (gcp_channels.py makes it; Terraform takes its id)
+  -> the project's `pagerduty` notification channel          (tpa-platform's Terraform; tf_with_keys.py gives it the key)
   -> PagerDuty service "TPA beta · …"                        (pd_setup.py makes it)
        event orchestration: severity (any letter case) -> alert severity + priority
        urgency from severity: critical/error = high, warning/info = low
@@ -113,9 +113,9 @@ notification rule, even for a contact method that has none.
    `python3 scripts/pagerduty/pd_test_event.py --role app --severity critical --send --keep`. Your phone should get a
    push and a text straight away, and a call after 3 minutes. Then resolve the incident in the app. Resolve it within
    15 minutes, or level 2 (Rafeale) is paged.
-5. Once that page reaches your phone, **drop Google's own text message channel**. tpa-platform's session sets
-   `alert_sms_number = null` in beta's untracked `terraform.tfvars` and applies. From then on, urgent texts come from
-   PagerDuty only. Until then, an urgent alert also texts you directly from Google, so you may get two texts.
+5. Once that page reaches your phone, **drop Google's own text message channel**: step 5 of the Google Cloud half
+   below (`alert_sms_number = null` in beta's untracked `terraform.tfvars`, then an apply). From then on, urgent texts
+   come from PagerDuty only.
 
 Rafeale must accept his PagerDuty invitation. His email contact method shows as not enabled, so until he accepts,
 level 2 reaches nobody. He should then do steps 1 to 3 for himself.
@@ -152,8 +152,8 @@ so alerts aren't posted twice. `pd_setup.py` only reads the connections, through
 
 All three use the Python standard library only. They read the PagerDuty REST API key from `PAGERDUTY_TOKEN`, or else
 from the macOS login keychain (generic password, service `tpa-pagerduty-api`). They never print it, nor an integration
-key, nor a Google access token. They never follow an HTTP redirect, so the key can't be carried to another host. They
-never pass `PAGERDUTY_TOKEN` to `security` or `gcloud`.
+key. They never follow an HTTP redirect, so the key can't be carried to another host. They never pass
+`PAGERDUTY_TOKEN` to `security` or `terraform`.
 
 On a machine without the keychain item, give the key to one command only. Don't `export` it to the whole shell:
 
@@ -166,102 +166,103 @@ unset PD_KEY
 | Script | Does | Default | To change things |
 |---|---|---|---|
 | `scripts/pagerduty/pd_setup.py` | Makes PagerDuty match this page, found by exact name. Never deletes. Never touches what it did not make, except the two people's notification rules, and those only with `--add-rules`. Stops when a parent object is refused. | dry run: prints create / update / ok / kept / refused / by hand | `--apply`; `--add-rules` (create missing designed notification rules: the only way any rule is created); `--retry-intelligent-grouping` |
-| `scripts/pagerduty/gcp_channels.py --app P --phi P --cc P` | Makes or corrects each project's `pagerduty` notification channel "PagerDuty · <service name>", with that service's integration key. Prints `alert_pagerduty_channel_ids = { app = "…", phi = "…", cc = "…" }` on stdout. A project Google refuses prints `null` and does not stop the others. | dry run: reads both sides | `--apply`; `--rekey` (send the key again: the only way an "unknown" key is re-sent) |
+| `scripts/pagerduty/tf_with_keys.py -- terraform -chdir=DIR plan\|apply [-flag=value …]` | Reads the three services' integration keys and runs that one Terraform command with `TF_VAR_pagerduty_service_keys` in its environment only. Prints one line saying which keys it found. Stops before Terraform if one is missing. Refuses any other command. | none: it runs the plan or apply it is given (`plan` is the dry run) | `--env production` (the "TPA production ·" services) |
 | `scripts/pagerduty/pd_test_event.py --role app\|phi\|cc --severity <text>` | Sends one Monitoring-shaped test event through the service's own integration. The severity can be in any case, for example `critical`, `WARNING` or `"no severity"`. Prints the urgency, severity and priority PagerDuty gave it, checks them against the table above, and resolves it. | dry run: shows the event (key hidden) | `--send`; `--keep` (leave it open) |
 
-`make pagerduty-plan` is the `pd_setup.py` dry run. `make pagerduty-test` runs the scripts' tests against local fake
-APIs (part of `make check`). The fakes are an automated gate only; the live account is the real proof.
+`make pagerduty-plan` is the `pd_setup.py` dry run. `make pagerduty-test` runs the scripts' tests against a local fake
+PagerDuty and a fake `terraform` (part of `make check`). The fakes are an automated gate only; the live account is the real proof.
 
-**How `gcp_channels.py` compares keys.** Google returns a channel's key masked, so the script can rarely see all of
-it. It treats a channel's key as:
-- **the same** only when Google shows the whole key and it matches;
-- **different** only when the visible part proves another key (the whole value differs, or the visible tail after the
-  stars is not this key's). It re-sends the key;
-- **unknown** otherwise: empty, missing, all stars, a matching tail (four characters prove nothing), or a shape it
-  doesn't recognise. It says so and leaves it. `--apply --rekey` sends the key again.
+## The Google Cloud half: Terraform makes the channels
 
-## The Google Cloud half (for a person with access)
+The owner, 2026-10-11 (tpa-platform D-142): *"Remember all changes must be done to terraform if needed so we never
+modify the project directly."* So nobody makes a PagerDuty channel by hand or by API. tpa-platform's Terraform
+(`infra/modules/monitoring`) makes one `pagerduty` notification channel in each of the app, PHI and call-centre
+projects, and routes every alert policy there to it. Budget alerts stay on email.
 
-The owner's Google account can't see the TPA projects yet. The dry run on 2026-10-11 got HTTP 403 from all three.
+The owner's Ruling K (D-143, *"Store it hidden now (Recommended)"*): each channel's integration key is kept in
+Terraform's state, marked sensitive. The pinned google provider (6.x) has no write-only form for it. The key can only
+send alerts into PagerDuty; it reads nothing.
 
-**Who runs it: the projects' owner, during the setup runbook.** That is Rafeale's owner role, before it is removed at
-the end of the runbook. Nobody else is set up to make these channels:
-- The platform admins' role on the PHI project is deliberately unable to create notification channels. tpa-platform is
-  building a narrow custom role that can only edit and silence existing alerts.
-- `roles/viewer`, which people hold today, can't create channels either.
+tpa-platform's inputs. Its `infra/README.md`, "PagerDuty's keys at the apply", is the authority:
 
-**The PHI project and its perimeter.** The PHI project sits inside the VPC Service Controls perimeter. While beta's
-perimeter is still in dry-run mode (`perimeter_dry_run`), the owner's call goes through. Once it is enforced, a
-Monitoring call into the PHI project from outside is admitted only by tpa-platform's `ing-monitoring` rule. That rule
-needs both of these:
-- the caller is in `grp-platform-admin@${domain}`;
-- the caller meets the break-glass access level `al_beta_tpa_breakglass`
-  (tpa-platform `docs/infra/network-and-perimeter.md` §5.4). That means a person named in `breakglass_members`
-  (people, never the group), calling from the organisation's office or VPN ranges (`breakglass_ip_ranges`), on a
-  corporate-owned device with a screen lock, in a session that re-authenticated within the last hour.
+- `alert_pagerduty_enabled` (bool, in beta's untracked `terraform.tfvars`) decides whether the channels exist. The key
+  decides nothing about that.
+- `pagerduty_service_keys` (`map(string)` keyed `app`, `phi` and `cc`, `sensitive`) holds the keys. It is never in a
+  tfvars file or a repo. It is set only as `TF_VAR_pagerduty_service_keys`, in Terraform's environment, for the apply
+  that creates or rotates the channels, and `tf_with_keys.py` sets it. Every later apply runs without it and changes
+  no channel. A create or a replace without it fails at plan, naming this script.
+- `alert_pagerduty_test_enabled` (bool, beta) is the test page.
 
-So do this whole half **in one sitting during the setup runbook**, before the PHI perimeter is enforced and while
-the owner role still exists. Step 3 needs both for the PHI channel. Step 5 creates and deletes an alert policy in the
-app and call-centre projects, which only the owner role can do, so it too works only before the runbook ends.
+**`tf_with_keys.py`.** Run it from tpa-platform's checkout, as whoever runs beta's applies:
 
-**The dependency.** `alert_pagerduty_channel_ids` exists only once tpa-platform's `beta-alert-gaps` work has landed.
-Pasted earlier, Terraform warns about an undeclared variable and **routes nothing**.
+```bash
+python3 ~/Documents/code/trellis-watchtower/scripts/pagerduty/tf_with_keys.py -- terraform -chdir=infra/envs/beta plan
+```
+
+- It reads the three services' Google Cloud Monitoring integration keys from PagerDuty: "TPA beta · Portal & API" is
+  `app`, "TPA beta · Member records" is `phi`, and "TPA beta · Call centre" is `cc`.
+- It prints one line, for example `tf_with_keys: PagerDuty keys (beta): app present, phi present, cc present`, and
+  never a key.
+- If a service or its integration is missing, it stops there and Terraform never runs.
+- Otherwise it runs the command with `TF_VAR_pagerduty_service_keys` added to that command's environment, and nowhere
+  else: never on a command line, in a file or in the output. The command gets this shell's environment without
+  `PAGERDUTY_TOKEN`.
+- It runs `terraform [-chdir=DIR] plan|apply` with flags only (`-replace=ADDR`, `-auto-approve` and so on). It refuses
+  any other program or subcommand, an argument that isn't a flag (a saved plan file, or `-replace ADDR` without the
+  `=`), `-out` (a saved plan holds the keys), and any `TF_LOG*` setting (Terraform's debug log writes the API
+  requests, keys included).
+- The directory Terraform runs in must be named for `--env` (default `beta`: `beta` or `beta-…`), so one
+  environment's keys never reach another's channels. A future production set is `--env production`, which reads the
+  "TPA production · …" services.
 
 Steps:
 
-1. `gcloud auth login`, as the projects' owner.
-2. Dry run:
-   `python3 scripts/pagerduty/gcp_channels.py --app trellistpa-beta-tpa-app --phi trellistpa-beta-tpa-phi --cc trellistpa-beta-cc`.
-   It should print three `create` lines and no 403.
-3. Run it again with `--apply`. Once `beta-alert-gaps` has landed, paste the printed
-   `alert_pagerduty_channel_ids = { … }` line into beta's untracked `terraform.tfvars` in tpa-platform. tpa-platform's
-   session then plans and applies, which routes every policy in each project to that project's channel by id. The key
-   never enters Terraform.
-4. Run the dry run again. It should print three `ok` lines and the same ids. The key shows as "unknown" unless Google
-   shows all of it; that is expected.
-5. **Fire one real Monitoring test notification in the app and call-centre projects, and confirm the urgency.**
-   **Never in the PHI project.** tpa-platform's `must_not_exist` rows (D-137) ban creating policies or channels there
-   by hand. A log-match policy carries log fields out to its channel, and here that channel is a vendor with no BAA.
-   The PHI channel uses the same notification path (a `pagerduty` channel, the same payload, a service with the same
-   rules), so the app project's result also settles the letter case for PHI.
-
-   Google has no "send test" button for a PagerDuty channel, so this uses a temporary log-match policy. The snippet
-   creates the policy, writes one log line and waits for you. Create and delete are in the same snippet: the `trap`
-   **always deletes the policy on the way out**, even if a step fails or you press Ctrl-C. It works in bash and zsh,
-   and was checked against a stub `gcloud` on 2026-10-11, including the failure path. Run it once with the app project
-   and once with the call-centre project, each with its own channel id from step 3:
+1. **The first apply.** In beta's `terraform.tfvars`, set `alert_pagerduty_enabled = true`. Plan through the helper
+   and read the plan. It should show three channel creates (app, PHI, call centre), each policy's channel list gaining
+   one, and nothing destroyed or replaced. Then apply through the helper:
 
    ```bash
-   P=trellistpa-beta-tpa-app CH=<the app channel id>    # second run: P=trellistpa-beta-cc CH=<the cc channel id>
-   (
-     set -euo pipefail
-     POLICY='{"displayName": "TEST — PagerDuty setup check, please ignore", "severity": "WARNING",
-       "combiner": "OR", "conditions": [{"displayName": "setup check line", "conditionMatchedLog":
-       {"filter": "logName=\"projects/'"$P"'/logs/pagerduty-setup-check\""}}],
-       "alertStrategy": {"notificationRateLimit": {"period": "300s"}, "autoClose": "1800s"},
-       "notificationChannels": ["projects/'"$P"'/notificationChannels/'"$CH"'"],
-       "documentation": {"content": "One-off PagerDuty channel check; the snippet that made it deletes it.",
-       "mimeType": "text/markdown"}}'
-     NAME="$(gcloud alpha monitoring policies create --project="$P" --policy="$POLICY" --format='value(name)')"
-     trap 'gcloud alpha monitoring policies delete "$NAME" --project="$P" --quiet' EXIT
-     gcloud logging write pagerduty-setup-check "TEST — PagerDuty setup check, please ignore" --project="$P"
-     printf 'When PagerDuty shows the incident, note incident.severity, then press Enter to delete the policy: '
-     read -r _
-   )
+   W=~/Documents/code/trellis-watchtower/scripts/pagerduty/tf_with_keys.py
+   python3 "$W" -- terraform -chdir=infra/envs/beta plan
+   python3 "$W" -- terraform -chdir=infra/envs/beta apply
    ```
 
-   Within a few minutes the project's PagerDuty service should show an incident at **low urgency, severity warning,
-   P3**. Open the alert's details and write down the exact text of `incident.severity` here, in docs/PAGERDUTY.md.
-   After the policy is deleted, resolve the PagerDuty incident if it is still open: with the policy gone, nothing can
-   reopen it.
+   The PHI channel is made by the same apply, so nobody calls the PHI project by hand.
+2. **Later applies need no key.** Run a plain `terraform apply`. The channels keep the stored key, and the plan shows
+   no change to them.
+3. **Rotation.** When a service's integration key changes in PagerDuty, replace that project's channel with the new
+   key, through the helper:
 
-   **A PHI-project check, if one is still wanted, is tpa-platform's to build.** It would be a job made through
-   Terraform: an alert policy with a metric-threshold condition (no log fields) on the PHI channel, made to fire once
-   and then removed by the same reviewed change. These docs give no command for it.
+   ```bash
+   python3 "$W" -- terraform -chdir=infra/envs/beta apply \
+     '-replace=module.monitoring_app.google_monitoring_notification_channel.pagerduty[0]'
+   ```
 
-If someone makes a channel by hand in the console (Monitoring → Alerting → Edit notification channels → PagerDuty →
-Add new), they use the display name "PagerDuty · <service name>" and paste the key from PagerDuty → the service →
-Integrations → Google Cloud Monitoring. A later `gcp_channels.py` run then finds and checks that channel.
+   The channel addresses, as tpa-platform's `beta-alert-gaps` work writes them. Check them against its
+   `infra/README.md`:
+   - app: `module.monitoring_app.google_monitoring_notification_channel.pagerduty[0]`
+   - PHI: `module.monitoring_own["phi"].google_monitoring_notification_channel.pagerduty[0]`
+   - call centre: `module.monitoring_cc.google_monitoring_notification_channel.pagerduty[0]`
+
+   Quote the whole `-replace=…` argument in single quotes, because the brackets and the PHI address's `"phi"` mean
+   something to the shell. The module makes the new channel first, moves every policy to it, and then deletes the old
+   one.
+4. **The test page.** Set `alert_pagerduty_test_enabled = true` (it needs `alert_pagerduty_enabled = true`) and apply.
+   It writes one WARNING policy, `pagerduty-test`, in the app and call-centre projects only. Its condition is always
+   true, so it opens within a few minutes, and it carries no log field. Each of those two services should show an
+   incident at **low urgency, severity warning, P3**. Open the alert's details and write down the exact text of
+   `incident.severity` here, in docs/PAGERDUTY.md. Then set the switch back to `false` and apply. Monitoring closes
+   the alert, which resolves the incident.
+
+   **Never in the PHI project.** tpa-platform's `must_not_exist` rows (D-137) ban creating policies or channels there
+   by hand, and the switch writes no test policy there. A log-match policy would carry log fields out to its channel,
+   and here that channel is a vendor with no BAA. The PHI channel uses the same notification path (a `pagerduty`
+   channel, the same payload, a service with the same rules), so the app project's result also settles the letter
+   case for PHI.
+5. **Drop Google's own text message.** Once a PagerDuty page has reached the owner's phone (step 4 of "The owner's
+   phone", or the test page above), set `alert_sms_number = null` in beta's `terraform.tfvars` and apply. From then
+   on, urgent texts come from PagerDuty only. The live check on 2026-10-11 found both of Google's SMS channels
+   unverified, so Google's text isn't a working path today either.
 
 ## What reaches PagerDuty
 
@@ -320,11 +321,11 @@ A new alert policy's documentation must keep to the same rule. Each service's de
     the integration after 9 s, not escalated (incident #7).
 - PagerDuty's log shows it notified Jonathan by email and Slack for the first Warning, the Critical and the
   lower-case events. Two of the first Warnings were resolved within 11 s, before PagerDuty logged any notification.
-- `gcp_channels.py` dry run: three keys read (not shown); Google answered 403 for all three projects (expected); it
-  printed `alert_pagerduty_channel_ids = { app = null, phi = null, cc = null }`.
+- `gcp_channels.py` dry run: three keys read (not shown); Google answered 403 for all three projects. That script
+  was removed the same day: under D-142 Terraform makes the channels, and `tf_with_keys.py` gives it the keys.
 - Not yet seen live:
-  - **The exact casing Monitoring itself sends.** Step 5 of the Google Cloud half settles it, in the app and
-    call-centre projects (never PHI), and the PHI path is the same.
+  - **The exact casing Monitoring itself sends.** The test page (step 4 of the Google Cloud half) settles it, in
+    the app and call-centre projects (never PHI), and the PHI path is the same.
   - **The "no severity → critical" row.** It comes from Google's guide and the fake's model. Confirm it with
     `pd_test_event.py --role app --severity "no severity" --send`, which pages at high urgency.
 

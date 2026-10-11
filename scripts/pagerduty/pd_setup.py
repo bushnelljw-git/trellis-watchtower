@@ -418,7 +418,7 @@ def ensure_services(pd: PagerDuty, plan: Plan, policy_id: str, priorities: dict[
         else:
             body = {"integration": {"type": d.INTEGRATION_TYPE, "name": d.INTEGRATION_NAME,
                                     "service": ref("service", sid), "vendor": ref("vendor", d.VENDOR_ID)}}
-            plan.change("create", iwhat, "the key Monitoring's pagerduty channel uses (gcp_channels.py)",
+            plan.change("create", iwhat, "the key Monitoring's pagerduty channel uses (tf_with_keys.py)",
                         lambda sid=sid, body=body: pd.write("POST", f"/services/{sid}/integrations", body))
 
         grouping.ensure(name, sid, new)

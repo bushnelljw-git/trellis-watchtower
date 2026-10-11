@@ -1,4 +1,4 @@
-"""Fake PagerDuty (REST and Events API v1) and Cloud Monitoring APIs for the scripts/pagerduty tests.
+"""A fake PagerDuty (REST and Events API v1) for the scripts/pagerduty tests.
 
 An automated gate only: one local HTTP server on 127.0.0.1 answering the calls the scripts make, holding its state in
 memory and recording every request. It also models what the design relies on, so the tests can check it end to end:
@@ -23,7 +23,6 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = "pd-sentinel-token-7f3a9c41"
-GOOGLE_TOKEN = "ya29.google-sentinel-token-51b2e0"
 KEY_PREFIX = "keysentinel"
 
 ACTION_DEFAULTS = {
@@ -54,16 +53,13 @@ def not_found():
 
 
 class FakeState:
-    def __init__(self, refuse_intelligent=False, rich_contacts=False, mask="last4", forbidden_projects=(),
-                 fail_create_projects=(), refuse_team_create=False, grouping_error=None, redirect_pd=False):
+    def __init__(self, refuse_intelligent=False, rich_contacts=False, refuse_team_create=False, grouping_error=None,
+                 redirect_pd=False):
         self.lock = threading.Lock()
         self.seq = itertools.count(1)
         self.requests: list[dict] = []
         self.page = 2  # small pages, so every listing paginates
         self.refuse_intelligent = refuse_intelligent
-        self.mask = mask
-        self.forbidden_projects = set(forbidden_projects)
-        self.fail_create_projects = set(fail_create_projects)
         self.refuse_team_create = refuse_team_create
         self.grouping_error = grouping_error  # (status, text) for any grouping-setting write
         self.redirect_pd = redirect_pd
@@ -111,7 +107,6 @@ class FakeState:
         self.dependencies: list[tuple[str, str]] = []
         self.incidents: dict[str, dict] = {}
         self.alerts: dict[str, list[dict]] = {}
-        self.channels: dict[str, dict[str, dict]] = {}
         self.slack_connections: list[dict] = []
 
     # ---- helpers ---------------------------------------------------------------------------------------------------
@@ -143,21 +138,6 @@ class FakeState:
         view = dict(self.services[sid])
         if with_integrations:
             view["integrations"] = [dict(i) for i in self.integrations.get(sid, [])]
-        return view
-
-    def masked(self, key):
-        if self.mask == "empty":
-            return ""
-        if self.mask == "all":
-            return "*" * len(key)
-        if self.mask == "none":
-            return key
-        return "*" * (len(key) - 4) + key[-4:]
-
-    def channel_view(self, ch):
-        view = {k: v for k, v in ch.items() if k != "_key"}
-        if self.mask != "omit":
-            view["labels"] = {"service_key": self.masked(ch["_key"])}
         return view
 
     # ---- PagerDuty REST --------------------------------------------------------------------------------------------
@@ -423,45 +403,6 @@ class FakeState:
             return m.group(3) in value
         return re2_search(m.group(3), value)
 
-    # ---- Cloud Monitoring ------------------------------------------------------------------------------------------
-    def monitoring(self, method, parts, query, body):
-        if len(parts) < 4 or parts[:2] != ["v3", "projects"] or parts[3] != "notificationChannels":
-            raise not_found()
-        project = parts[2]
-        if project in self.forbidden_projects:
-            raise Fail(403, {"error": {"code": 403, "message": "Permission denied", "status": "PERMISSION_DENIED"}})
-        chans = self.channels.setdefault(project, {})
-        if len(parts) == 4 and method == "GET":
-            items = list(chans.values())
-            if query.get("filter") == ['type="pagerduty"']:
-                items = [c for c in items if c["type"] == "pagerduty"]
-            return 200, {"notificationChannels": [self.channel_view(c) for c in items]}
-        if len(parts) == 4 and method == "POST":
-            if project in self.fail_create_projects:
-                raise Fail(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT",
-                                           "message": f"Channel refused; request was {json.dumps(body)}"}})
-            if body.get("type") != "pagerduty" or not (body.get("labels") or {}).get("service_key"):
-                raise Fail(400, {"error": {"message": "bad channel"}})
-            name = f"projects/{project}/notificationChannels/{next(self.seq) + 1000000}"
-            ch = {**{k: v for k, v in body.items() if k != "labels"}, "name": name,
-                  "_key": body["labels"]["service_key"], "verificationStatus": "VERIFICATION_STATUS_UNSPECIFIED"}
-            chans[name] = ch
-            return 200, self.channel_view(ch)
-        if len(parts) == 5 and method == "PATCH":
-            name = "/".join(parts[1:])
-            ch = chans.get(name)
-            if ch is None:
-                raise not_found()
-            mask = query.get("updateMask", [""])[0].split(",")
-            camel = {"user_labels": "userLabels", "display_name": "displayName"}
-            for field in mask:
-                if field == "labels":
-                    ch["_key"] = body["labels"]["service_key"]
-                elif field:
-                    ch[camel.get(field, field)] = body[camel.get(field, field)]
-            return 200, self.channel_view(ch)
-        raise not_found()
-
 
 class Server:
     """Starts the fake on 127.0.0.1 with a free port; `url(prefix)` gives the base URL for one of the APIs."""
@@ -505,10 +446,6 @@ class Server:
                                 raise not_found()
                         elif parts[0] == "events":
                             status, payload = state_ref.event(body)
-                        elif parts[0] == "gcp":
-                            if self.headers.get("Authorization") != f"Bearer {GOOGLE_TOKEN}":
-                                raise Fail(401, {"error": {"code": 401, "message": "unauthenticated"}})
-                            status, payload = state_ref.monitoring(self.command, parts[1:], query, body)
                         else:
                             raise not_found()
                     except Fail as f:
