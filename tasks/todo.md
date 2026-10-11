@@ -18,11 +18,23 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   - `pd_test_event.py`: four live test events, all as designed (3× Warning → low/warning/P3, 1× Critical → high/critical/P1), each resolved within 11 s.
   - `gcp_channels.py`: written and tested. The dry run is checked (Google answers 403 to the owner's account). **Not applied.**
   - `tests/pagerduty` (local fakes, in `make check`).
+- [x] PD review fixes (2026-10-11):
+  - The severity rules ignore letter case: `matches regex '(?i)^ *Word *$'`. PagerDuty refuses `\s` in a condition.
+    Live re-test: lower-case `warning` → low/warning/P3 and `critical` → high/critical/P1.
+  - Grouping moved to `/alert_grouping_settings`.
+  - A rule a person removed is no longer put back (`--add-rules` puts it back on request).
+  - The script refuses a schedule with more than one layer and a renamed duplicate service, and stops when a parent
+    object is refused.
+  - `gcp_channels.py`: a refused project prints null and the run continues; an "unknown" key is re-sent only on
+    `--rekey`.
+  - No redirects; the token is never passed to child processes. 49 tests.
 - [ ] PD, by people (docs/PAGERDUTY.md):
   - Connect the three services to Slack #tpa-beta-alerts.
   - The owner installs the app and adds a phone, then re-runs `pd_setup.py --apply` and sends a test page.
   - Rafeale accepts his invitation.
-  - Someone with Monitoring rights runs `gcp_channels.py --apply`, and tpa-platform takes `alert_pagerduty_channel_ids`.
+  - The projects' owner runs `gcp_channels.py --apply` during the setup runbook, before the PHI perimeter is enforced,
+    and fires one Monitoring test per project (step 5). tpa-platform takes `alert_pagerduty_channel_ids` once its
+    `beta-alert-gaps` work lands.
   - After the test page reaches the owner's phone, tpa-platform sets `alert_sms_number = null`.
 
 ## Review

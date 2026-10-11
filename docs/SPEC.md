@@ -158,7 +158,9 @@ The research found five constraints that shape the design:
 - **`infra/modules/monitoring/`**, one project per call:
   - log-based counter metrics with allowlisted label extractors;
   - alert policies;
-  - email and SMS channels, plus the Slack channel by ID;
+  - email and SMS channels, plus the Slack channel and (2026-10-11) the PagerDuty channel by ID
+    (`alert_pagerduty_channel_ids`; a person makes the PagerDuty channel with `scripts/pagerduty/gcp_channels.py`, so
+    its key never enters Terraform);
   - uptime checks;
   - validations that refuse labels outside the allowlist, channel types with sensitive labels, and PHI as a monitored project.
 - **`infra/envs/{staging,production}/main.tf`:**

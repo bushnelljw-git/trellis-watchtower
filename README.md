@@ -108,8 +108,8 @@ PHI, docs/REQUESTS.md asks the TPA repos for a fourth exception fact: the innerm
   uptime checks, notification channels), because tpa-platform is the only place GCP resources in the TPA projects are
   applied from. This repo holds no Terraform and no deploy identity. Nothing is applied yet.
 - **Paging.** Each TPA project's alert policies page through the TPA's PagerDuty account. Each project has one
-  service. Urgency follows the policy's severity, and the on-call schedule escalates to a second person after 15
-  minutes. Slack messages come from PagerDuty. `scripts/pagerduty/pd_setup.py` keeps the PagerDuty side as code
+  service. Urgency follows the policy's severity, and an urgent page that nobody acknowledges escalates from the
+  on-call schedule to a second person after 15 minutes. Slack messages come from PagerDuty. `scripts/pagerduty/pd_setup.py` keeps the PagerDuty side as code
   (applied 2026-10-11). `scripts/pagerduty/gcp_channels.py` makes each project's `pagerduty` notification channel,
   run by a person with Monitoring rights there. See [docs/PAGERDUTY.md](docs/PAGERDUTY.md).
 - **Hosted Grafana.** [cloud/](cloud/) is the production image: Grafana 12 pinned by digest, signed in only by the
