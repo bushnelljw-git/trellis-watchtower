@@ -28,12 +28,20 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   - `gcp_channels.py`: a refused project prints null and the run continues; an "unknown" key is re-sent only on
     `--rekey`.
   - No redirects; the token is never passed to child processes. 49 tests.
+- [x] PD re-review fixes (2026-10-11):
+  - The rules are `(?i)^[[:space:]]*Word[[:space:]]*$`. PagerDuty accepted it; live `warning` → low/P3.
+  - A plain `--apply` never creates a notification rule (only `--add-rules` does).
+  - Step 5's test policy runs in the app and cc projects only, never PHI (D-137). Create and delete are in one
+    snippet.
+  - The intelligent-grouping fallback keys on "intelligent".
+  - A missing service is refused while any service carries our integration under an undesigned name.
+  - 52 tests.
 - [ ] PD, by people (docs/PAGERDUTY.md):
   - Connect the three services to Slack #tpa-beta-alerts.
   - The owner installs the app and adds a phone, then re-runs `pd_setup.py --apply` and sends a test page.
   - Rafeale accepts his invitation.
   - The projects' owner runs `gcp_channels.py --apply` during the setup runbook, before the PHI perimeter is enforced,
-    and fires one Monitoring test per project (step 5). tpa-platform takes `alert_pagerduty_channel_ids` once its
+    and fires one Monitoring test in the app and cc projects only (step 5). tpa-platform takes `alert_pagerduty_channel_ids` once its
     `beta-alert-gaps` work lands.
   - After the test page reaches the owner's phone, tpa-platform sets `alert_sms_number = null`.
 

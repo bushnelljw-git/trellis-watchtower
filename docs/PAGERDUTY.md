@@ -32,13 +32,14 @@ All of it was made by `scripts/pagerduty/pd_setup.py` on 2026-10-11 and is check
 | Schedule | TPA primary on-call | America/Chicago. One weekly layer, handed off Monday at 09:00. Jonathan alone today. To make it a rotation, add a name to `ROTATION` in `pdlib.py` and re-run. The script only changes a schedule that has exactly one active layer. |
 | Escalation policy | TPA Platform | Owned by the team. Level 1: the schedule, 15 min. Level 2: Rafeale Hill, 15 min. Repeats twice. |
 | Services | TPA beta · Portal & API (app project), TPA beta · Member records (PHI project), TPA beta · Call centre (call-centre project) | The escalation policy above. Urgency from severity (dynamic notifications). Acknowledgement timeout 30 min. No auto-resolve, because Monitoring resolves. One "Google Cloud Monitoring" integration each. A service event orchestration (next section). |
-| Alert grouping settings | one per service, named after it | Intelligent grouping (PagerDuty set a 5-minute window). The script falls back to time-based grouping (10 minutes) only if PagerDuty's refusal names intelligent grouping. It uses `/alert_grouping_settings`, because the service field `alert_grouping_parameters` is deprecated. |
+| Alert grouping settings | one per service, named after it | Intelligent grouping (PagerDuty set a 5-minute window). The script falls back to time-based grouping (10 minutes) only if PagerDuty's refusal says "intelligent". It uses `/alert_grouping_settings`, because the service field `alert_grouping_parameters` is deprecated. |
 | Business service | Trellis TPA (beta) | Supported by the three services. It is what PagerDuty's status dashboard shows. |
-| Notification rules | Jonathan Bushnell, Rafeale Hill | Built from the contact methods each person already has (next sections). |
+| Notification rules | Jonathan Bushnell, Rafeale Hill | Built from the contact methods each person already has, and created only with `--add-rules` (next sections). |
 
 "Default Service" and the "Default" escalation policy are left as they were. The names start "TPA beta ·" so a
-production set ("TPA production · …") can sit beside them later. If a service carrying our integration and our
-description turns up under another name, the script refuses to create a second one and says so.
+production set ("TPA production · …") can sit beside them later. If one of the three is missing while a service
+carrying the Google Cloud Monitoring integration exists under a name the design doesn't use, the script refuses to
+create it and names that service: it may be ours, renamed, whether or not its description changed too.
 
 **What PagerDuty could not take.** PagerDuty can't tag services: tags attach only to users, teams and escalation
 policies. So the services carry no "tpa" or "beta" tags, and "beta" is in each name instead.
@@ -59,14 +60,15 @@ WARNING went unmatched, it would page at high urgency. Each service's event orch
 
 | Monitoring sends (any case) | Rule (exact, as stored in PagerDuty) | Alert severity | Priority | Urgency | What happens |
 |---|---|---|---|---|---|
-| critical | `event.custom_details.incident.severity matches regex '(?i)^ *Critical *$'` | critical | P1 | **high** | The on-call person gets every contact method at once (a phone call after 3 min). Level 2 at 15 min if nobody acknowledges. |
-| error | `… matches regex '(?i)^ *Error *$'` | error | P2 | **high** | as above |
-| warning | `… matches regex '(?i)^ *Warning *$'` | warning | P3 | low | The on-call person gets app push, email and Slack only. Never a call or text. **Never escalates.** |
+| critical | `event.custom_details.incident.severity matches regex '(?i)^[[:space:]]*Critical[[:space:]]*$'` | critical | P1 | **high** | The on-call person gets every contact method at once (a phone call after 3 min). Level 2 at 15 min if nobody acknowledges. |
+| error | `… matches regex '(?i)^[[:space:]]*Error[[:space:]]*$'` | error | P2 | **high** | as above |
+| warning | `… matches regex '(?i)^[[:space:]]*Warning[[:space:]]*$'` | warning | P3 | low | The on-call person gets app push, email and Slack only. Never a call or text. **Never escalates.** |
 | anything else ("no severity", a policy made by hand) | no rule matches | critical (PagerDuty's default) | none | **high** | as critical. This is on purpose: a policy someone forgot to grade still pages. |
 
-`(?i)` is RE2's ignore-case flag. The pattern uses spaces rather than `\s`, because PagerDuty's condition language
-refuses a backslash inside a quoted string. The live check below sent lower-case severities against these
-capitalised patterns, which proves the flag works.
+`(?i)` is RE2's ignore-case flag. `[[:space:]]` is RE2's class for spaces, tabs and newlines. The pattern can't use
+`\s`, because PagerDuty's condition language refuses a backslash inside a quoted string. In RE2, `$` matches only at
+the very end of the text, so the class is what lets a trailing tab or newline still match. The live checks below sent
+lower-case severities against these capitalised patterns, which proves the flag works.
 
 **Only high urgency escalates.** PagerDuty never moves a low-urgency incident to the next level, and nobody can
 escalate one by hand without first raising it to high urgency. A WARNING therefore reaches only whoever is on call.
@@ -91,21 +93,22 @@ the person.
 
 Today Jonathan has email and Slack, and Rafeale has email only.
 
-**Settings are honoured.** A re-run adds rules only for a contact method that has **no rule at all** yet, such as a
-newly added phone or a newly installed app.
-- A method that already has rules belongs to its person. A designed rule missing from it is reported as "kept … not
-  added" and never put back, unless someone runs `--apply --add-rules`.
+**Settings are honoured. Rules are created only with `--apply --add-rules`.** A plain `--apply` never creates a
+notification rule, even for a contact method that has none.
+- A designed rule that is missing is reported as "kept … missing, not added". That includes a rule a person deleted,
+  even a method's only rule. For example, someone who removed their phone's only rule to stop calls doesn't get calls
+  back.
 - A rule set to a different delay is reported as "kept" and left alone.
-- To stop a contact method being used at all, delete the method in PagerDuty. If a method has no rules left at all,
-  a re-run treats it as new and adds its rules again.
+- Run `--add-rules` when someone adds a phone or installs the app and wants the designed rules. It also puts back any
+  rule a person removed, so check the dry run (`pd_setup.py --add-rules`) first.
 
 ## The owner's phone (Jonathan)
 
 1. Install the PagerDuty app (iOS or Android), sign in to the TPA's PagerDuty account and allow notifications.
 2. In PagerDuty, go to **My Profile → Contact Information**. Add your mobile number for **SMS** and for **phone**, and
    confirm both when PagerDuty sends a code.
-3. On this Mac: `python3 scripts/pagerduty/pd_setup.py`. It should list "create" lines for app push, SMS and phone
-   call (new contact methods, so first-time rules). Then run `python3 scripts/pagerduty/pd_setup.py --apply`.
+3. On this Mac: `python3 scripts/pagerduty/pd_setup.py --add-rules`. It should list "create" lines for app push, SMS
+   and phone call. Then run `python3 scripts/pagerduty/pd_setup.py --apply --add-rules`.
 4. Send yourself a test page and leave it open:
    `python3 scripts/pagerduty/pd_test_event.py --role app --severity critical --send --keep`. Your phone should get a
    push and a text straight away, and a call after 3 minutes. Then resolve the incident in the app. Resolve it within
@@ -162,7 +165,7 @@ unset PD_KEY
 
 | Script | Does | Default | To change things |
 |---|---|---|---|
-| `scripts/pagerduty/pd_setup.py` | Makes PagerDuty match this page, found by exact name. Never deletes. Never touches what it did not make, except the two people's notification rules. Stops when a parent object is refused. | dry run: prints create / update / ok / kept / refused / by hand | `--apply`; `--add-rules` (put back a designed rule a person removed); `--retry-intelligent-grouping` |
+| `scripts/pagerduty/pd_setup.py` | Makes PagerDuty match this page, found by exact name. Never deletes. Never touches what it did not make, except the two people's notification rules, and those only with `--add-rules`. Stops when a parent object is refused. | dry run: prints create / update / ok / kept / refused / by hand | `--apply`; `--add-rules` (create missing designed notification rules: the only way any rule is created); `--retry-intelligent-grouping` |
 | `scripts/pagerduty/gcp_channels.py --app P --phi P --cc P` | Makes or corrects each project's `pagerduty` notification channel "PagerDuty · <service name>", with that service's integration key. Prints `alert_pagerduty_channel_ids = { app = "…", phi = "…", cc = "…" }` on stdout. A project Google refuses prints `null` and does not stop the others. | dry run: reads both sides | `--apply`; `--rekey` (send the key again: the only way an "unknown" key is re-sent) |
 | `scripts/pagerduty/pd_test_event.py --role app\|phi\|cc --severity <text>` | Sends one Monitoring-shaped test event through the service's own integration. The severity can be in any case, for example `critical`, `WARNING` or `"no severity"`. Prints the urgency, severity and priority PagerDuty gave it, checks them against the table above, and resolves it. | dry run: shows the event (key hidden) | `--send`; `--keep` (leave it open) |
 
@@ -197,7 +200,9 @@ needs both of these:
   (people, never the group), calling from the organisation's office or VPN ranges (`breakglass_ip_ranges`), on a
   corporate-owned device with a screen lock, in a session that re-authenticated within the last hour.
 
-So make the PHI project's channel **before the perimeter is enforced**.
+So do this whole half **in one sitting during the setup runbook**, before the PHI perimeter is enforced and while
+the owner role still exists. Step 3 needs both for the PHI channel. Step 5 creates and deletes an alert policy in the
+app and call-centre projects, which only the owner role can do, so it too works only before the runbook ends.
 
 **The dependency.** `alert_pagerduty_channel_ids` exists only once tpa-platform's `beta-alert-gaps` work has landed.
 Pasted earlier, Terraform warns about an undeclared variable and **routes nothing**.
@@ -214,30 +219,45 @@ Steps:
    never enters Terraform.
 4. Run the dry run again. It should print three `ok` lines and the same ids. The key shows as "unknown" unless Google
    shows all of it; that is expected.
-5. **Fire one real Monitoring test notification per project and confirm the urgency.** Google has no "send test"
-   button for a PagerDuty channel, so use a temporary log-based policy. For each project `P`, with `CH` set to its
-   channel's id from step 3:
+5. **Fire one real Monitoring test notification in the app and call-centre projects, and confirm the urgency.**
+   **Never in the PHI project.** tpa-platform's `must_not_exist` rows (D-137) ban creating policies or channels there
+   by hand. A log-match policy carries log fields out to its channel, and here that channel is a vendor with no BAA.
+   The PHI channel uses the same notification path (a `pagerduty` channel, the same payload, a service with the same
+   rules), so the app project's result also settles the letter case for PHI.
+
+   Google has no "send test" button for a PagerDuty channel, so this uses a temporary log-match policy. The snippet
+   creates the policy, writes one log line and waits for you. Create and delete are in the same snippet: the `trap`
+   **always deletes the policy on the way out**, even if a step fails or you press Ctrl-C. It works in bash and zsh,
+   and was checked against a stub `gcloud` on 2026-10-11, including the failure path. Run it once with the app project
+   and once with the call-centre project, each with its own channel id from step 3:
 
    ```bash
-   P=trellistpa-beta-tpa-app; CH=<the app id>
-   cat > /tmp/pd-check.json <<EOF
-   {"displayName": "TEST — PagerDuty setup check, please ignore", "severity": "WARNING", "combiner": "OR",
-    "conditions": [{"displayName": "setup check line",
-      "conditionMatchedLog": {"filter": "logName=\"projects/$P/logs/pagerduty-setup-check\""}}],
-    "alertStrategy": {"notificationRateLimit": {"period": "300s"}, "autoClose": "1800s"},
-    "notificationChannels": ["projects/$P/notificationChannels/$CH"],
-    "documentation": {"content": "One-off PagerDuty channel check. Delete this policy after the test.",
-                      "mimeType": "text/markdown"}}
-   EOF
-   gcloud alpha monitoring policies create --project="$P" --policy-from-file=/tmp/pd-check.json
-   gcloud logging write pagerduty-setup-check "TEST — PagerDuty setup check, please ignore" --project="$P"
+   P=trellistpa-beta-tpa-app CH=<the app channel id>    # second run: P=trellistpa-beta-cc CH=<the cc channel id>
+   (
+     set -euo pipefail
+     POLICY='{"displayName": "TEST — PagerDuty setup check, please ignore", "severity": "WARNING",
+       "combiner": "OR", "conditions": [{"displayName": "setup check line", "conditionMatchedLog":
+       {"filter": "logName=\"projects/'"$P"'/logs/pagerduty-setup-check\""}}],
+       "alertStrategy": {"notificationRateLimit": {"period": "300s"}, "autoClose": "1800s"},
+       "notificationChannels": ["projects/'"$P"'/notificationChannels/'"$CH"'"],
+       "documentation": {"content": "One-off PagerDuty channel check; the snippet that made it deletes it.",
+       "mimeType": "text/markdown"}}'
+     NAME="$(gcloud alpha monitoring policies create --project="$P" --policy="$POLICY" --format='value(name)')"
+     trap 'gcloud alpha monitoring policies delete "$NAME" --project="$P" --quiet' EXIT
+     gcloud logging write pagerduty-setup-check "TEST — PagerDuty setup check, please ignore" --project="$P"
+     printf 'When PagerDuty shows the incident, note incident.severity, then press Enter to delete the policy: '
+     read -r _
+   )
    ```
 
    Within a few minutes the project's PagerDuty service should show an incident at **low urgency, severity warning,
-   P3**. Open the alert's details and write down the exact text of `incident.severity` in docs/PAGERDUTY.md. That
-   settles the letter-case question for good. Close the incident in Monitoring (not in PagerDuty, where it would
-   reopen), then delete the policy: `gcloud alpha monitoring policies list --project="$P" --filter='displayName:"TEST
-   — PagerDuty"' --format='value(name)'` and `gcloud alpha monitoring policies delete <that name>`.
+   P3**. Open the alert's details and write down the exact text of `incident.severity` here, in docs/PAGERDUTY.md.
+   After the policy is deleted, resolve the PagerDuty incident if it is still open: with the policy gone, nothing can
+   reopen it.
+
+   **A PHI-project check, if one is still wanted, is tpa-platform's to build.** It would be a job made through
+   Terraform: an alert policy with a metric-threshold condition (no log fields) on the PHI channel, made to fire once
+   and then removed by the same reviewed change. These docs give no command for it.
 
 If someone makes a channel by hand in the console (Monitoring → Alerting → Edit notification channels → PagerDuty →
 Add new), they use the display name "PagerDuty · <service name>" and paste the key from PagerDuty → the service →
@@ -291,19 +311,30 @@ A new alert policy's documentation must keep to the same rule. Each service's de
 
   Both lower-case words matched patterns written capitalised, so the ignore-case flag works in PagerDuty. P1 on the
   critical event shows its rule matched: an unmatched event gets no priority.
-- PagerDuty's log shows it notified Jonathan by email and Slack for the first Warning, the Critical and both
+- **The space class.** The re-review asked for `[[:space:]]` in place of a literal space, so a trailing tab or
+  newline also matches (RE2's `$` is the very end of the text).
+  - PagerDuty accepted `'(?i)^[[:space:]]*Word[[:space:]]*$'` on Portal & API, and the script then updated the other
+    two.
+  - A dry run and a second `--apply` printed "0 to create, 0 to update".
+  - One more lower-case test on Portal & API: `warning` → **low urgency, severity warning, P3**, resolved through
+    the integration after 9 s, not escalated (incident #7).
+- PagerDuty's log shows it notified Jonathan by email and Slack for the first Warning, the Critical and the
   lower-case events. Two of the first Warnings were resolved within 11 s, before PagerDuty logged any notification.
 - `gcp_channels.py` dry run: three keys read (not shown); Google answered 403 for all three projects (expected); it
   printed `alert_pagerduty_channel_ids = { app = null, phi = null, cc = null }`.
-- Not yet seen live: the "no severity → critical" row, and the exact casing Monitoring itself sends. The first comes
-  from Google's guide and the fake's model. Step 5 of the Google Cloud half settles both.
+- Not yet seen live:
+  - **The exact casing Monitoring itself sends.** Step 5 of the Google Cloud half settles it, in the app and
+    call-centre projects (never PHI), and the PHI path is the same.
+  - **The "no severity → critical" row.** It comes from Google's guide and the fake's model. Confirm it with
+    `pd_test_event.py --role app --severity "no severity" --send`, which pages at high urgency.
 
 ## PagerDuty API behaviour the scripts rely on (seen 2026-10-11)
 
 - An account owner or admin can only be a team **manager** ("admin cannot take team role responder").
 - `GET /users?include[]=notification_rules` leaves out Slack rules. `GET /users/{id}/notification_rules` returns
   high urgency only unless `urgency=low` is given, and `urgency=any` returns none. So the script reads each urgency.
-- The condition language refuses a backslash inside a quoted string. `matches regex` takes RE2 with `(?i)`.
+- The condition language refuses a backslash inside a quoted string. `matches regex` takes RE2 with `(?i)` and the
+  POSIX class `[[:space:]]`.
 - A service's `alert_grouping_parameters` is deprecated. Grouping lives in `/alert_grouping_settings`, paged by an
   `after` cursor, one setting per service here.
 - The Slack integration API: the workspace list answers on `api.pagerduty.com`, and the connections only on
