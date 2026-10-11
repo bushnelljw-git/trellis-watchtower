@@ -113,7 +113,9 @@ BUSINESS_POINT_OF_CONTACT = "The TPA Platform team in PagerDuty"
 # The match ignores case and surrounding spaces. Google's guide never states the casing (its payload example writes
 # "no severity" in lower case), and a WARNING read as unmatched would page at high urgency. RE2's (?i) flag; the word
 # is written capitalised so that a lower-case test event proves the flag works (docs/PAGERDUTY.md, "Verified").
-# Spaces, not \s: PagerDuty's condition language refuses a backslash inside a quoted string (HTTP 400, 2026-10-11).
+# [[:space:]], not \s: PagerDuty's condition language refuses a backslash inside a quoted string (HTTP 400,
+# 2026-10-11) and accepts the POSIX class. In RE2, $ is the end of the text (never before a final newline), so the
+# class is what lets a trailing tab or newline still match.
 SEVERITY_FIELD = "event.custom_details.incident.severity"
 SEVERITY_RULES = [
     {"monitoring": "Critical", "severity": "critical", "priority": "P1"},
@@ -123,7 +125,7 @@ SEVERITY_RULES = [
 
 
 def rule_expression(monitoring_severity: str) -> str:
-    return f"{SEVERITY_FIELD} matches regex '(?i)^ *{monitoring_severity} *$'"
+    return f"{SEVERITY_FIELD} matches regex '(?i)^[[:space:]]*{monitoring_severity}[[:space:]]*$'"
 
 
 def rule_label(rule: dict) -> str:
@@ -134,8 +136,8 @@ def rule_label(rule: dict) -> str:
 EXPECTED_URGENCY = {"critical": "high", "error": "high", "warning": "low", "info": "low"}
 
 # Each person's notification rules, built only from contact methods they already have: minutes after an incident is
-# assigned to them. Phone and SMS are for high urgency only. A re-run adds rules only for a contact method that has
-# none at all (a newly added phone or app); a rule a person removed stays removed unless --add-rules is given.
+# assigned to them. Phone and SMS are for high urgency only. Rules are created only with --add-rules: a plain --apply
+# never creates one, so a rule a person removed (even a method's only rule) stays removed.
 NOTIFY = {
     "high": {
         "push_notification_contact_method": 0,

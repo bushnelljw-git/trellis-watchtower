@@ -3,7 +3,8 @@
 An automated gate only: one local HTTP server on 127.0.0.1 answering the calls the scripts make, holding its state in
 memory and recording every request. It also models what the design relies on, so the tests can check it end to end:
 a v1 event's `details` become `custom_details`; a service orchestration's first matching rule (`matches part` is a
-case-sensitive substring test, the cautious reading; `matches regex` is a regex search, so RE2's (?i) works) sets the
+case-sensitive substring test, the cautious reading; `matches regex` is an RE2-like search: (?i), the POSIX class
+[[:space:]], and $ only at the very end of the text) sets the
 alert's severity and the incident's priority; an event no rule matches keeps severity critical; a severity-based
 service pages critical and error at high urgency, warning and info at low. Error bodies echo what they were sent, as
 a careless API might, so the tests can prove the scripts never print a secret that comes back in one.
@@ -31,6 +32,15 @@ ACTION_DEFAULTS = {
     "escalation_policy": None, "automation_action": None, "pagerduty_automation_action": None,
 }
 PCL = re.compile(r"^event\.custom_details\.([A-Za-z0-9_.]+) matches (part|regex) '([^']*)'$")
+
+
+def re2_search(pattern: str, text: str) -> bool:
+    """RE2's meaning in Python's re: [[:space:]] is \\s, and $ (outside multi-line mode) matches only at the very end
+    of the text. Python's own $ also matches before a final newline, which RE2's never does."""
+    pat = pattern.replace("[[:space:]]", r"\s")
+    if pat.endswith("$") and not pat.endswith(r"\$"):
+        pat = pat[:-1] + r"\Z"
+    return re.search(pat, text) is not None
 
 
 class Fail(Exception):
@@ -411,7 +421,7 @@ class FakeState:
             return False
         if m.group(2) == "part":
             return m.group(3) in value
-        return re.search(m.group(3), value) is not None
+        return re2_search(m.group(3), value)
 
     # ---- Cloud Monitoring ------------------------------------------------------------------------------------------
     def monitoring(self, method, parts, query, body):

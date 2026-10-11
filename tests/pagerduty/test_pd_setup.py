@@ -6,6 +6,7 @@ Run: python3 -m unittest discover -s tests/pagerduty -v
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -58,8 +59,9 @@ class Base(unittest.TestCase):
         self.outputs += [result.stdout, result.stderr]
         return result
 
-    def apply(self):
-        result = self.pd("--apply")
+    def apply(self, *extra):
+        """The first live setup: --apply --add-rules (a plain --apply never creates a notification rule)."""
+        result = self.pd("--apply", "--add-rules", *extra)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
@@ -89,11 +91,17 @@ class DryRunAndIdempotency(Base):
             'create      alert grouping on "TPA beta · Member records"',
             'create    service "TPA beta · Call centre"',
             'create    business service "Trellis TPA (beta)"',
-            'create    notification rule Jonathan Bushnell: high urgency -> Slack "slack" at 0 min',
+            'kept      notification rule Jonathan Bushnell: high urgency -> Slack "slack" at 0 min  [missing, not '
+            'added: rules are created only with --add-rules]',
             'ok        notification rule Jonathan Bushnell: high urgency -> email "Default" at 0 min',
         ]:
             self.assertIn(line, result.stdout)
-        self.assertIn("summary: 26 to create, 0 to update, 4 ok, 0 kept, 0 refused, 3 by hand", result.stdout)
+        self.assertIn("summary: 24 to create, 0 to update, 4 ok, 2 kept, 0 refused, 3 by hand", result.stdout)
+        with_rules = self.pd("--add-rules")
+        self.assertIn('create    notification rule Jonathan Bushnell: high urgency -> Slack "slack" at 0 min',
+                      with_rules.stdout)
+        self.assertIn("summary: 26 to create", with_rules.stdout)
+        self.assertEqual(self.state.writes(), [])
         self.assertIn('by hand     Slack: "TPA beta · Call centre"  [not connected: a person connects it to '
                       '#tpa-beta-alerts', result.stdout)
 
@@ -127,7 +135,7 @@ class DryRunAndIdempotency(Base):
         self.apply()
         sid = self.service_id("TPA beta · Portal & API")
         for rule in self.state.orchestrations[sid]["sets"][0]["rules"]:
-            word = rule["conditions"][0]["expression"].split("^ *")[1].split(" *$")[0]
+            word = re.search(r"\*(\w+)\[", rule["conditions"][0]["expression"]).group(1)
             rule["conditions"] = [{"expression": f"event.custom_details.incident.severity matches part '{word}'"}]
         self.assertIn('update      event orchestration on "TPA beta · Portal & API"', self.pd().stdout)
         self.apply()
@@ -183,10 +191,11 @@ class TheDesign(Base):
             self.assertEqual(start["id"], "start")
             got = [([c["expression"] for c in r["conditions"]], r["actions"]["severity"], r["actions"]["priority"])
                    for r in start["rules"]]
+            field = "event.custom_details.incident.severity matches regex"
             self.assertEqual(got, [
-                (["event.custom_details.incident.severity matches regex '(?i)^ *Critical *$'"], "critical", "PRI1"),
-                (["event.custom_details.incident.severity matches regex '(?i)^ *Error *$'"], "error", "PRI2"),
-                (["event.custom_details.incident.severity matches regex '(?i)^ *Warning *$'"], "warning", "PRI3"),
+                ([f"{field} '(?i)^[[:space:]]*Critical[[:space:]]*$'"], "critical", "PRI1"),
+                ([f"{field} '(?i)^[[:space:]]*Error[[:space:]]*$'"], "error", "PRI2"),
+                ([f"{field} '(?i)^[[:space:]]*Warning[[:space:]]*$'"], "warning", "PRI3"),
             ])
             catch_all = {k: v for k, v in path["catch_all"]["actions"].items() if v not in (None, False, [], {})}
             self.assertEqual(catch_all, {}, "anything unmapped must keep PagerDuty's default severity")
@@ -203,14 +212,14 @@ class TheDesign(Base):
                     return rule["actions"]["severity"]
             return "default"
 
-        for text in ("warning", "WARNING", "Warning", " warning ", "wArNiNg"):
-            self.assertEqual(outcome(text), "warning", text)
+        for text in ("warning", "WARNING", "Warning", " warning ", "wArNiNg", "Warning\t", "Warning\n", "\tWarning"):
+            self.assertEqual(outcome(text), "warning", repr(text))
         for text in ("critical", "CRITICAL", "Critical"):
             self.assertEqual(outcome(text), "critical", text)
         for text in ("error", "ERROR", "Error"):
             self.assertEqual(outcome(text), "error", text)
-        for text in ("no severity", "No severity", "warnings", "not critical", ""):
-            self.assertEqual(outcome(text), "default", text)
+        for text in ("no severity", "No severity", "warnings", "not critical", "", "Warning x", "Warning\nx"):
+            self.assertEqual(outcome(text), "default", repr(text))
 
     def test_business_service(self):
         (b,) = self.state.business.values()
@@ -261,6 +270,21 @@ class Fallbacks(Base):
             ("sms_contact_method", "high", 0), ("phone_contact_method", "high", 3),
         })
 
+    def test_a_plain_apply_never_creates_a_rule(self):
+        before = len(self.state.users["PJON"]["notification_rules"])
+        result = self.pd("--apply")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(len(self.state.users["PJON"]["notification_rules"]), before)
+        self.assertIn("kept      notification rule Jonathan Bushnell: high urgency -> phone call", result.stdout)
+        self.assertEqual([r for r in self.state.writes() if "notification_rules" in r["path"]], [])
+
+    def test_a_methods_only_rule_removed_is_not_put_back(self):
+        self.apply()
+        self.state.delete_rule("PJON", "CMJPHONE", "high")  # the phone's only rule: the person wants no calls
+        self.pd("--apply")
+        rules = self.state.users["PJON"]["notification_rules"]
+        self.assertNotIn("CMJPHONE", {r["contact_method"]["id"] for r in rules})
+
     def test_a_persons_own_rule_is_kept(self):
         self.state.add_rule("PJON", "CMJSMS", "high", 5)
         result = self.pd("--apply")
@@ -271,7 +295,7 @@ class Fallbacks(Base):
 
 
 class GroupingErrorThatIsNotAboutIntelligent(Base):
-    state_options = {"grouping_error": (400, "Name must be unique")}
+    state_options = {"grouping_error": (400, "Alert grouping time window must be at most 3600")}
 
     def test_no_fallback_on_an_unrelated_error(self):
         result = self.pd("--apply")
@@ -288,9 +312,10 @@ class PersonDeletedRule(Base):
         self.state.delete_rule("PJON", "CMJSLACK", "low")
 
     def test_a_deleted_rule_is_not_put_back(self):
-        result = self.apply()
-        self.assertIn('kept      notification rule Jonathan Bushnell: low urgency -> Slack "slack" at 0 min  [not '
-                      "added", result.stdout)
+        result = self.pd("--apply")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn('kept      notification rule Jonathan Bushnell: low urgency -> Slack "slack" at 0 min  [missing, '
+                      "not added", result.stdout)
         self.assertNotIn(("CMJSLACK", "low"), {(r["contact_method"]["id"], r["urgency"])
                                                for r in self.state.users["PJON"]["notification_rules"]})
 
@@ -312,6 +337,17 @@ class ScheduleWithTwoLayers(Base):
 
 
 class RenamedService(Base):
+    def test_renamed_with_a_new_description_is_still_refused(self):
+        self.apply()
+        sid = self.service_id("TPA beta · Member records")
+        self.state.services[sid].update(name="Records (old)", description="something else")
+        before = len(self.state.writes())
+        result = self.pd("--apply")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('refused   service "TPA beta · Member records"  [not created: "Records (old)" carries its '
+                      "integration (renamed?)", result.stdout)
+        self.assertEqual(len(self.state.writes()), before)
+
     def test_a_renamed_service_is_not_duplicated(self):
         self.apply()
         sid = self.service_id("TPA beta · Call centre")

@@ -11,22 +11,24 @@ What it makes (each found by its exact name, created when absent and corrected w
     event orchestration that turns Monitoring's severity, in any letter case, into the alert's severity and the
     incident's priority;
   - business service "Trellis TPA (beta)", supported by the three services;
-  - notification rules for a contact method that has none yet (never adding or changing a contact method).
+  - with --add-rules only, each person's designed notification rules that are missing (never adding or changing a
+    contact method).
 
 It also reads (never makes) each service's Slack connection and prints "by hand" until a person has connected the
 service to #tpa-beta-alerts with every urgency, every priority and the five incident events (docs/PAGERDUTY.md).
 
-What it will not do: delete anything; touch "Default Service" or the "Default" escalation policy; put back a
-notification rule a person removed (unless --add-rules); change a schedule that has more than one active layer; or
-create a service when one carrying our integration and description already exists under another name. Those print
-as "kept" or "refused". When a parent object (team, schedule, policy, service, business service) is refused by
-PagerDuty, the run stops before anything that depends on it.
+What it will not do: delete anything; touch "Default Service" or the "Default" escalation policy; create a
+notification rule without --add-rules (so a rule a person removed stays removed); change a schedule that has more
+than one active layer; or create a missing service while a service carrying our integration exists under a name the
+design doesn't use (it may be ours, renamed). Those print as "kept" or "refused". When a parent object (team,
+schedule, policy, service, business service) is refused by PagerDuty, the run stops before anything that depends on
+it.
 
 Usage:
   scripts/pagerduty/pd_setup.py                    dry run: print the plan, change nothing
   scripts/pagerduty/pd_setup.py --apply            make the changes
-  ... --add-rules                                  also add a designed notification rule that is missing on a contact
-                                                   method which has other rules (normally left as the person set it)
+  ... --add-rules                                  also create each person's designed notification rules that are
+                                                   missing (a plain --apply never creates a rule)
   ... --retry-intelligent-grouping                 try intelligent alert grouping again where a service has
                                                    time-based grouping (for when the account gains it)
 
@@ -260,9 +262,9 @@ def ensure_policy(pd: PagerDuty, plan: Plan, users: dict[str, dict], team_id: st
 
 
 def refuses_intelligent(e: ApiError) -> bool:
-    """A refusal of intelligent grouping itself: a 4xx whose text names it. Any other error is not a fallback."""
-    text = e.message.lower()
-    return 400 <= e.status < 500 and e.status not in (401, 404, 429) and ("intelligent" in text or "grouping" in text)
+    """A refusal of intelligent grouping itself: a 4xx whose text says "intelligent". Anything else is not a
+    fallback, even an error about grouping in general."""
+    return 400 <= e.status < 500 and e.status not in (401, 404, 429) and "intelligent" in e.message.lower()
 
 
 class Grouping:
@@ -364,6 +366,9 @@ def ensure_services(pd: PagerDuty, plan: Plan, policy_id: str, priorities: dict[
                     grouping: Grouping) -> list[str | None]:
     """Each service's id, or None for one the script refused to make (its children are skipped)."""
     every = pd.list("/services", "services", {"include[]": "integrations"})
+    designed = {c["name"] for c in d.SERVICES}
+    # A service carrying our integration under a name the design doesn't use may be one of ours, renamed.
+    strays = [s for s in every if s.get("name") not in designed and any(ours(i) for i in s.get("integrations") or [])]
     ids: list[str | None] = []
     for cfg in d.SERVICES:
         name = cfg["name"]
@@ -374,14 +379,15 @@ def ensure_services(pd: PagerDuty, plan: Plan, policy_id: str, priorities: dict[
         if len(same) > 1:
             raise Refused(f'{len(same)} services named "{name}": remove the extra ones first')
         svc = same[0] if same else None
+        if svc is None and strays:
+            same_text = [s for s in strays if s.get("description") == cfg["description"]]
+            suspects = ", ".join(f'"{s.get("name")}"' for s in (same_text or strays))
+            why = "its integration and description" if same_text else "its integration"
+            plan.refuse(what, f"not created: {suspects} carries {why} (renamed?). Rename it back to \"{name}\", "
+                              "or remove it, then re-run")
+            ids.append(None)
+            continue
         if svc is None:
-            renamed = [s for s in every if s.get("description") == cfg["description"]
-                       and any(ours(i) for i in s.get("integrations") or [])]
-            if renamed:
-                plan.refuse(what, f'not created: "{renamed[0].get("name")}" carries its integration and description '
-                                  f'(renamed?). Rename it back to "{name}", or remove it, then re-run')
-                ids.append(None)
-                continue
             sid = plan.change("create", what, detail,
                               lambda f=fields: pd.write("POST", "/services", {"service": f})["service"]["id"],
                               placeholder=f"<new service {cfg['role']}>", parent=True)
@@ -533,8 +539,8 @@ def ensure_business_service(pd: PagerDuty, plan: Plan, team_id: str, service_ids
 
 
 def ensure_notification_rules(pd: PagerDuty, plan: Plan, users: dict[str, dict], add_rules: bool) -> None:
-    """Rules for a contact method that has none yet (first-time setup). A method that already has rules is the
-    person's: a designed rule missing from it is reported, not added, unless --add-rules (settings must be honoured)."""
+    """Report each person's rules against the design. Only --add-rules creates a missing one: a plain run never does,
+    so a rule a person removed, even a contact method's only rule, stays removed (settings must be honoured)."""
     for name in d.TEAM_MEMBERS:
         u = users[name]
         # Read from the user's own endpoints: /users?include[]=notification_rules leaves out Slack rules, and
@@ -547,7 +553,6 @@ def ensure_notification_rules(pd: PagerDuty, plan: Plan, users: dict[str, dict],
             for r in got or []:
                 key = ((r.get("contact_method") or {}).get("id"), r.get("urgency"))
                 have.setdefault(key, []).append(r.get("start_delay_in_minutes"))
-        with_rules = {cm_id for cm_id, _ in have}
         wanted = set()
         for urgency in ("high", "low"):
             for cm in methods:
@@ -563,9 +568,8 @@ def ensure_notification_rules(pd: PagerDuty, plan: Plan, users: dict[str, dict],
                         plan.ok(what)
                     else:
                         plan.kept(what, f"the person set it at {sorted(delays)} min")
-                elif cm["id"] in with_rules and not add_rules:
-                    plan.kept(what, "not added: this contact method has rules the person set and none at this "
-                                    "urgency (--add-rules adds it)")
+                elif not add_rules:
+                    plan.kept(what, "missing, not added: rules are created only with --add-rules")
                 else:
                     body = {"notification_rule": {"type": "assignment_notification_rule", "urgency": urgency,
                                                   "start_delay_in_minutes": delay,
@@ -579,7 +583,7 @@ def ensure_notification_rules(pd: PagerDuty, plan: Plan, users: dict[str, dict],
         missing = sorted({t for t in d.CONTACT_WORDS} - {c["type"] for c in methods})
         if missing:
             out(f"          ({name} has no {', '.join(d.CONTACT_WORDS[t] for t in missing)} yet: once added in "
-                "PagerDuty, a re-run adds its rules)")
+                "PagerDuty, --apply --add-rules adds its rules)")
 
 
 # ---- main ------------------------------------------------------------------------------------------------------------
@@ -589,7 +593,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--apply", action="store_true", help="make the changes (default: dry run)")
     parser.add_argument("--add-rules", action="store_true",
-                        help="also add designed notification rules missing on a contact method that has others")
+                        help="also create each person's missing designed notification rules (never without it)")
     parser.add_argument("--retry-intelligent-grouping", action="store_true",
                         help="try intelligent alert grouping again where a service has time-based grouping")
     args = parser.parse_args()
