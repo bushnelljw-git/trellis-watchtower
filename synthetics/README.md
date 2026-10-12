@@ -110,7 +110,7 @@ exit 0, which is design §7's proof of `synthetic-failing`. A malformed or missi
 | `SYNTHETICS_PAUSED` | | | | `true` while a needed database is stopped: `skipped` / `paused` at once, before the warm-up, nothing sent. A second guard beside the paused schedule |
 | `SYNTHETICS_CRM_ENABLED` | | | yes | `true` once the CRM's beta copy has run `seed-synthetic` and the secret's version is pinned; anything else is `not_configured` |
 | `SYNTHETICS_STEP_TIMEOUT_S` | | | | per request, default 15, at most 60 |
-| `SYNTHETICS_EGRESS_WAIT_S` | yes | yes | yes | the warm-up's own budget: `120` (the default; at most 180, and `0` skips the warm-up). Spent before the deadline starts |
+| `SYNTHETICS_EGRESS_WAIT_S` | yes | yes | yes | the warm-up's own budget: `120` (the default; at most 170, and `0` skips the warm-up). Spent before the deadline starts |
 | `SYNTHETICS_DEADLINE_S` | | | | the rest of the run, from the warm-up's end: default 90, at most 100. The sign-out's own budget (at most 10 s) comes on top, so the job's `task_timeout` (300 s) must hold all three |
 | `SYNTHETICS_CA_FILE` | | | | local only: the one CA to trust (the cloud uses the system store) |
 | `SYNTHETICS_METADATA_HOST` | | | | tests only: the fake metadata server. Unset in the cloud. With IAP on it may only be `metadata.google.internal` or a loopback host (`error` / `config` otherwise), so the token is never asked of another host |
@@ -129,9 +129,10 @@ never hangs the run). A missing, unreadable, non-regular, oversized or malformed
 included), an empty password or a TOTP secret that is not base32 is `error` / `config` at step `secrets` (exit 1).
 
 **The job:** args `["journey", "<name>"]`; `task_timeout` 300 s, which holds the warm-up's budget, the deadline and
-the sign-out's budget together (220 s with the defaults, 290 s at most; the 120 s it had before the warm-up would cut
-a slow warm-up off with no result line); `max_retries` 0 (a retry would replay a TOTP step); egress only to the edge
-addresses (the metadata server is always reachable).
+the sign-out's budget together (220 s with the defaults, 280 s at most, leaving 20 s for what no budget bounds: one
+name lookup at the warm-up's end, the task's own start; the 120 s it had before the warm-up would cut a slow warm-up
+off with no result line); `max_retries` 0 (a retry would replay a TOTP step); egress only to the edge addresses (the
+metadata server is always reachable).
 
 ## IAP, programmatically
 

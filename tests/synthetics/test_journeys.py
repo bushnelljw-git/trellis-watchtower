@@ -438,7 +438,7 @@ class Configuration(Case):
                             ("SYNTHETICS_METADATA_HOST", "127.0.0.1:notaport"),
                             ("SYNTHETICS_DEADLINE_S", "101"),
                             ("SYNTHETICS_EGRESS_WAIT_S", "-1"),
-                            ("SYNTHETICS_EGRESS_WAIT_S", "181"),
+                            ("SYNTHETICS_EGRESS_WAIT_S", "171"),
                             ("SYNTHETICS_EGRESS_WAIT_S", "abc"),
                             ("SYNTHETICS_EGRESS_WAIT_S", "nan"),
                             ("SYNTHETICS_CA_FILE", "/nonexistent/ca.pem")]:
@@ -701,7 +701,8 @@ class Egress(Case):
         self.assertTrue(all(timeout <= 3.0 for _port, timeout in net.connects))
 
     def test_the_budget(self):
-        for value, budget in [(None, 120.0), ("180", 180.0), ("2.5", 2.5)]:
+        # 3.5: one attempt (3 s), then a pause cut to the half second left.
+        for value, budget in [(None, 120.0), ("170", 170.0), ("2.5", 2.5), ("3.5", 3.5)]:
             with self.subTest(value=value), fakes.Fake() as fake:
                 net = Network(then=False)
                 line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_EGRESS_WAIT_S=value),
@@ -762,6 +763,43 @@ class Egress(Case):
                 fake, SYNTHETICS_PORTAL_BASE_URL=fake.base, SYNTHETICS_DEADLINE_S="5"), tools=net.tools())
         self.assertGreater(net.spent(), 100)
         self.assertEqual((line["outcome"], line["code"], code), ("pass", "ok", 0))
+
+    def test_the_deadline_starts_after_it_on_the_real_clock(self):
+        # Real time and pauses: a path that answers only after 2 s, then a 1.5 s deadline the warm-up never touches.
+        with fakes.Fake(clock=lambda: FIXED_NOW) as fake:
+            started = time.monotonic()
+
+            def connect(_family, _address, _timeout):
+                if time.monotonic() - started < 2:
+                    time.sleep(0.3)
+                    raise TimeoutError
+
+            line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_DEADLINE_S="1.5"),
+                                          tools=Tools(now=lambda: FIXED_NOW, connect=connect))
+        self.assertEqual((line["outcome"], line["code"], code), ("pass", "ok", 0))
+        self.assertGreaterEqual(line["steps_ms"]["egress"], 2000)
+        self.assertEqual(fake.routes(), J2_ROUTES)
+
+    def test_no_name_is_looked_up_once_the_budget_is_spent(self):
+        # J1 on two ports: the ops host's attempt spends the whole budget, so the portal's name is never resolved.
+        original = journeys.client.resolve
+        asked = []
+
+        def counted(host, port):
+            asked.append(port)
+            return original(host, port)
+
+        journeys.client.resolve = counted
+        try:
+            with fakes.Fake() as ops, fakes.Fake() as portal:
+                net = Network(then=False)
+                line, code = self.run_journey("staff-sign-in", self.env(
+                    ops, SYNTHETICS_PORTAL_BASE_URL=portal.base, SYNTHETICS_EGRESS_WAIT_S="2.5"), tools=net.tools())
+        finally:
+            journeys.client.resolve = original
+        self.assert_error(line, code, step="egress", code="egress")
+        self.assertEqual(asked, [ops.port])
+        self.assertEqual(net.connects, [(ops.port, 2.5)])
 
     def test_a_name_that_does_not_resolve_is_resolved_again_then_kept(self):
         original = journeys.client.resolve

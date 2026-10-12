@@ -59,14 +59,15 @@ DEFAULT_STEP_TIMEOUT_S = 15.0
 #: The job's task_timeout, 300 s (design §3, piece 5), holds the egress
 #: warm-up's budget (at most MOST_EGRESS_WAIT_S), then the run's deadline (at
 #: most MOST_DEADLINE_S), then the sign-out's own budget: 220 s with the
-#: defaults, 290 s at most.
+#: defaults, 280 s at most, which leaves 20 s for what no budget bounds (one
+#: getaddrinfo at the warm-up's end, the task's own start).
 DEFAULT_DEADLINE_S = 90.0
 MOST_DEADLINE_S = 100.0
 #: The egress warm-up (`_egress`): its own budget, spent before the deadline
 #: starts (0 skips it); each fresh connection's timeout; the pause between
 #: rounds; and how many fresh connections in a row make a host and port ready.
 DEFAULT_EGRESS_WAIT_S = 120.0
-MOST_EGRESS_WAIT_S = 180.0
+MOST_EGRESS_WAIT_S = 170.0
 EGRESS_ATTEMPT_S = 3.0
 EGRESS_PAUSE_S = 1.0
 EGRESS_READY = 2
@@ -339,7 +340,8 @@ def _egress(run: Run, config: Config, tools: Tools) -> None:
     closed at once with nothing sent, a round every EGRESS_PAUSE_S, until
     EGRESS_READY in a row have connected to every one. Many short connections,
     never one long one: Linux backs a connect's SYN retries off (0, 1, 3, 7, 15,
-    31, 63 s), which can leave it waiting 32 s on a path that is already up.
+    31, 63 s), which can leave one waiting from 31 s to 63 s on a path that came
+    up in between.
 
     The budget is the setting's own (0 skips the step); spent, the run is
     `error` / `egress`, as the robot reached nothing and so has no verdict.
