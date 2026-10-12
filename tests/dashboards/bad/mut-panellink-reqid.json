@@ -1,0 +1,30 @@
+{
+  "uid": "tw-mut-panellink",
+  "title": "Mutation: a panel link passes `request_id`",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "panel link",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(probe_success)"
+        }
+      ],
+      "links": [
+        {
+          "title": "x",
+          "url": "/d/x?var-request_id=${__value.raw}"
+        }
+      ]
+    }
+  ]
+}

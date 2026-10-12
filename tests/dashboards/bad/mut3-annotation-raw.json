@@ -1,0 +1,18 @@
+{
+  "uid": "tw-mut3-ann",
+  "title": "Mutation: an annotation that is a raw-lines query",
+  "panels": [],
+  "annotations": {
+    "list": [
+      {
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "enable": true,
+        "name": "lines",
+        "expr": "{stack=\"tpa\", service=\"auth-sweeper\"} | level=\"ERROR\""
+      }
+    ]
+  }
+}

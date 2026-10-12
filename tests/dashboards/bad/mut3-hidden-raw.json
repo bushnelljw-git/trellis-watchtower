@@ -1,0 +1,33 @@
+{
+  "uid": "tw-mut3-hidden",
+  "title": "Mutation: a hidden raw-lines target",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "hidden",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({stack=\"tpa\"}[5m]))"
+        },
+        {
+          "refId": "ZZ",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{stack=\"tpa\"}",
+          "hide": true
+        }
+      ]
+    }
+  ]
+}

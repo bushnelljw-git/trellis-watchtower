@@ -1,0 +1,35 @@
+{
+  "uid": "tw-mut-datalink",
+  "title": "Mutation: a data link carries `tid`",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "datalink",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(probe_success)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "x",
+              "url": "/explore?q=${__data.fields.tid}"
+            }
+          ]
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

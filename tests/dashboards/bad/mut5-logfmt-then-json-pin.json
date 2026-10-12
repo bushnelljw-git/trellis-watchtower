@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut5-pin",
+  "title": "Mutation: a pinned helper set first by logfmt from another field",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "pin twice",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (msg_name) (count_over_time({stack=\"tpa\"} | logfmt m1=\"member_name\" | json m1=\"msg\", m2=\"message\" | label_format msg_name=`{{ $m := or .m1 .m2 }}{{ if eq (regexReplaceAll \"^[a-z][a-z0-9_ ]{0,59}$\" $m \"\") \"\" }}{{ $m }}{{ else }}other{{ end }}` [5m]))"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut3-paren",
+  "title": "Mutation: a raw-lines query in parentheses",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "paren",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "({stack=\"tpa\"})"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "uid": "tw-mut-novalue",
+  "title": "Mutation: `noValue` names a tenant label",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "novalue",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(probe_success)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "${__field.labels.tenant}"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

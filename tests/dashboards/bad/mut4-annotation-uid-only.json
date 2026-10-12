@@ -1,0 +1,17 @@
+{
+  "uid": "tw-mut4-annuid",
+  "title": "Mutation: an annotation whose datasource names only its uid",
+  "panels": [],
+  "annotations": {
+    "list": [
+      {
+        "datasource": {
+          "uid": "loki"
+        },
+        "enable": true,
+        "name": "y",
+        "expr": "{stack=\"tpa\"}"
+      }
+    ]
+  }
+}

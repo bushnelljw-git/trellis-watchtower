@@ -1,0 +1,30 @@
+{
+  "uid": "tw-mut3-bare",
+  "title": "Mutation: a display name of every label",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "bare labels",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max by (service) (probe_success)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "${__field.labels}"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

@@ -16,6 +16,37 @@ groups:
       - record: stack:probe_success:max_over_time1h
         expr: max by (stack) (max_over_time(probe_success{job="blackbox"}[1h]))
 
+  # One state per check, computed once here and read by the home page's map,
+  # its headline and its "What's wrong now" list (docs/SIGNALS.md).
+  - name: probe-state
+    rules:
+      # 1 while the check passed at least once in its last three probes (90 s
+      # at the 30 s scrape); 0 once it has failed three times in a row. One
+      # lost probe is not an outage.
+      - record: probe:success_any:90s
+        expr: max_over_time(probe_success{job="blackbox"}[90s])
+
+      # 3 up; 2 degraded (failed three in a row, but it answered 2xx: a db
+      # probe whose body reports the database down while the service itself
+      # serves); 1 down (failed three in a row with no answer or any other
+      # status, a 503 included: auth and records answer 503 on /ready when
+      # their database, signer or revocations are gone, and that is an outage);
+      # 0 not running (a stack other than tpa with no passing probe in the last
+      # hour, including one already down when Prometheus started). tpa is
+      # expected to run, so it is never "not running": all its checks failing
+      # is down.
+      - record: probe:state
+        expr: |
+          (0 * probe:success_any:90s{stack!="tpa"} unless on (stack) (stack:probe_success:max_over_time1h == 1))
+          or (3 * (probe:success_any:90s > 0))
+          or (
+            2 + 0 * (
+              probe:success_any:90s == 0
+              and on (stack, service, probe) (probe_http_status_code{job="blackbox", probe="db"} >= 200 < 300)
+            )
+          )
+          or (1 + 0 * (probe:success_any:90s == 0))
+
   - name: probes
     rules:
       # A probe fails on a running stack. Excludes db probes that still got a

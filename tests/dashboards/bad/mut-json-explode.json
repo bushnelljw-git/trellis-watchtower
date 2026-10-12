@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut-json",
+  "title": "Mutation: a bare `| json` with no aggregation",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "explode",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count_over_time({stack=\"tpa\"} | json [24h])"
+        }
+      ]
+    }
+  ]
+}

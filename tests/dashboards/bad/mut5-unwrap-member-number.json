@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut5-member",
+  "title": "Mutation: a member number unwrapped as a number",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "member number",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "max(max_over_time({stack=\"tpa\"} | json x=\"member_number\" | __error__=\"\" | unwrap x [24h]))"
+        }
+      ]
+    }
+  ]
+}

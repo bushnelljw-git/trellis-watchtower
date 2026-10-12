@@ -1,0 +1,16 @@
+# A Loki rule file the lint must refuse: what a rule records lands in Prometheus, where any dashboard can read it.
+groups:
+  - name: bad
+    interval: 30s
+    rules:
+      - record: tw:raw_lines
+        expr: "{stack=\"tpa\"} | level=\"ERROR\""
+      - record: tw:by_member
+        expr: "sum by (member) (count_over_time({stack=\"tpa\"} | json member=\"member_number\" [30s]))"
+      - record: tw:labelled
+        expr: "sum(count_over_time({stack=\"tpa\"} [30s]))"
+        labels:
+          principal: "anyone"
+      - record: tw:folded
+        expr: >
+          sum(count_over_time({stack="tpa"} | line_format "{{.ssn}}" [30s]))

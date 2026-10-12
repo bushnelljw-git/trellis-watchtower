@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut5-digits",
+  "title": "Mutation: an identifier's digits captured and unwrapped",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "digits",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "max(max_over_time({stack=\"tpa\"} | regexp `\"member_number\":\"?(?P<n>[0-9]+)` | unwrap n [24h]))"
+        }
+      ]
+    }
+  ]
+}

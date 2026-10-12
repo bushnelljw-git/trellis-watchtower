@@ -1,17 +1,172 @@
 {
-  "uid": "tw-good",
-  "title": "Good fixture: near misses the lint must allow",
-  "panels": [
+ "uid": "tw-good",
+ "title": "Good fixture: near misses the lint must allow",
+ "panels": [
+  {
+   "type": "timeseries",
+   "title": "Tenants not ok",
+   "datasource": {
+    "type": "loki",
+    "uid": "loki"
+   },
+   "targets": [
     {
-      "type": "timeseries",
-      "title": "Tenants not ok",
-      "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [
-        {"refId": "A", "datasource": {"type": "loki", "uid": "loki"},
-         "expr": "sum by (job) (sum_over_time({service=\"tpa-jobs-drains\"} | json n=\"tenants_failed\" | unwrap n [5m]))",
-         "legendFormat": "{{job}} sidecar"}
-      ]
+     "refId": "A",
+     "datasource": {
+      "type": "loki",
+      "uid": "loki"
+     },
+     "expr": "sum by (job) (sum_over_time({service=\"tpa-jobs-drains\"} | json n=\"tenants_failed\" | unwrap n [5m]))",
+     "legendFormat": "{{job}} sidecar"
     }
-  ],
-  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}}]}
+   ]
+  },
+  {
+   "type": "canvas",
+   "title": "System map",
+   "datasource": {
+    "type": "datasource",
+    "uid": "-- Mixed --"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "min by (service) (probe_success{job=\"blackbox\"})",
+     "legendFormat": "{{service}}"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "loki",
+      "uid": "loki"
+     },
+     "expr": "(min(min_over_time({stack=\"tpa\", service=\"connectors\"} | outcome=\"pass\" | label_format age_s=`{{ sub (unixEpoch now) (unixEpoch __timestamp__) }}` | unwrap age_s [1h])) or vector(7200))"
+    }
+   ],
+   "options": {
+    "root": {
+     "type": "frame",
+     "elements": [
+      {
+       "type": "rectangle",
+       "name": "records",
+       "config": {
+        "text": {
+         "mode": "field",
+         "field": "records"
+        }
+       },
+       "links": [
+        {
+         "title": "Open records-service",
+         "url": "/d/tw-records",
+         "oneClick": true
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "type": "table",
+   "title": "Grouped, created and parsed labels that are on the list",
+   "datasource": {
+    "type": "datasource",
+    "uid": "-- Mixed --"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "uid": "prometheus"
+     },
+     "expr": "label_replace(max by (stack, service, probe) (probe:state) * on (stack, service, probe) group_left (code) count_values by (stack, service, probe) (\"code\", probe_http_status_code{job=\"blackbox\"}), \"dash\", \"tw-auth\", \"service\", \"auth\")",
+     "legendFormat": "{{service}} {{probe}} {{code}}"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "uid": "prometheus"
+     },
+     "expr": "(stack:probe_success:max_over_time1h == 0) or absent(up{job=\"blackbox\"})"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "uid": "loki"
+     },
+     "expr": "# p95 per service\nquantile_over_time(0.95, {stack=\"tpa\", service=\"tpa-api\"} | json d=\"duration_ms\" | __error__=\"\" | unwrap d [5m]) by (service)"
+    },
+    {
+     "refId": "D",
+     "datasource": {
+      "type": "__expr__",
+      "uid": "__expr__"
+     },
+     "type": "math",
+     "expression": "$A + $B"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "displayName": "${__field.labels.service}",
+     "noValue": "? Can't tell"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "text",
+   "title": "Prose may name what is stripped",
+   "options": {
+    "mode": "markdown",
+    "content": "Alloy strips tid, sid and tenant_id before storage."
+   }
+  },
+  {
+   "type": "stat",
+   "title": "connectors counter",
+   "datasource": {
+    "type": "loki",
+    "uid": "loki"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "loki",
+      "uid": "loki"
+     },
+     "expr": "max(last_over_time({stack=\"tpa\", service=\"connectors\"} | outcome=\"pass\" | regexp `connectors_dead_total=(?P<n>[0-9]+)` | unwrap n [5m]))"
+    }
+   ]
+  }
+ ],
+ "annotations": {
+  "list": [
+   {
+    "builtIn": 1,
+    "datasource": {
+     "type": "grafana",
+     "uid": "-- Grafana --"
+    }
+   },
+   {
+    "name": "probe failures",
+    "enable": true,
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "expr": "max by (stack, service) (probe_success{job=\"blackbox\"} == 0)",
+    "titleFormat": "{{service}} failing",
+    "tagKeys": "stack, service"
+   }
+  ]
+ }
 }

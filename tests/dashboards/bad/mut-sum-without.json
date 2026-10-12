@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut-without",
+  "title": "Mutation: `sum without` over a bare `| logfmt`",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "without",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum without (service) (count_over_time({stack=\"tpa\"} | logfmt [24h]))"
+        }
+      ]
+    }
+  ]
+}

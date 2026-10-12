@@ -16,6 +16,9 @@
   labels: {stack: tpa, service: auth, probe: ready, __param_module: http_ready}
 - targets: ["http://host.docker.internal:8220/ready"]
   labels: {stack: tpa, service: records, probe: ready, __param_module: http_ready}
+# The same endpoint, asked only about tpa-db: monitoring has no login to it (blackbox/blackbox.yml http_records_db).
+- targets: ["http://host.docker.internal:8220/ready"]
+  labels: {stack: tpa, service: records, probe: db, __param_module: http_records_db}
 
 # ---- network (host process :8100) ----
 - targets: ["http://host.docker.internal:8100/api/v1/health"]

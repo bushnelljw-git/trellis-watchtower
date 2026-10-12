@@ -1,0 +1,21 @@
+{
+  "uid": "tw-mut5-lib",
+  "title": "Mutation: a library panel, whose queries live in Grafana's database",
+  "panels": [
+    {
+      "type": "table",
+      "title": "library",
+      "id": 901,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "libraryPanel": {
+        "uid": "lib1",
+        "name": "lib"
+      }
+    }
+  ]
+}

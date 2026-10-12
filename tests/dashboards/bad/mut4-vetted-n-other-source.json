@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut4-nsrc",
+  "title": "Mutation: the vetted sum template fed from a member number",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "n source",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({stack=\"tpa\"} | json f=\"member_number\", p=\"zero\", k=\"zero\" | label_format n=`{{ add .f .p .k }}` | unwrap n [1h]))"
+        }
+      ]
+    }
+  ]
+}

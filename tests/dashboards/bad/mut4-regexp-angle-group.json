@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut4-angle",
+  "title": "Mutation: a Go-style (?<name>) capture beside a digits one",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "angle",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (where) (sum_over_time({stack=\"tpa\"} | regexp `(?P<n>[0-9]+)(?<where>[^,]+)` | unwrap n [1h]))"
+        }
+      ]
+    }
+  ]
+}

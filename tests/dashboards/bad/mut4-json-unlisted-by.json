@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut4-who",
+  "title": "Mutation: a json field grouped by an unlisted label",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "who",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (who) (count_over_time({stack=\"tpa\"} | json who=\"email\" [1h]))"
+        }
+      ]
+    }
+  ]
+}

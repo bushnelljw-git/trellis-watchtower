@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut3-msgname",
+  "title": "Mutation: round 2's looser message-name template",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "loose",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (msg_name) (count_over_time({stack=\"tpa\"} | json m1=\"msg\", m2=\"message\" | label_format msg_name=`{{ $m := or .m1 .m2 }}{{ if eq (regexReplaceAll \"^[A-Za-z][A-Za-z _]{0,59}$\" $m \"\") \"\" }}{{ $m }}{{ else }}other{{ end }}` [24h]))"
+        }
+      ]
+    }
+  ]
+}

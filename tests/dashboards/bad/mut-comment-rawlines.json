@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut-comment",
+  "title": "Mutation: a comment hides a raw-lines query",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "comment",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "# all\n{stack=\"tpa\"} | json"
+        }
+      ]
+    }
+  ]
+}

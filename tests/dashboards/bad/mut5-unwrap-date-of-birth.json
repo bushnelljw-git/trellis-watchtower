@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut5-dob",
+  "title": "Mutation: a date of birth unwrapped as a number",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "dob",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.5, {stack=\"tpa\"} | json d=\"date_of_birth\" | __error__=\"\" | unwrap d [24h]) by (service)"
+        }
+      ]
+    }
+  ]
+}

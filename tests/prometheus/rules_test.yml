@@ -3,6 +3,7 @@
 
 rule_files:
   - ../../prometheus/rules/local.yml
+  - ../../prometheus/rules/home.yml
 
 evaluation_interval: 1m
 
@@ -135,3 +136,114 @@ tests:
             exp_annotations:
               summary: "postgres forge: exporter cannot connect"
               description: "pg_up is 0 for the forge database, which was reachable within the last hour."
+
+  # probe:state. 30 s probes: a check fails only after three failures in a row;
+  # tpa is never "not running"; a stack already down at start is "not running";
+  # a 2xx db body saying the database is down is degraded; a 503 is down.
+  - interval: 30s
+    input_series:
+      # tpa: auth loses two probes (still up), then three in a row (down, no answer).
+      - series: 'probe_success{job="blackbox",instance="a",stack="tpa",service="auth",probe="ready"}'
+        values: '1x9 0 0 1x9 0x9'
+      - series: 'probe_http_status_code{job="blackbox",instance="a",stack="tpa",service="auth",probe="ready"}'
+        values: '200x9 0 0 200x9 0x9'
+      # tpa: records answers 503 from the start (its database or revocations gone): down, never "not running".
+      - series: 'probe_success{job="blackbox",instance="r",stack="tpa",service="records",probe="ready"}'
+        values: '0x29'
+      - series: 'probe_http_status_code{job="blackbox",instance="r",stack="tpa",service="records",probe="ready"}'
+        values: '503x29'
+      # tpa: tpa-api down from the start with no answer: down, not grey.
+      - series: 'probe_success{job="blackbox",instance="t",stack="tpa",service="tpa-api",probe="health"}'
+        values: '0x29'
+      - series: 'probe_http_status_code{job="blackbox",instance="t",stack="tpa",service="tpa-api",probe="health"}'
+        values: '0x29'
+      # network: never answered since Prometheus started: not running.
+      - series: 'probe_success{job="blackbox",instance="n",stack="network",service="network-engine",probe="db"}'
+        values: '0x29'
+      - series: 'probe_http_status_code{job="blackbox",instance="n",stack="network",service="network-engine",probe="db"}'
+        values: '0x29'
+      # forge: running, then its body reports the database down with a 200: degraded.
+      - series: 'probe_success{job="blackbox",instance="f",stack="forge",service="forge-engine",probe="db"}'
+        values: '1x9 0x19'
+      - series: 'probe_http_status_code{job="blackbox",instance="f",stack="forge",service="forge-engine",probe="db"}'
+        values: '200x29'
+    promql_expr_test:
+      # 5m30s: auth has lost two probes (5m, 5m30s): still up.
+      - expr: probe:state{service="auth"}
+        eval_time: 5m30s
+        exp_samples:
+          - labels: 'probe:state{job="blackbox",instance="a",stack="tpa",service="auth",probe="ready"}'
+            value: 3
+      - expr: probe:state
+        eval_time: 14m30s
+        exp_samples:
+          - labels: 'probe:state{job="blackbox",instance="a",stack="tpa",service="auth",probe="ready"}'
+            value: 1
+          - labels: 'probe:state{job="blackbox",instance="r",stack="tpa",service="records",probe="ready"}'
+            value: 1
+          - labels: 'probe:state{job="blackbox",instance="t",stack="tpa",service="tpa-api",probe="health"}'
+            value: 1
+          - labels: 'probe:state{job="blackbox",instance="n",stack="network",service="network-engine",probe="db"}'
+            value: 0
+          - labels: 'probe:state{job="blackbox",instance="f",stack="forge",service="forge-engine",probe="db"}'
+            value: 2
+
+  # home.yml: auth's not_ready lines (recorded by Loki's ruler every 30 s) raise AuthNotReady after 1 minute, and it
+  # clears 2 minutes after the last one.
+  - interval: 30s
+    input_series:
+      - series: 'tw:auth_not_ready:sum30s{reason_code="database"}'
+        values: '0x9 1x9 0x20'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: AuthNotReady
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: AuthNotReady
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              reason_code: database
+            exp_annotations:
+              summary: "auth is not ready (database)"
+              description: "auth's /ready refused with this reason in the last 2 minutes, for 1 minute (from its not_ready log lines, counted by Loki's ruler)."
+      - eval_time: 13m
+        alertname: AuthNotReady
+        exp_alerts: []
+
+  # home.yml: connectors' last pass line is at 5m; its red limit is 120 s, so it is stale from 7m and WorkerStale
+  # fires from 8m. The other workers keep reporting. When no line reaches Loki (the heartbeat counts 0 from 15m) and
+  # when the ruler stops writing (no heartbeat from 20m), the alert goes quiet: the page says it cannot tell instead.
+  - interval: 30s
+    input_series:
+      - series: 'tw:loki_rules:heartbeat'
+        values: '5x29 0x10 _x20'
+      - series: 'tw:worker_ok_ms:max{service="connectors"}'
+        values: '0+30000x10 _x50'
+      - series: 'tw:worker_ok_ms:max{service="crm_transitions"}'
+        values: '0+30000x60'
+      - series: 'tw:worker_ok_ms:max{service="outbox_dispatch"}'
+        values: '0+30000x60'
+      - series: 'tw:worker_ok_ms:max{service="auth-publisher"}'
+        values: '0+30000x60'
+      - series: 'tw:worker_ok_ms:max{service="auth-sweeper"}'
+        values: '0+30000x60'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: WorkerStale
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: WorkerStale
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              service: connectors
+            exp_annotations:
+              summary: "connectors has not reported for 5m 0s"
+              description: "No INFO tick or summary line from this worker within its limit (the home page's red), for 1 minute. Quiet while Loki's rules are not arriving: the page says it cannot tell instead."
+      - eval_time: 17m
+        alertname: WorkerStale
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: WorkerStale
+        exp_alerts: []

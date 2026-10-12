@@ -35,6 +35,64 @@ class DashboardLintTest(unittest.TestCase):
             "uid `tw-bad` is already used",
             # A cloud datasource has no place in a local dashboard.
             "unknown datasource uid `cloud-app` (allowed: loki, prometheus)",
+            # No panel reads raw log lines; a Canvas card's field is checked like a query.
+            'panel "lines panel": a `logs` panel shows raw log lines',
+            'panel "lines in a table": query B: is a log query (it returns raw lines)',
+            'panel "card reads an id": references the forbidden field `tenant_id`',
+            # The nine holes round 1's evaluators found by mutating the home page.
+            'mut-canvas-tid.json: panel "map": references the forbidden field `tid`',
+            'mut-comment-rawlines.json: panel "comment": query A: is a log query',
+            'mut-datalink-tid.json: panel "datalink": references the forbidden field `tid`',
+            'mut-json-explode.json: panel "explode": query A: a bare `| json` turns every field',
+            'mut-json-explode.json: panel "explode": query A: a selector is not inside an aggregation',
+            'mut-legend-instance.json: panel "instance legend": query A: the legend names the label `instance`',
+            'mut-loki-no-type.json: panel "no type": query A: is a log query',
+            'mut-novalue-tenant.json: panel "novalue": references the forbidden field `tenant`',
+            'mut-panellink-reqid.json: panel "panel link": references the forbidden field `request_id`',
+            'mut-sum-without.json: panel "without": query A: uses `without`',
+            'mut-sum-without.json: panel "without": query A: a bare `| logfmt`',
+            # Round 2's evaluators' mutations, and the copy-into-a-label rules (5c, 5d).
+            'mut3-annotation-raw.json: annotation "lines" (expr): is a log query',
+            'mut3-hidden-raw.json: panel "hidden": query ZZ: is a log query',
+            'mut3-paren-selector.json: panel "paren": query A: a selector is not inside an aggregation',
+            'mut3-loki-string-ds.json: panel "string ds": query A: is a log query',
+            'mut3-bare-field-labels.json: panel "bare labels": names `__field.labels` without a key',
+            'mut3-label-replace-source.json: panel "address": query A: `label_replace` reads the label `__address__`',
+            'mut3-line-format.json: panel "line_format": query A: uses `| line_format`',
+            'mut3-regexp-capture.json: panel "regexp": query A: uses a `| regexp` that is not one of VETTED_REGEXPS',
+            'mut3-pattern.json: panel "pattern": query A: uses `| pattern`',
+            'mut3-template-index.json: panel "index": query A: `| label_format where=...` is not one of VETTED',
+            'mut3-label-format-rename.json: panel "rename": query A: `| label_format where=...` is not one of VETTED',
+            'mut3-json-copy.json: panel "json copy": query A: `| json where="email"` copies another field',
+            'mut3-msg-name-loose.json: panel "loose": query A: `| label_format msg_name=...` is not one of VETTED',
+            'mut3-sql-expression.json: panel "sql": query Q: a `sql` expression',
+            # Round 3's evaluators' bypasses.
+            'mut4-annotation-target-expr.json: annotation "x" (target.expr): is a log query',
+            'mut4-annotation-uid-only.json: annotation "y" (expr): is a log query',
+            'mut4-regexp-angle-group.json: panel "angle": query A: uses a `| regexp` that is not one of VETTED',
+            'mut4-regexp-unwrap-elsewhere.json: panel "elsewhere": query A: uses a `| regexp` that is not one of VETTED',
+            'mut4-regexp-unwrap-elsewhere.json: panel "elsewhere": query A: `| unwrap where` reads a number that is not',
+            'mut4-regexp-second-group.json: panel "two groups": query A: uses a `| regexp` that is not one of VETTED',
+            'mut4-vetted-msg-other-source.json: panel "msg source": query A: `| label_format msg_name=...` reads `m1`, which must be set once',
+            'mut4-vetted-n-other-source.json: panel "n source": query A: `| label_format n=...` reads `f`',
+            'mut4-logfmt-operation.json: panel "logfmt op": query A: `| logfmt operation="member"` copies',
+            'mut4-json-unlisted-by.json: panel "who": query A: `by (...)` names the label `who`',
+            # Round 4's evaluators' bypasses: an unwrapped identifier, a helper set twice, a library panel, an
+            # annotation printing the instance.
+            'mut5-library-panel.json: panel "library": is a library panel (`libraryPanel`)',
+            'mut5-logfmt-then-json-pin.json: panel "pin twice": query A: `| label_format msg_name=...` reads `m1`, '
+            'which must be set once',
+            'mut5-annotation-titleformat.json: annotation "z": `titleFormat` names the label `instance`',
+            'mut5-annotation-titleformat.json: annotation "z": `tagKeys` names the label `instance`',
+            'mut5-unwrap-date-of-birth.json: panel "dob": query A: `| unwrap d` reads a number that is not one of '
+            'VETTED_UNWRAPS',
+            'mut5-unwrap-member-number.json: panel "member number": query A: `| unwrap x` reads a number that is not',
+            'mut5-regexp-digits-identifier.json: panel "digits": query A: uses a `| regexp` that is not one of VETTED',
+            # Loki's recording rules are queries too.
+            'mut5-loki-rules.yml:7: is a log query',
+            'mut5-loki-rules.yml:9: `by (...)` names the label `member`',
+            'mut5-loki-rules.yml:13: a rule label `principal` is not on LOCAL_LABELS',
+            'mut5-loki-rules.yml:15: an expr must be one double-quoted line',
         ]:
             self.assertIn(expected, out)
 

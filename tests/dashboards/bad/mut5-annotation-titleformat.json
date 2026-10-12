@@ -1,0 +1,20 @@
+{
+  "uid": "tw-mut5-ann",
+  "title": "Mutation: an annotation whose title and tags print the instance",
+  "panels": [],
+  "annotations": {
+    "list": [
+      {
+        "name": "z",
+        "enable": true,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "expr": "max by (service) (probe_success{job=\"blackbox\"})",
+        "titleFormat": "{{instance}}",
+        "tagKeys": "service,instance"
+      }
+    ]
+  }
+}

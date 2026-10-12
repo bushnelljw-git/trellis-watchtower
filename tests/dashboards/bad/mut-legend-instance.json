@@ -1,0 +1,25 @@
+{
+  "uid": "tw-mut-instance",
+  "title": "Mutation: a legend shows `instance`",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "instance legend",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max by (service) (probe_success)",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    }
+  ]
+}

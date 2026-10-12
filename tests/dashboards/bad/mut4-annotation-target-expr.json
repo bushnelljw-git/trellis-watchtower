@@ -1,0 +1,22 @@
+{
+  "uid": "tw-mut4-anntarget",
+  "title": "Mutation: an annotation whose query sits under `target`",
+  "panels": [],
+  "annotations": {
+    "list": [
+      {
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "enable": true,
+        "name": "x",
+        "target": {
+          "refId": "Anno",
+          "expr": "{stack=\"tpa\"} | level=\"ERROR\"",
+          "queryType": "range"
+        }
+      }
+    ]
+  }
+}

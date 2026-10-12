@@ -33,6 +33,34 @@ scrape_configs:
       - target_label: __address__
         replacement: tw-blackbox:9115
 
+  # records' /ready asked whether it answered 503 saying "database": false (blackbox/blackbox.yml
+  # http_records_db_down). A reason, not a check: its own job, so probe:state, the alerts and "Checks loaded" never
+  # count it; the home page's tpa-db card reads it to say "reported down" rather than "unknown".
+  - job_name: blackbox-reason
+    metrics_path: /probe
+    params:
+      module: [http_records_db_down]
+    static_configs:
+      - targets: ["http://host.docker.internal:8220/ready"]
+        labels: {stack: tpa, service: records, probe: db-down}
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: tw-blackbox:9115
+
+  # The watchtower's own parts, so the home page can say when it cannot see
+  # (`up` 0 for loki or alloy means no new log lines reach the dashboards).
+  - job_name: loki
+    static_configs:
+      - targets: ["tw-loki:3100"]
+
+  - job_name: alloy
+    static_configs:
+      - targets: ["tw-alloy:12345"]
+
   # Profile `db` only. Without it these two targets read up=0; no alert
   # depends on `up` for them, only on pg_up.
   - job_name: postgres

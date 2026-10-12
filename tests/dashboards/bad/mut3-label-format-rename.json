@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut3-rename",
+  "title": "Mutation: label_format renames a field into `where`",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "rename",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (where) (count_over_time({stack=\"tpa\"} | json email=\"email\" | label_format where=email [24h]))"
+        }
+      ]
+    }
+  ]
+}

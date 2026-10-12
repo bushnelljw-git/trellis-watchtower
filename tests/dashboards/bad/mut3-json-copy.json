@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut3-jsoncopy",
+  "title": "Mutation: a json extraction copies another field into `where`",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "json copy",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (where) (count_over_time({stack=\"tpa\"} | json where=\"email\" [24h]))"
+        }
+      ]
+    }
+  ]
+}

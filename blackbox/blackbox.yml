@@ -49,6 +49,38 @@ modules:
       fail_if_body_not_matches_regexp:
         - '"status"\s*:\s*"ok"'
 
+  # records /ready -> 200 {"status":"ready","checks":{"database":true,"revocations":true,"jwks":true}},
+  # or 503 {"status":"starting","checks":{...}} naming what is missing (records/app.py ready()). This
+  # probe asks one question only, the database: a 503 whose body still says "database": true (the
+  # revocations or JWKS missing) passes; "database": false fails, with the 503 kept as its status.
+  http_records_db:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      follow_redirects: false
+      valid_status_codes: [200, 503]
+      fail_if_body_matches_regexp:
+        - '"database"\s*:\s*false'
+      fail_if_body_not_matches_regexp:
+        - '"database"\s*:\s*true'
+
+  # The same endpoint asked one narrower question, for the home page's tpa-db card: did records answer 503 and say
+  # "database": false? Passes only then. Not a check (prometheus.yml scrapes it as job blackbox-reason, which
+  # probe:state and the alerts never read): it tells "reported down" apart from "unknown" (any other status, no
+  # answer, a body without the field) when the db check above fails.
+  http_records_db_down:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      follow_redirects: false
+      valid_status_codes: [503]
+      fail_if_body_not_matches_regexp:
+        - '"database"\s*:\s*false'
+
   # https://localhost:4310/tpa/release.json -> {"release":"<id>","configuration":"local"}
   # web-tls serves the site `https://localhost:4310` only, so the probe sends
   # SNI and Host for localhost even though it dials host.docker.internal.

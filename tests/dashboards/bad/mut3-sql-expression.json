@@ -1,0 +1,34 @@
+{
+  "uid": "tw-mut3-sql",
+  "title": "Mutation: an SQL server-side expression",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "sql",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "T",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(probe_success)",
+          "hide": true
+        },
+        {
+          "refId": "Q",
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "type": "sql",
+          "expression": "SELECT * FROM T"
+        }
+      ]
+    }
+  ]
+}

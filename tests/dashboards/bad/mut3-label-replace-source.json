@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut3-lrsrc",
+  "title": "Mutation: label_replace copies a target's address into `service`",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "address",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max by (service) (label_replace(probe_success{job=\"blackbox\"}, \"service\", \"$1\", \"__address__\", \"(.*)\"))"
+        }
+      ]
+    }
+  ]
+}

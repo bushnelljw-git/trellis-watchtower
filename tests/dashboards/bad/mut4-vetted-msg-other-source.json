@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut4-msgsrc",
+  "title": "Mutation: the vetted message template fed from other fields",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "msg source",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (msg_name, reason_code) (count_over_time({stack=\"tpa\"} | json m1=\"member_name\", m2=\"subject\", rc=\"last_name\" | label_format msg_name=`{{ $m := or .m1 .m2 }}{{ if eq (regexReplaceAll \"^[a-z][a-z0-9_ ]{0,59}$\" $m \"\") \"\" }}{{ $m }}{{ else }}other{{ end }}`, reason_code=`{{ if eq (regexReplaceAll \"^[A-Za-z][A-Za-z_]{0,39}$\" .rc \"\") \"\" }}{{ .rc }}{{ else }}other{{ end }}` [1h]))"
+        }
+      ]
+    }
+  ]
+}

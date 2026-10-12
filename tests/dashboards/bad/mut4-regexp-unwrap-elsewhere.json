@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut4-unwrapelse",
+  "title": "Mutation: the regexp's unwrap is in another pipeline",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "elsewhere",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (where) (count_over_time({stack=\"tpa\"} | regexp `\"t.d\":\"?(?P<where>[0-9]+)` [1h])) or sum(sum_over_time({stack=\"tpa\"} | regexp `(?P<where>[0-9]+)` | unwrap where [1h]))"
+        }
+      ]
+    }
+  ]
+}

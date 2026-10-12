@@ -1,0 +1,18 @@
+{
+  "uid": "tw-mut3-strds",
+  "title": "Mutation: a raw-lines query whose datasource is the string `loki`",
+  "panels": [
+    {
+      "type": "table",
+      "title": "string ds",
+      "datasource": "loki",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": "loki",
+          "expr": "{stack=\"tpa\"}"
+        }
+      ]
+    }
+  ]
+}

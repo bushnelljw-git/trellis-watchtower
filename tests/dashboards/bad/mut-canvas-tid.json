@@ -1,0 +1,41 @@
+{
+  "uid": "tw-mut-canvas-tid",
+  "title": "Mutation: a Canvas card reads `tid`",
+  "panels": [
+    {
+      "type": "canvas",
+      "title": "map",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(probe_success)"
+        }
+      ],
+      "options": {
+        "root": {
+          "type": "frame",
+          "elements": [
+            {
+              "type": "text",
+              "name": "t",
+              "config": {
+                "text": {
+                  "mode": "field",
+                  "field": "tid"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

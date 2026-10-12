@@ -1,0 +1,27 @@
+{
+  "uid": "tw-bad-raw-lines",
+  "title": "Bad fixture: panels that read raw log lines, and a Canvas card that reads an id",
+  "panels": [
+    {
+      "type": "logs",
+      "title": "lines panel",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "sum(count_over_time({stack=\"tpa\"}[5m]))"}]
+    },
+    {
+      "type": "table",
+      "title": "lines in a table",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "B", "expr": "  {stack=\"tpa\", service=\"records\"} | level=\"ERROR\""}]
+    },
+    {
+      "type": "canvas",
+      "title": "card reads an id",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "max(probe_success)"}],
+      "options": {"root": {"type": "frame", "elements": [
+        {"type": "metric-value", "name": "card", "config": {"text": {"mode": "field", "field": "tenant_id"}}}
+      ]}}
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "uid": "tw-mut-notype",
+  "title": "Mutation: a raw-lines query whose datasource names only its uid",
+  "panels": [
+    {
+      "type": "table",
+      "title": "no type",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "uid": "loki"
+          },
+          "expr": "{stack=\"tpa\"} |= \"ERROR\""
+        }
+      ]
+    }
+  ]
+}
