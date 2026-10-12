@@ -547,6 +547,18 @@ class Crm(Case):
                 self.assertNotIn("crm_tenant", fake.routes(), "nothing from a bad id is ever sent")
                 self.assertEqual(fake.routes()[-1], "crm_logout")
 
+    def test_a_widened_login_trips_the_wire_and_still_signs_out(self):
+        """Exactly one business, as a plain member with no book, or the run fails: a
+        widened robot is one whose leaked secret reads more than it did."""
+        for behaviour in ("two_businesses", "admin", "partner", "lattice_role", "no_partner_field"):
+            with self.subTest(behaviour=behaviour), fakes.Fake(fail={"crm_me": behaviour},
+                                                               clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_journey("crm", self.env(fake, SYNTHETICS_CRM_ENABLED="1"))
+                self.assert_failed(line, code, step="me", code="shape", status_class="2xx")
+                self.assertNotIn("crm_tenant", fake.routes())
+                self.assertEqual(fake.routes()[-1], "crm_logout")
+                self.assertEqual(fake.requests[-1]["authorization"], f"Bearer {fakes.CRM_TOKEN}")
+
     def test_a_login_that_lost_its_second_factor_fails_and_ends_the_session_it_was_handed(self):
         with fakes.Fake(fail={"crm_login": "password_only"}, clock=lambda: FIXED_NOW) as fake:
             line, code = self.run_journey("crm", self.env(fake, SYNTHETICS_CRM_ENABLED="1"))

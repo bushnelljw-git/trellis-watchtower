@@ -449,11 +449,27 @@ def crm(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> Non
 
 
 def _crm_business(me: dict, status: int | None) -> str:
-    """The first business `/api/v1/auth/me` lists, by id. The synthetic login has
-    exactly one; none, or an id that is not a UUID, is the CRM's `shape` failure."""
+    """The one business `/api/v1/auth/me` lists, by id, as long as the login is
+    still exactly what it was made to be.
+
+    **A tripwire, not only a parser.** The CRM's synthetic login is one active
+    `member` of one business with no partner row (its `app/synthetic_login.py`;
+    the database refuses anything wider, migration 920261012T1058). Anything
+    else - a second business, another role, a partner, a Lattice role - means
+    what a leak of its secret could READ has grown, so the run fails (`shape`
+    at `me`, WARNING) rather than passing over it. The id must also be a UUID:
+    it is the one value J3 copies from a response into a request."""
     memberships = me.get("memberships")
-    first = memberships[0] if isinstance(memberships, list) and memberships else None
-    tenant = first.get("tenant_id") if isinstance(first, dict) else None
+    only = memberships[0] if isinstance(memberships, list) and len(memberships) == 1 else None
+    if (
+        not isinstance(only, dict)
+        or only.get("role") != "member"
+        or "partner_id" not in only
+        or only.get("partner_id") is not None
+        or only.get("roles") not in (None, [])
+    ):
+        raise StepFailure("shape", status)
+    tenant = only.get("tenant_id")
     if not isinstance(tenant, str) or not TENANT_ID.fullmatch(tenant):
         raise StepFailure("shape", status)
     return tenant

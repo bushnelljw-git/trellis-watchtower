@@ -27,7 +27,9 @@ cookies included, with a body nested 100,000 deep); "drop" (close the connection
 "redirect_google"; "redirect_other"; "iap_refuse"; "not_json"; "no_base_href";
 "enrol"; "no_cookies"; "password_only" (the CRM's login hands back a token with
 no second factor); "no_memberships" and "bad_tenant" (the CRM's me names no
-business, or one whose id is not a UUID).
+business, or one whose id is not a UUID); "two_businesses", "admin", "partner",
+"lattice_role" and "no_partner_field" (the login has been widened, or me no
+longer says whether it has a book).
 """
 
 from __future__ import annotations
@@ -392,6 +394,17 @@ class Fake:
             memberships = []
         elif behaviour == "bad_tenant":
             memberships[0]["tenant_id"] = "sentinel\r\nX-Injected: 1"
+        elif behaviour == "two_businesses":
+            memberships.append({"tenant_id": "00000000-0000-4000-8000-5e471e100002",
+                                "tenant_name": "sentinel", "role": "member", "partner_id": None})
+        elif behaviour == "admin":
+            memberships[0]["role"] = "admin"
+        elif behaviour == "partner":
+            memberships[0]["partner_id"] = "00000000-0000-4000-8000-5e471e100003"
+        elif behaviour == "lattice_role":
+            memberships[0]["roles"] = ["broker"]
+        elif behaviour == "no_partner_field":
+            del memberships[0]["partner_id"]
         self.json(h, 200, {"user": {"email": EMAIL}, "memberships": memberships})
 
     def _crm_tenant(self, h, record, body, behaviour) -> None:
