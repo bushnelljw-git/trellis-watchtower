@@ -39,21 +39,30 @@ BUILTIN = {
     "run.googleapis.com/job/completed_execution_count": ({"result"}, "counter"),
     "cloudsql.googleapis.com/database/up": (set(), "gauge"),
     "cloudsql.googleapis.com/database/disk/utilization": (set(), "gauge"),
+    "cloudsql.googleapis.com/database/cpu/utilization": (set(), "gauge"),
+    "cloudsql.googleapis.com/database/memory/utilization": (set(), "gauge"),
+    "cloudsql.googleapis.com/database/postgresql/num_backends": (set(), "gauge"),
     "monitoring.googleapis.com/uptime_check/check_passed": (set(), "bool"),
 }
 # Written by Google for objects tpa-platform's monitoring module makes, not named in the catalogue's YAML: the uptime
-# checks (modules/monitoring/main.tf, google_monitoring_alert_policy.uptime reads it; docs/infra/monitoring.md §8).
-BUILTIN_FROM_THE_MODULE = {"monitoring.googleapis.com/uptime_check/check_passed"}
+# checks, public and private (modules/monitoring/main.tf, google_monitoring_alert_policy.uptime and .private read it;
+# docs/infra/monitoring.md §8), and each Cloud SQL instance's CPU, memory and connections (the module's per-instance
+# policies at 0.8 and 0.95 CPU, 0.9 memory, 80% and 95% of max_connections).
+BUILTIN_FROM_THE_MODULE = {"monitoring.googleapis.com/uptime_check/check_passed",
+                           "cloudsql.googleapis.com/database/cpu/utilization",
+                           "cloudsql.googleapis.com/database/memory/utilization",
+                           "cloudsql.googleapis.com/database/postgresql/num_backends"}
 RESOURCE_LABELS = {"cloud_run_revision": {"service_name"}, "cloud_run_job": {"job_name"},
                    "cloudsql_database": {"database_id"}, "uptime_url": {"host"}, "cloud_scheduler_job": {"job_id"},
-                   "audited_resource": set()}
+                   "audited_resource": set(), "servicedirectory_service": {"service_name"}}
 # A distribution (a latency, a lag, a backlog) is read through a percentile or its mean; a counter by its count.
 DISTRIBUTION_ALIGNERS = {"ALIGN_PERCENTILE_99", "ALIGN_PERCENTILE_95", "ALIGN_PERCENTILE_50", "ALIGN_PERCENTILE_05",
                          "ALIGN_MEAN"}
 COUNTER_ALIGNERS = {"ALIGN_DELTA", "ALIGN_RATE", "ALIGN_SUM", "ALIGN_COUNT"}
 ALIGNERS = {"counter": COUNTER_ALIGNERS, "distribution": DISTRIBUTION_ALIGNERS,
-            "gauge": {"ALIGN_MAX", "ALIGN_MIN", "ALIGN_MEAN"},
-            "bool": {"ALIGN_FRACTION_TRUE", "ALIGN_COUNT_TRUE", "ALIGN_COUNT_FALSE"}}
+            # ALIGN_COUNT: how many points arrived, whatever they said (the home's "reporting" rows).
+            "gauge": {"ALIGN_MAX", "ALIGN_MIN", "ALIGN_MEAN", "ALIGN_COUNT"},
+            "bool": {"ALIGN_FRACTION_TRUE", "ALIGN_COUNT_TRUE", "ALIGN_COUNT_FALSE", "ALIGN_COUNT"}}
 
 
 def promql_name(metric_type: str) -> str:
@@ -124,7 +133,13 @@ class CatalogueTest(unittest.TestCase):
     def test_the_reader_finds_the_catalogue(self):
         # Known facts of the catalogue, so a reader that silently reads nothing fails here.
         self.assertEqual(set(self.catalogue.roles), {"app", "phi", "crm", "cc"})
-        self.assertEqual(set(self.catalogue.shared), {"run_system_errors", "sql_proxy_errors"})
+        self.assertEqual(set(self.catalogue.shared), {"run_system_errors", "sql_proxy_errors", "sql_restarts",
+                                                      "sql_backup_failures", "run_oom_kills", "run_crash_exits",
+                                                      "secret_version_changes", "kms_version_changes"})
+        # The synthetic journeys' section is read, as the app role's (their result lines land in the app project).
+        self.assertEqual(set(self.catalogue.synthetics), {"synthetic_results"})
+        self.assertEqual(self.catalogue.roles["app"]["synthetic_results"]["labels"],
+                         {"job", "outcome", "code", "status_class"})
         self.assertEqual(self.catalogue.roles["phi"]["errors"]["labels"],
                          {"service", "class", "operation", "code", "sqlstate"})
         self.assertTrue(self.catalogue.roles["app"]["tpa_api_latency"]["distribution"])

@@ -94,9 +94,21 @@ RUN_INSTANCES = "run.googleapis.com/container/instance_count"
 RUN_JOBS = "run.googleapis.com/job/completed_execution_count"
 SQL_UP = "cloudsql.googleapis.com/database/up"
 SQL_DISK = "cloudsql.googleapis.com/database/disk/utilization"
+SQL_CPU = "cloudsql.googleapis.com/database/cpu/utilization"
+SQL_MEMORY = "cloudsql.googleapis.com/database/memory/utilization"
+SQL_BACKENDS = "cloudsql.googleapis.com/database/postgresql/num_backends"
 UPTIME = "monitoring.googleapis.com/uptime_check/check_passed"
 REV, JOB, SQL, URL, SCHED, AUDITED = ("cloud_run_revision", "cloud_run_job", "cloudsql_database", "uptime_url",
                                       "cloud_scheduler_job", "audited_resource")
+PRIVATE = "servicedirectory_service"   # a private uptime check (D-149: auth's and tpa-api's /ready, from inside)
+# The home's status colours, as on the local home page: up is teal, not green (green and red sit 4.1 apart for a
+# deuteranope, teal and red 13+); red for a failure, amber for "look", and the base text colour for no answer.
+TEAL, RED, AMBER = "#14b8a6", "#d03b3b", "#fab219"
+# Each synthetic journey's Cloud Run job (tpa-platform infra/envs/beta/synthetics.tf, local.synthetic_journeys) and
+# what it proves.
+JOURNEYS = (("synthetics-staff-sign-in", "J1 staff sign-in", "the portal, auth and a desk read that reaches tpa-db"),
+            ("synthetics-ops-desk", "J2 ops desk", "the ops host, auth and the live queue in svc-ops"),
+            ("synthetics-crm", "J3 CRM sign-in", "the CRM's own sign-in"))
 AUTO = "grafana-auto"   # one aligned point per panel interval (at least the panel's 1m)
 
 
@@ -185,6 +197,11 @@ def db_up(instance, period=AUTO):
 def db_disk(instance, period=AUTO):
     return q(SQL_DISK, SQL, align="ALIGN_MEAN", period=period, reduce="REDUCE_MAX", by=("database_id",),
              name=f"{instance} disk", database_id=f"*:{instance}")
+
+
+def db_resource(metric, instance, unit_name, period=AUTO, align="ALIGN_MEAN", reduce="REDUCE_MAX"):
+    return q(metric, SQL, align=align, period=period, reduce=reduce, by=("database_id",),
+             name=f"{instance} {unit_name}", database_id=f"*:{instance}")
 
 
 def error_counts(metric, labels, period=AUTO, resources=(REV, JOB), groups=False, **where):
@@ -459,6 +476,196 @@ def deadline_stats(w: int, h: int) -> list[dict]:
     return out
 
 
+# ---- The home: what is wrong now, one project at a time ------------------------------------------------------------
+# A cloud panel reads one project (rule 8), so the home's headline and "What's wrong now" are one per project, in
+# the order TPA (portal and sign-in, then member records), call centre, CRM. Each reads counts where more than 0 is
+# a problem, named with a ✕ (5xx answers, uptime and inside checks failing, journeys failed or broken, crashes,
+# out-of-memory kills, failed job runs, minutes a database was down), plus one "reporting" count that is above 0
+# whenever the project's metrics arrive at all. That one turns negative, so it stays apart: it is drawn teal and
+# never counts as a problem, and with nothing at all (no metric arrived, or the query failed) the panel reads
+# "? Can't tell", never green.
+NOW = "+60s"   # one point a minute: every query of a home panel lines up for the join
+# A count above 0 is red; the negative "reporting" count teal; no value at all (blind) amber, never teal.
+def home_steps() -> dict:
+    return thresholds(AMBER, (-1e15, TEAL), (0.5, RED))   # a new one each time: quieten() edits it in place
+REPORTING = {"type": "range", "options": {"from": -1e15, "to": -0.5, "result": {"text": "reporting", "index": 0}}}
+
+
+def area_queries(ds: str, services: str, jobs: str | None, db: str, *, checks: bool = False) -> list[dict]:
+    """The problem counts of one project, and its "reporting" count (named `seeing`) last."""
+    out = [q(RUN_REQUESTS, REV, period=NOW, by=("service_name",), name=alias("service_name", prefix="✕ 5xx · "),
+             service_name=Re(services), response_code_class="5xx")]
+    if checks:
+        out += [q(UPTIME, URL, align="ALIGN_COUNT_FALSE", period=NOW, by=("host",),
+                  name=alias("host", prefix="✕ uptime check failing · ")),
+                q(UPTIME, PRIVATE, align="ALIGN_COUNT_FALSE", period=NOW, by=("service_name",),
+                  name=alias("service_name", prefix="✕ inside check failing · ")),
+                q(log("synthetic_results"), JOB, period=NOW, by=("job",), name=alias("job", prefix="✕ ") + " failed",
+                  outcome="fail"),
+                q(log("synthetic_results"), JOB, period=NOW, by=("job",), name=alias("job", prefix="✕ ") + " broke",
+                  outcome="error")]
+    out += [q(log("run_crash_exits"), REV, period=NOW, by=("service_name",),
+              name=alias("service_name", prefix="✕ crashed · "), service_name=Re(services)),
+            q(log("run_oom_kills"), REV, period=NOW, by=("service_name",),
+              name=alias("service_name", prefix="✕ out of memory · "), service_name=Re(services))]
+    if jobs:
+        out += [q(log("run_oom_kills"), JOB, period=NOW, by=("job_name",),
+                  name=alias("job_name", prefix="✕ out of memory · "), job_name=Re(jobs)),
+                q(RUN_JOBS, JOB, period=NOW, by=("job_name",), name=alias("job_name", prefix="✕ run failed · "),
+                  job_name=Re(jobs), result="failed")]
+    out += [q(SQL_UP, SQL, align="ALIGN_MIN", period=NOW, reduce="REDUCE_MIN", by=("database_id",),
+              name=f"{db} up", database_id=f"*:{db}")]
+    if checks:
+        # Every uptime check result, passed or not: they arrive every minute from three regions.
+        out.append(q(UPTIME, URL, align="ALIGN_COUNT", period=NOW, reduce="REDUCE_SUM", name="seeing"))
+    else:
+        # Every point the project's database reports, up or down.
+        out.append(q(SQL_UP, SQL, align="ALIGN_COUNT", period=NOW, reduce="REDUCE_SUM", name="seeing",
+                     database_id=f"*:{db}"))
+    return out
+
+
+def area_transformations(db: str, reporting: str) -> list[dict]:
+    """Join the minute points, turn the database's up into its down minutes and the reporting count negative, sum
+    each series over the panel's 15 minutes, keep what is not 0, worst first."""
+    def calc(alias_, left, op, right):
+        side = lambda v: {"fixed": str(v)} if isinstance(v, (int, float)) else {"matcher": {"id": "byName", "options": v}}
+        return {"id": "calculateField", "options": {"mode": "binary", "alias": alias_, "replaceFields": False,
+                                                    "binary": {"left": side(left), "operator": op,
+                                                               "right": side(right)}}}
+    return [
+        {"id": "joinByField", "options": {"byField": "Time", "mode": "outer"}},
+        calc(f"✕ {db} down (minutes)", 1, "-", f"{db} up"),
+        calc(reporting, "seeing", "*", -1),
+        {"id": "organize", "options": {"excludeByName": {f"{db} up": True, "seeing": True}}},
+        {"id": "reduce", "options": {"mode": "seriesToRows", "reducers": ["sum"], "labelsToFields": False,
+                                     "includeTimeField": False}},
+        {"id": "filterByValue", "options": {"type": "include", "match": "any", "filters": [
+            {"fieldName": "Total", "config": {"id": "greater", "options": {"value": 0}}},
+            {"fieldName": "Total", "config": {"id": "lower", "options": {"value": 0}}}]}},
+        {"id": "sortBy", "options": {"sort": [{"field": "Total", "desc": True}]}},
+    ]
+
+
+AREAS = [
+    # (key, headline title, datasource, services, jobs, database, the reporting row's words, has the checks)
+    ("app", "TPA · portal and sign-in", APP, f"{WEB_API}|{AUTH_SERVICES}|tpa-jobs-drains", f"{TPA_JOBS}|{AUTH_JOBS}",
+     "auth-db", "✓ portal and sign-in", True),
+    ("phi", "TPA · member records", PHI, PHI_SERVICES, PHI_JOBS, "tpa-db", "✓ member records", False),
+    ("cc", "Call centre", CC, CC_SERVICES, "migrate-cc", "cc-db", "✓ call centre", False),
+    ("crm", "CRM", CRM, CRM_SERVICES, CRM_JOBS, "crm-db", "✓ CRM", False),
+]
+AREA_WORDS = ("5xx answers, uptime and inside checks failing (beta's checks pass on IAP's sign-in page), synthetic "
+              "journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the database was "
+              "down")
+
+
+def headline(key, title, ds, services, jobs, db, reporting, checks, w=6) -> dict:
+    p = stat(title, ds, area_queries(ds, services, jobs, db, checks=checks),
+             f"The last 15 minutes in this project, one tile per problem, named: "
+             f"{AREA_WORDS if checks else 'its 5xx answers, crashes, out-of-memory kills, failed job runs and the minutes ' + db + ' was down'}. "
+             f"'{reporting} · reporting' (teal) says this project's metrics are arriving (for the portal, the "
+             "uptime checks' results; elsewhere, the database's own points); alone, it is the all-clear. "
+             "'? Can't tell': nothing arrived, or the query failed. Open incidents are in PagerDuty.",
+             w=w, h=5, calc="lastNotNull", text_mode="value_and_name", time_from="15m", no_value="? Can't tell",
+             steps=home_steps(), deps=(db,), mappings=[REPORTING], decimals=0,
+             transformations=area_transformations(db, reporting))
+    # One tile per row: the problem's name, and its count. value_and_name, not name: with nothing to show, the
+    # "? Can't tell" text is the value, and "name" would leave a blank tile (seen in a TestData render).
+    p["options"].update({"reduceOptions": {"values": True, "calcs": ["lastNotNull"], "fields": "/^Total$/"},
+                         # A block of colour, but no colour at all while its database is stopped on purpose.
+                         "colorMode": when_quiet((db,), "background", "none"), "orientation": "horizontal",
+                         "text": {"titleSize": 18, "valueSize": 18}})
+    return p
+
+
+def whats_wrong(key, title, ds, services, jobs, db, reporting, checks, w=6) -> dict:
+    p = panel("table", f"What's wrong now · {title}", ds, area_queries(ds, services, jobs, db, checks=checks),
+              "Each problem of the last 15 minutes with its count (answers, failures, runs or minutes), worst "
+              "first; the teal row says the project's metrics are arriving. Empty reads '? Can't tell'.",
+              w=w, h=6, time_from="15m", no_value=when_quiet((db,), "? Can't tell"),
+              custom={"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False, "filterable": False},
+              transformations=area_transformations(db, reporting) + [
+                  {"id": "organize", "options": {"renameByName": {"Field": "Problem", "Total": "15 min"}}}])
+    p["options"] = {"showHeader": False, "cellHeight": "sm", "footer": {"show": False, "reducer": ["sum"],
+                                                                         "fields": ""}}
+    # Only the count is coloured, by its own value: red above 0, teal for the reporting row.
+    p["fieldConfig"]["overrides"] = [{"matcher": {"id": "byName", "options": "15 min"}, "properties": [
+        {"id": "custom.width", "value": 90}, {"id": "custom.cellOptions", "value": {"type": "color-text"}},
+        {"id": "color", "value": {"mode": "thresholds"}}, {"id": "thresholds", "value": home_steps()},
+        {"id": "mappings", "value": [REPORTING]}, {"id": "decimals", "value": 0}]}]
+    p["description"] += f" Reads \"database stopped\" while `{db}` is stopped on purpose (TPA_STOPPED_DATABASES)."
+    return p
+
+
+def service_tile(title, ds, services, deps=()) -> dict:
+    return stat(title, ds, [q(RUN_REQUESTS, REV, period="+900s", by=(), name="5xx (15 m)",
+                              service_name=Re(services), response_code_class="5xx"),
+                            q(RUN_INSTANCES, REV, align="ALIGN_MAX", period="+60s", by=(), name="instances",
+                              service_name=Re(services))],
+                f"{title}: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx "
+                "series means none was answered; no instance series, none is running (a scale-to-zero service "
+                "idles at none).", w=3, h=4, calc="lastNotNull", text_mode="value_and_name", time_from="15m",
+                no_value="no data", deps=deps,
+                overrides=[by_ref("A", thresholds=thresholds(NEUTRAL, (1, RED)), decimals=0),
+                           by_ref("B", decimals=0)])
+
+
+def db_tile(instance, ds, *, w=3, h=4) -> dict:
+    return stat(instance, ds, db_up(instance, "+60s"),
+                f"Cloud SQL's `database/up` for {instance}, now. " + STOPPED_DB, w=w, h=h, calc="lastNotNull",
+                time_from="15m", no_value=when_quiet((instance,), "not reporting"), unit="none",
+                mappings=[{"type": "value", "options": {"0": {"text": "✕ DOWN", "color": RED, "index": 0},
+                                                         "1": {"text": "✓ up", "color": TEAL, "index": 1}}}],
+                steps=thresholds(RED, (1, TEAL)))
+
+
+# max_connections on beta (tpa-platform infra/envs/beta, the module's connection policies at 80% and 95%).
+MAX_CONNECTIONS = {"tpa-db": 400, "crm-db": 200, "auth-db": 100, "cc-db": 100}
+
+
+def db_resources(instance, ds, w=6) -> dict:
+    cap = MAX_CONNECTIONS[instance]
+    return stat(instance, ds,
+                [db_up(instance, "+60s"), db_resource(SQL_CPU, instance, "CPU", "+60s"),
+                 db_resource(SQL_MEMORY, instance, "memory", "+60s"), db_disk(instance, "+300s"),
+                 db_resource(SQL_BACKENDS, instance, "connections", "+60s", reduce="REDUCE_SUM")],
+                f"Cloud SQL's own signals for {instance}, now: up; CPU (the module pages at 80% and 95%); memory "
+                f"(90%); disk used (`{instance}-disk` at 85%); connections (num_backends; the module opens at 80% "
+                f"and 95% of max_connections, {cap} on beta). " + STOPPED_DB,
+                w=w, h=5, calc="lastNotNull", text_mode="value_and_name", time_from="15m", value_size=26,
+                no_value=when_quiet((instance,), "not reporting"),
+                overrides=[by_ref("A", name="up", mappings=[{"type": "value", "options": {
+                               "0": {"text": "✕ DOWN", "color": RED, "index": 0},
+                               "1": {"text": "✓ up", "color": TEAL, "index": 1}}}], unit="none",
+                                  thresholds=thresholds(RED, (1, TEAL))),
+                           by_ref("B", name="CPU", unit="percentunit", decimals=0,
+                                  thresholds=thresholds(NEUTRAL, (0.8, AMBER), (0.95, RED))),
+                           by_ref("C", name="memory", unit="percentunit", decimals=0,
+                                  thresholds=thresholds(NEUTRAL, (0.9, RED))),
+                           by_ref("D", name="disk", unit="percentunit", decimals=0,
+                                  thresholds=thresholds(NEUTRAL, (0.75, AMBER), (0.85, RED))),
+                           by_ref("E", name="connections", decimals=0,
+                                  thresholds=thresholds(NEUTRAL, (round(cap * 0.8), AMBER), (round(cap * 0.95), RED)))])
+
+
+def journeys_stat() -> dict:
+    p = stat("Synthetic journeys (1 h)", APP,
+             q(log("synthetic_results"), JOB, period="+3600s", by=("job", "outcome"),
+               name=alias("job", "outcome")),
+             "Each journey's runs in the last hour, by outcome (`synthetic_results`, one result line per run): "
+             + "; ".join(f"`{job}` ({name}): {what}" for job, name, what in JOURNEYS) + ". pass is teal; fail "
+             "is red (`synthetic-failing` pages on two fails and no pass in eleven minutes; J1 and J2 urgent); "
+             "error is amber (the runner itself broke: `synthetic-broken`); skipped, grey. No runs at all: the "
+             "journeys are off or paused (`synthetic-blind` when one goes quiet 15 minutes).",
+             w=8, h=7, calc="sum", text_mode="value_and_name", time_from="1h",
+             no_value="no runs (off or paused)", decimals=0,
+             overrides=[{"matcher": {"id": "byRegexp", "options": f".* {word}$"},
+                         "properties": [{"id": "thresholds", "value": thresholds(NEUTRAL, (1, colour))}]}
+                        for word, colour in (("pass", TEAL), ("fail", RED), ("error", AMBER))])
+    return p
+
+
 # ---- The pages -----------------------------------------------------------------------------------------------------
 UPTIME_WORDING = per_environment(
     "Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.",
@@ -490,14 +697,49 @@ def overview(cc: bool = True) -> dict:
         " · [CRM](https://console.cloud.google.com/monitoring/alerting/incidents?project=__TPA_CRM_PROJECT_ID__).\n\n"
         "This site reads metrics only: Grafana's Cloud Monitoring datasource cannot list incidents. "
         + NOTHING_BUT_METRICS)
+    areas = [a for a in AREAS if cc or a[0] != "cc"]
+    span = 24 // len(areas)
+    dbs = [(db, ds) for _k, _t, ds, _s, _j, db, _r, _c in areas]
     items = [
-        row("Now"),
-        text("Open incidents", incidents, w=10, h=7),
+        row("Now: what is wrong, by project (TPA first)"),
+        *[headline(*a, w=span) for a in areas],
+        *[whats_wrong(*a, w=span) for a in areas],
+        text("Open incidents", incidents, w=8, h=7),
         stat("Uptime checks passing (24 h)", APP,
              q(UPTIME, URL, align="ALIGN_FRACTION_TRUE", period="+3600s", reduce="REDUCE_MEAN", by=("host",)),
-             "Share of uptime checks that passed in the last 24 h, by host. " + UPTIME_WORDING, w=14, h=7, calc="mean", value_size=40, time_from="24h", unit="percentunit", decimals=2,
+             "Share of uptime checks that passed in the last 24 h, by host. " + UPTIME_WORDING, w=8, h=7,
+             calc="mean", value_size=32, time_from="24h", unit="percentunit", decimals=2,
              no_value="no uptime checks", text_mode="value_and_name",
-             steps=thresholds("red", (0.95, "orange"), (0.999, "green"))),
+             steps=thresholds(RED, (0.95, AMBER), (0.999, TEAL))),
+        journeys_stat(),
+        row("Beta, left to right: the way in → web → tpa-api → auth and records → their databases"),
+        stat("portal · ops (15 m)", APP,
+             q(UPTIME, URL, align="ALIGN_FRACTION_TRUE", period="+900s", reduce="REDUCE_MEAN", by=("host",)),
+             "The way in: the share of uptime checks that passed in the last 15 minutes, by host. " + UPTIME_WORDING,
+             w=4, h=4, calc="lastNotNull", time_from="15m", unit="percentunit", decimals=0,
+             no_value="no uptime checks", text_mode="value_and_name",
+             steps=thresholds(RED, (0.999, TEAL))),
+        stat("inside (15 m)", APP,
+             q(UPTIME, PRIVATE, align="ALIGN_FRACTION_TRUE", period="+900s", reduce="REDUCE_MEAN",
+               by=("service_name",)),
+             "Private uptime checks (D-149): Google's VPC checkers read auth's and tpa-api's /ready at their internal "
+             "load balancers; tpa-api's /ready asks records, so records is covered from inside too. The share that "
+             "passed in the last 15 minutes, by service. auth's leaves while auth-db is stopped on purpose. None: the "
+             "inside checks are off (private_uptime_checks_enabled).", w=3, h=4, calc="lastNotNull",
+             time_from="15m", unit="percentunit", decimals=0, no_value="off", text_mode="value_and_name",
+             steps=thresholds(RED, (0.999, TEAL))),
+        service_tile("web", APP, "web", SWEEP_DBS),
+        service_tile("tpa-api", APP, "tpa-api", SWEEP_DBS),
+        service_tile("auth", APP, AUTH_SERVICES, ("auth-db",)),
+        service_tile("records", PHI, "records", ("tpa-db",)),
+        service_tile("connectors", PHI, "connectors", ("tpa-db",)),
+        row(("Call centre (svc-voice, svc-ops, relay, cc-db) and " if cc else "") + "CRM (crm-web, engine, crm-db)"),
+        *([service_tile("svc-voice", CC, "svc-voice", ("cc-db",)), service_tile("svc-ops", CC, "svc-ops", ("cc-db",)),
+           service_tile("relay", CC, "svc-twilio-rest", ("cc-db",)), db_tile("cc-db", CC)] if cc else []),
+        service_tile("crm-web", CRM, "crm-web", ("crm-db",)), service_tile("engine", CRM, "engine", ("crm-db",)),
+        db_tile("crm-db", CRM),
+        row("Databases now: up, CPU, memory, disk, connections"),
+        *[db_resources(db, ds, w=span) for db, ds in dbs],
         row("Scheduled runs: a successful run within each job's deadline"),
         *deadline_stats(w=4, h=4),
         *area("Portal & API (web, tpa-api, model-gateway; tpa-jobs)", APP, WEB_API, SWEEP_DBS, tpa_api_p95("+3600s"),
@@ -540,7 +782,8 @@ def overview(cc: bool = True) -> dict:
               jobs_stat("CRM jobs (24 h)", CRM, CRM_JOBS, None, ("crm-db",))),
     ]
     return dashboard("tw-cloud-overview", "TPA overview (cloud)",
-                     "Home: every TPA area at a glance, read from Cloud Monitoring. " + NOTHING_BUT_METRICS,
+                     "Home: what is wrong now in each project (TPA first), the way through beta, the databases, the "
+                     "synthetic journeys and the scheduled runs, read from Cloud Monitoring. " + NOTHING_BUT_METRICS,
                      ["overview"], items)
 
 
@@ -582,6 +825,10 @@ def portal_api() -> dict:
               columns={"operation": "Operation", "outcome": "Outcome", "status_class": "Status class"}),
         series("tpa-api outcomes", APP, q(log("tpa_api_requests"), REV, by=("outcome",)),
                "tpa-api's request lines per interval, by outcome.", bars=True),
+        series("Model gateway: vendor answers that failed, by kind", APP,
+               q(log("model_gateway_calls"), REV, by=("code",)),
+               "model-gateway's calls to the model vendor that came back as an error, busy, unavailable or rejected "
+               "(`model_gateway_calls`; `model-vendor-errors`). Silent while model-gateway is not built.", bars=True),
         row("Instances and start-up"),
         series("Instances, by service", APP, instances(APP_SERVICES),
                "Cloud Run instances per service (the most in each interval). A warm service with none pages as "
@@ -641,6 +888,10 @@ def sign_in() -> dict:
                "seconds while one waits (`auth-messages-lag` opens above 30 s for two minutes). It counts emails "
                "too, so one email on its retry ladder opens it. Empty until auth-notary's messenger writes JSON "
                "(docs/infra/monitoring.md §6).", unit="s", line=30),
+        series("Message vendor refusals, by lane and reason", APP,
+               q(log("auth_message_vendor_failures"), REV, by=("lane", "code")),
+               "Sign-in texts or emails the vendor would not take, by channel and the messenger's reason "
+               "(`auth_message_vendor_failures`; `sign-in-message-vendor`).", bars=True),
         series("Messenger instances", APP, instances("auth-outbox-publisher"),
                "auth-outbox-publisher's instances. With none, no sign-in message is sent: `auth-messages-lag` opens "
                "on that too."),
@@ -869,6 +1120,20 @@ def errors(cc: bool = True) -> dict:
               columns={"service_name": "Cloud Run service", **({"class": "Class"} if CRM_CLASS else {})}, w=16, h=9),
         series("ERROR lines, by service", CRM, crm_errors(by=("service_name",)),
                "The CRM's ERROR lines per interval.", bars=True, w=8, h=9),
+        row("Crashes, out-of-memory kills, and secret or key versions taken away"),
+        *[series(f"{where}", ds,
+                 [q(log("run_crash_exits"), REV, by=("service_name",), name=alias("service_name", prefix="crashed: ")),
+                  q(log("run_oom_kills"), REV, by=("service_name",), name=alias("service_name", prefix="OOM: ")),
+                  q(log("run_oom_kills"), JOB, by=("job_name",), name=alias("job_name", prefix="OOM: ")),
+                  q(log("secret_version_changes"), None, by=("operation",), name=alias("operation", prefix="secret: ")),
+                  q(log("kms_version_changes"), None, by=("operation",), name=alias("operation", prefix="key: "))],
+                 "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL "
+                 "(`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret "
+                 "Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, "
+                 "`kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the "
+                 "method alone; who and which stay in the entry.", bars=True, w=24 // (4 if cc else 3), h=7)
+          for where, ds in (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
+                            ("CRM", CRM))],
     ]
     return dashboard("tw-cloud-errors", "Errors (cloud)",
                      "Error groups from the log-based error counters, by the labels the catalogue allows: the "
@@ -891,9 +1156,23 @@ def databases(cc: bool = True) -> dict:
             series("Disk used", ds, db_disk(name), f"`{name}-disk` opens above 85% for ten minutes; automatic "
                    "growth stops at the instance's disk_autoresize_limit.", w=8, h=5, unit="percentunit", line=0.85),
             db_stat("Now", ds, name, w=4, h=5),
+            series("CPU and memory", ds, [db_resource(SQL_CPU, name, "CPU"), db_resource(SQL_MEMORY, name, "memory")],
+                   "Cloud SQL's CPU and memory utilisation (the monitoring module pages CPU at 80% and 95%, memory "
+                   "at 90%).", w=8, h=6, unit="percentunit", line=0.9),
+            series("Connections", ds, db_resource(SQL_BACKENDS, name, "connections", reduce="REDUCE_SUM"),
+                   f"Backends connected (num_backends, every database of the instance). The module opens at 80% and "
+                   f"95% of max_connections ({MAX_CONNECTIONS[name]} on beta).", w=8, h=6,
+                   line=round(MAX_CONNECTIONS[name] * 0.8)),
+            series("Restarts and failed backups", ds,
+                   [q(log("sql_restarts"), SQL, by=(), name="restarts", database_id=f"*:{name}"),
+                    q(log("sql_backup_failures"), SQL, by=(), name="backup failed", database_id=f"*:{name}")],
+                   "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated "
+                   "backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
+                   w=8, h=6, bars=True),
         ]
     return dashboard("tw-cloud-databases", "Databases (cloud)",
-                     f"The {'four' if cc else 'three'} Cloud SQL instances: up, and disk used. " + STOPPED_DB, ["databases"], items,
+                     f"The {'four' if cc else 'three'} Cloud SQL instances: up, disk, CPU, memory, connections, "
+                     "restarts and failed backups. " + STOPPED_DB, ["databases"], items,
                      time="now-24h")
 
 

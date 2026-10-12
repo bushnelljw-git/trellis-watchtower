@@ -40,16 +40,19 @@
 # Added to every project's own lists below.
 shared:
   log_metrics:
+    # D-147: a memory limit exceeded is `run_oom_kills`' (its own policy,
+    # `run-oom`), so one kill opens one alert, not two.
     run_system_errors:
       description: >-
         Cloud Run's own system log at ERROR or above: a failed startup or
-        liveness probe, a container that exited, a memory limit exceeded.
-        Written by the platform, not by a service, so it holds no application
-        field.
+        liveness probe, a container that exited. A memory limit exceeded is
+        `run_oom_kills`' alone. Written by the platform, not by a service, so
+        it holds no application field.
       filter: |
         (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
         AND log_id("run.googleapis.com/varlog/system")
         AND severity>=ERROR
+        AND NOT textPayload=~"^Memory limit of [0-9]+ MiB exceeded"
 
     # 2026-10-11 (the alert-gaps review): every database client here dials
     # through the Cloud SQL Auth Proxy sidecar (`--psc --auto-iam-authn
@@ -69,6 +72,101 @@ shared:
         (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
         AND severity>=ERROR
         AND jsonPayload.message=~"^\\[[a-z][a-z0-9-]*:[a-z0-9-]+:[a-z][a-z0-9-]*\\] "
+
+    # D-147 (the reliability signals, 2026-10-11; docs/infra/monitoring.md
+    # §12). Every metric below reads a line the platform writes, never one of
+    # ours, and no label but the method on the two audit counters.
+    #
+    # PostgreSQL's server log, which Cloud SQL writes as text to postgres.log:
+    # on every start (a restart, a maintenance, a crash's recovery, an HA
+    # failover's new primary) the server writes "database system is ready to
+    # accept connections". Counted by the instance (the resource's
+    # database_id); the module's per-instance `restarted` policy reads it.
+    sql_restarts:
+      description: >-
+        A Cloud SQL instance's PostgreSQL server came up: its server log's
+        "database system is ready to accept connections". By the instance
+        (the resource's own database_id); nothing of the line is read.
+      filter: |
+        resource.type="cloudsql_database"
+        AND log_id("cloudsql.googleapis.com/postgres.log")
+        AND textPayload:"database system is ready to accept connections"
+
+    # Every instance takes an automated backup each night (modules/cloud-sql,
+    # backup_configuration.enabled, true by default and in every root). Cloud
+    # SQL's audit entry for a backup run ends with the operation's status; one
+    # with a non-zero code failed. UNVERIFIED which audit log an automated
+    # backup's entry is written to: the filter names none, and infra/README.md's
+    # reliability reads look for one before the apply.
+    sql_backup_failures:
+      description: >-
+        A Cloud SQL backup or restore operation that ended in an error: Cloud
+        SQL's audit entry for it with a non-zero status code. By the instance;
+        nothing of the entry is read.
+      filter: |
+        resource.type="cloudsql_database"
+        AND protoPayload.serviceName="cloudsql.googleapis.com"
+        AND protoPayload.methodName=~"[Bb]ackup"
+        AND protoPayload.status.code>0
+
+    # Cloud Run's system log, by the service or job alone (the resource):
+    # a container killed for exceeding its memory limit, and a container that
+    # exited non-zero or was killed by a signal other than SIGTERM (15, which
+    # Cloud Run sends at every scale-in and shutdown) and SIGKILL (9, which
+    # follows a SIGTERM not answered within ten seconds at a scale-in, and an
+    # out-of-memory kill, `run_oom_kills`' own).
+    run_oom_kills:
+      description: >-
+        Cloud Run's system log: a container exceeded its memory limit and was
+        killed. By the service or job; nothing of the line is read.
+      filter: |
+        (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
+        AND log_id("run.googleapis.com/varlog/system")
+        AND textPayload=~"^Memory limit of [0-9]+ MiB exceeded"
+
+    run_crash_exits:
+      description: >-
+        Cloud Run's system log: a service's container exited with a non-zero
+        code or was killed by a signal other than SIGTERM or SIGKILL. Never a
+        job's (its failed execution is `jobs-failed`'s), never an exit(0), the
+        SIGTERM of a scale-in, or the SIGKILL after it or of a memory kill.
+        By the service; nothing of the line is read.
+      filter: |
+        resource.type="cloud_run_revision"
+        AND log_id("run.googleapis.com/varlog/system")
+        AND textPayload=~"^Container (called exit\\([1-9][0-9]*\\)|terminated on signal ([1-8]|1[0-46-9]|[2-9][0-9]))\\."
+
+    # The Admin Activity audit log (always on, free, copied to the vault):
+    # a Secret Manager version disabled or destroyed, and a KMS key version
+    # disabled or scheduled for destruction. Each breaks whatever reads it at
+    # its next deploy or restart. By method alone, as `monitoring_changes`;
+    # who and which stay in the entry. A method is matched by its last name,
+    # since Secret Manager writes the full name and KMS may write the short.
+    secret_version_changes:
+      description: >-
+        A Secret Manager version disabled or destroyed, from the Admin
+        Activity audit log. By method alone; the entry says who and which.
+      filter: |
+        log_id("cloudaudit.googleapis.com/activity")
+        AND protoPayload.serviceName="secretmanager.googleapis.com"
+        AND protoPayload.methodName=~"(^|\\.)(Disable|Destroy)SecretVersion$"
+      labels:
+        operation: 'EXTRACT(protoPayload.methodName)'
+
+    kms_version_changes:
+      description: >-
+        A Cloud KMS key version scheduled for destruction, or disabled (an
+        update whose request sets the version's state to DISABLED), from the
+        Admin Activity audit log. By method alone; the entry says who and
+        which.
+      filter: |
+        log_id("cloudaudit.googleapis.com/activity")
+        AND protoPayload.serviceName="cloudkms.googleapis.com"
+        AND (protoPayload.methodName=~"(^|\\.)DestroyCryptoKeyVersion$"
+          OR (protoPayload.methodName=~"(^|\\.)UpdateCryptoKeyVersion$"
+            AND protoPayload.request.cryptoKeyVersion.state="DISABLED"))
+      labels:
+        operation: 'EXTRACT(protoPayload.methodName)'
 
   alert_policies:
     canary-5xx:
@@ -106,9 +204,10 @@ shared:
     canary-startup:
       display_name: "container startup or runtime failure"
       documentation: >-
-        Cloud Run's system log reported a failed probe, an exit or a memory
-        limit. A startup probe failure means `/ready` did not answer within
-        its budget; read the revision's own lines for its `not_ready` reason.
+        Cloud Run's system log reported a failed probe or an exit (a memory
+        limit exceeded is `run-oom`'s). A startup probe failure means `/ready`
+        did not answer within its budget; read the revision's own lines for
+        its `not_ready` reason.
       conditions:
         - name: "a service's system log at ERROR"
           threshold:
@@ -144,6 +243,336 @@ shared:
             filter: >-
               metric.type = "logging.googleapis.com/user/sql_proxy_errors" AND resource.type = "cloud_run_job"
             group_by_fields: ["resource.label.job_name"]
+
+    # -------------------------------------------------------------------------
+    # D-147 (the owner, 2026-10-11: "We need a solid system covering ALL
+    # critical reliability checks"; docs/infra/monitoring.md §12). Saturation
+    # and platform signals, in every project. A signal on a resource a project
+    # does not have (a NAT gateway, an external load balancer) has no series
+    # and never opens. Each threshold and duration is chosen to open on
+    # sustained trouble, never a blip (the owner: "fix the alerts so i don't
+    # keep getting alerts for no reason"); §12 gives each one's reason.
+    # -------------------------------------------------------------------------
+
+    run-cpu-high:
+      display_name: "a Cloud Run service's CPU above 90% for 15 minutes"
+      documentation: >-
+        A Cloud Run service's 99th percentile container CPU stayed above 90
+        percent for fifteen minutes: its instances are saturated, so requests
+        queue and slow down. Autoscaling should add instances; if it has not,
+        read the service's instance count against its ceiling (the
+        `ceiling-` and `run-instances-near-quota` policies), then what is
+        running hot (a loop, an embedding storm, a stuck stream).
+      conditions:
+        - name: "p99 container CPU above 0.9 for fifteen minutes"
+          threshold:
+            filter: >-
+              metric.type = "run.googleapis.com/container/cpu/utilizations" AND resource.type = "cloud_run_revision"
+            threshold_value: 0.9
+            duration: "900s"
+            alignment_period: "300s"
+            per_series_aligner: "ALIGN_PERCENTILE_99"
+            cross_series_reducer: "REDUCE_MAX"
+            group_by_fields: ["resource.label.service_name"]
+
+    run-memory-high:
+      display_name: "a Cloud Run service's memory above 90% for 10 minutes"
+      documentation: >-
+        A Cloud Run service's 99th percentile container memory stayed above
+        90 percent of its limit for ten minutes: the next allocation may kill
+        the container (`run-oom`). Read whether it is growing (a leak) or
+        steady (the limit is too small for the work), then raise the
+        service's memory in Terraform or fix the leak.
+      conditions:
+        - name: "p99 container memory above 0.9 for ten minutes"
+          threshold:
+            filter: >-
+              metric.type = "run.googleapis.com/container/memory/utilizations" AND resource.type = "cloud_run_revision"
+            threshold_value: 0.9
+            duration: "600s"
+            alignment_period: "300s"
+            per_series_aligner: "ALIGN_PERCENTILE_99"
+            cross_series_reducer: "REDUCE_MAX"
+            group_by_fields: ["resource.label.service_name"]
+
+    # Every service runs at Cloud Run's default concurrency of 80 but
+    # svc-voice (20, one call each; this never opens for it).
+    run-concurrency-high:
+      display_name: "a Cloud Run service's instances near their request concurrency"
+      documentation: >-
+        A Cloud Run service's 99th percentile of the most requests one
+        instance served at once stayed at 72 or more (90 percent of the
+        default concurrency of 80) for fifteen minutes: new requests wait for
+        a slot or a new instance. On web and tpa-api the desk's event streams
+        hold one slot each for about 40 s. Read the instance count against
+        its ceiling, then the request mix.
+      conditions:
+        - name: "p99 of per-instance peak concurrency at 72 or more for fifteen minutes"
+          threshold:
+            filter: >-
+              metric.type = "run.googleapis.com/container/max_request_concurrencies" AND resource.type = "cloud_run_revision"
+            threshold_value: 71.5
+            duration: "900s"
+            alignment_period: "300s"
+            per_series_aligner: "ALIGN_PERCENTILE_99"
+            cross_series_reducer: "REDUCE_MAX"
+            group_by_fields: ["resource.label.service_name"]
+
+    # The project's regional instance quota is 85 (beta's, read by the
+    # orchestrating session, 2026-10-11); production-full keeps the same bar
+    # until its own quota is read. 68 is 80 percent of it.
+    run-instances-near-quota:
+      display_name: "the project's Cloud Run instances near the regional quota (85)"
+      documentation: >-
+        Every Cloud Run instance in this project, summed, stayed above 68 (80
+        percent of the regional quota of 85) for ten minutes. At the quota a
+        service cannot start another instance, whatever its own ceiling, and
+        a warm service cannot replace one that died. Read which service is
+        growing (the console's instance count by service), then ask Google
+        for a higher quota or lower a ceiling.
+      conditions:
+        - name: "more than 68 instances in the project for ten minutes"
+          threshold:
+            filter: >-
+              metric.type = "run.googleapis.com/container/instance_count" AND resource.type = "cloud_run_revision"
+            threshold_value: 68
+            duration: "600s"
+            alignment_period: "60s"
+            per_series_aligner: "ALIGN_MAX"
+            cross_series_reducer: "REDUCE_SUM"
+
+    run-oom:
+      display_name: "a container was killed for exceeding its memory limit"
+      documentation: >-
+        Cloud Run killed a container that exceeded its memory limit (its
+        system log's "Memory limit of ... exceeded"). The request it was
+        serving failed; a job's attempt failed. Read the service's or job's
+        memory over the hour (`run-memory-high` may be open beside it), then
+        raise its memory in Terraform or find what grew.
+      conditions:
+        - name: "a service's container exceeded its memory limit"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/run_oom_kills" AND resource.type = "cloud_run_revision"
+            group_by_fields: ["resource.label.service_name"]
+        - name: "a job's container exceeded its memory limit"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/run_oom_kills" AND resource.type = "cloud_run_job"
+            group_by_fields: ["resource.label.job_name"]
+
+    run-crash-loop:
+      display_name: "a Cloud Run service's containers keep crashing"
+      documentation: >-
+        A Cloud Run service's containers exited non-zero, or were killed by a
+        signal other than a shutdown's, three times or more in fifteen
+        minutes: a crash loop. A warm service may also open `no_instance`, and
+        one answering only errors `backend-down`. Read the service's system
+        log and its own last lines before each exit; a revision that never
+        became ready says why in its `not_ready` line.
+      conditions:
+        - name: "three exits or more in fifteen minutes"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/run_crash_exits" AND resource.type = "cloud_run_revision"
+            threshold_value: 2
+            alignment_period: "900s"
+            group_by_fields: ["resource.label.service_name"]
+
+    # The external Application Load Balancer's 5xx that no backend answered
+    # (beta: app, the CRM's copy, the call centre, the monitoring website):
+    # its own 502 and 503 when it cannot reach the Cloud Run service behind a
+    # URL map, which no Cloud Run count sees. Its count of every 5xx it
+    # answered less the 5xx its named backends answered; the backends' own
+    # are Cloud Run's already (`canary-5xx`, `backend-down`), so a second page
+    # for them would be noise. Both sides read the 5xx class alone, so the
+    # load balancer's own 3xx and 4xx (IAP's redirects, Cloud Armor's 403, 404
+    # and 429, a host it does not serve) never count (`armor-deny-spike` is
+    # Armor's). Read on live beta, 2026-10-11 (7 days, read-only):
+    # backend_request_count reports each serverless NEG backend by name
+    # (bes-web, bes-web-ops, bes-crm-web, bes-crm-api; bes-voice) beside a
+    # series with an empty backend_target_name, the requests no backend
+    # answered (app: at most 1,184 in ten minutes; call centre: 320), which
+    # `backend_target_name!=""` keeps out of the subtraction. A backend's 5xx
+    # series has points only in a window with a backend 5xx, so the second
+    # branch reads a window with none: then every 5xx is the load balancer's.
+    edge-5xx:
+      display_name: "a load balancer answered 5xx no backend sent"
+      documentation: >-
+        An external load balancer (by its URL map: um-app, um-crm, um-cc,
+        um-watch) answered five or more 5xx in ten minutes that no backend
+        sent: it could not reach the Cloud Run service behind it (the service
+        or its serverless NEG missing or refusing, a revision with no
+        instance), so people saw a 502 or 503 that no service logged. Read
+        the load balancer's request log for the status details, then the
+        backend service and its Cloud Run service. The backends' own 5xx are
+        `canary-5xx` and `backend-down`.
+      conditions:
+        - name: "five or more load-balancer 5xx no backend sent, in ten minutes"
+          promql:
+            query: >-
+              sum by (url_map_name) (increase(loadbalancing_googleapis_com:https_request_count{monitored_resource="https_lb_rule", response_code_class="500"}[10m]))
+              - sum by (url_map_name) (increase(loadbalancing_googleapis_com:https_backend_request_count{monitored_resource="https_lb_rule", backend_target_name!="", response_code_class="500"}[10m])) >= 5
+              or (sum by (url_map_name) (increase(loadbalancing_googleapis_com:https_request_count{monitored_resource="https_lb_rule", response_code_class="500"}[10m])) >= 5
+              unless sum by (url_map_name) (increase(loadbalancing_googleapis_com:https_backend_request_count{monitored_resource="https_lb_rule", backend_target_name!="", response_code_class="500"}[10m])))
+            evaluation_interval: "60s"
+
+    # A spike against the policy's own 23 hours before (the error groups'
+    # bar, docs/infra/monitoring.md §4), and above a floor that internet
+    # scanning and the voice host's own uptime check never reach.
+    armor-deny-spike:
+      display_name: "Cloud Armor refusals spiked"
+      documentation: >-
+        A Cloud Armor policy refused more than 300 requests in ten minutes,
+        and more than ten times its own rate over the 23 hours before (or with
+        none before). Either an attack or a scan (read the refused requests'
+        sources and paths in the load balancer's log), or a rule that started
+        refusing real people (read which rule matched; a rule changed by the
+        last apply is the first suspect).
+      conditions:
+        - name: "more than 300 refused in ten minutes, ten times the day's rate"
+          promql:
+            query: >-
+              sum by (policy_name) (increase(networksecurity_googleapis_com:https_request_count{monitored_resource="network_security_policy", blocked="true"}[10m])) > 300
+              and (sum by (policy_name) (increase(networksecurity_googleapis_com:https_request_count{monitored_resource="network_security_policy", blocked="true"}[10m]))
+              > 10 * sum by (policy_name) (increase(networksecurity_googleapis_com:https_request_count{monitored_resource="network_security_policy", blocked="true"}[23h] offset 10m)) / 138
+              or sum by (policy_name) (increase(networksecurity_googleapis_com:https_request_count{monitored_resource="network_security_policy", blocked="true"}[10m]))
+              unless sum by (policy_name) (increase(networksecurity_googleapis_com:https_request_count{monitored_resource="network_security_policy", blocked="true"}[23h] offset 10m)))
+            evaluation_interval: "60s"
+
+    # Cloud NAT maps app-run-egress (auth's messenger), phi-run-egress
+    # (connectors) and, with R189, cc-voice-run-egress (svc-voice): SendGrid,
+    # the text vendor and the model leave through it.
+    nat-port-exhaustion:
+      display_name: "Cloud NAT is running out of ports"
+      documentation: >-
+        A Cloud NAT gateway could not allocate addresses or ports, or dropped
+        outgoing packets for want of them, for five minutes: calls to the
+        email and text vendors and to the model fail. Read the gateway's port
+        usage by VM in the console, then raise its minimum ports per VM or
+        add an address in Terraform (modules/vpc).
+      conditions:
+        - name: "allocation failed in three minutes of five"
+          threshold:
+            filter: >-
+              metric.type = "router.googleapis.com/nat/nat_allocation_failed" AND resource.type = "nat_gateway"
+            threshold_value: 2
+            alignment_period: "300s"
+            per_series_aligner: "ALIGN_COUNT_TRUE"
+            cross_series_reducer: "REDUCE_SUM"
+            group_by_fields: ["resource.label.gateway_name"]
+        - name: "packets dropped for want of ports for five minutes"
+          threshold:
+            filter: >-
+              metric.type = "router.googleapis.com/nat/dropped_sent_packets_count" AND resource.type = "nat_gateway"
+              AND metric.labels.reason = "OUT_OF_RESOURCES"
+            threshold_value: 10
+            duration: "300s"
+            alignment_period: "300s"
+            group_by_fields: ["resource.label.gateway_name"]
+
+    quota-exceeded:
+      display_name: "a Google Cloud quota is refusing requests"
+      documentation: >-
+        A Google API refused this project's requests for exceeding a quota in
+        three minutes or more of ten. The incident's labels are the service
+        and the quota. A retried blip never opens this; a sustained refusal
+        means something here is failing until the quota is raised (the
+        console's Quotas page) or the caller slows down.
+      conditions:
+        - name: "a quota exceeded in three minutes of ten"
+          threshold:
+            filter: >-
+              metric.type = "serviceruntime.googleapis.com/quota/exceeded" AND resource.type = "consumer_quota"
+            threshold_value: 2
+            alignment_period: "600s"
+            per_series_aligner: "ALIGN_COUNT_TRUE"
+            cross_series_reducer: "REDUCE_SUM"
+            group_by_fields: ["resource.label.service", "metric.label.quota_metric"]
+
+    # Every sink in the project: the audit sinks into the vault's bucket, the
+    # call centre's into cc-audit, and Google's own _Default and _Required.
+    # Urgent: a sink that cannot export is a hole in the audit trail.
+    log-sink-errors:
+      display_name: "URGENT a log sink cannot export (the audit trail)"
+      urgent: true
+      documentation: >-
+        A log sink failed to export entries in every five minutes for fifteen:
+        whatever it routes (the audit logs into the vault, the call centre's
+        into cc-audit) is not arriving, a hole in the audit trail that grows
+        until it is fixed. The incident names the sink. Read its errors in the
+        console (Logging, Log Router), most often the writer's permission on
+        the destination or the perimeter refusing it; then notify the
+        compliance owner of the window.
+      conditions:
+        - name: "export errors in every five minutes for fifteen"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/exports/error_count" AND resource.type = "logging_sink"
+            duration: "900s"
+            alignment_period: "300s"
+            group_by_fields: ["resource.label.name"]
+
+    # One condition per resource type the counter's series can land on, as
+    # `log-counters-changed`. Read on live beta (2026-10-11): Secret Manager's
+    # audit entries carry `audited_resource`, a Cloud Monitoring type, so its
+    # series is there; Cloud KMS's carry `cloudkms_cryptokey`, a Logging-only
+    # type that Google's "Mappings for Logging-only resources" table
+    # (logging/docs/api/v2/resource-list) maps to `global`, as it does
+    # `cloudkms_cryptokeyversion` and `cloudkms_keyring`, so KMS's series is
+    # on `global`. No condition names a Logging-only type: Cloud Monitoring
+    # has none, so it could never match.
+    secret-version-disabled:
+      display_name: "a Secret Manager version was disabled or destroyed"
+      documentation: >-
+        A secret's version was disabled or destroyed (the Admin Activity
+        log; the incident's label is the method). A service that mounts it,
+        pinned or `latest`, fails at its next deploy or restart. If a person
+        did it on purpose (a rotation), check that nothing still pins that
+        version; if nobody did, re-enable it now (a destroyed version cannot
+        come back) and read the entry for who.
+      conditions:
+        - name: "a version disabled or destroyed (on audited_resource)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/secret_version_changes" AND resource.type = "audited_resource"
+            group_by_fields: ["metric.label.operation"]
+        - name: "a version disabled or destroyed (on global)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/secret_version_changes" AND resource.type = "global"
+            group_by_fields: ["metric.label.operation"]
+        - name: "a version disabled or destroyed (on the secret)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/secret_version_changes" AND resource.type = "secretmanager.googleapis.com/Secret"
+            group_by_fields: ["metric.label.operation"]
+
+    kms-version-disabled:
+      display_name: "URGENT a KMS key version was disabled or scheduled for destruction"
+      urgent: true
+      documentation: >-
+        A Cloud KMS key version was disabled or scheduled for destruction
+        (the Admin Activity log; the incident's label is the method). What it
+        encrypts (a database's disk, a log bucket, records' keyring, a signed
+        image's key) stops opening at the next restart or read, and a
+        destroyed version takes its data with it. Restore it now: a version
+        scheduled for destruction is restorable until the scheduled time
+        (gcloud kms keys versions restore), a disabled one is enabled again;
+        then read the entry for who.
+      conditions:
+        - name: "a version disabled or scheduled for destruction (on audited_resource)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/kms_version_changes" AND resource.type = "audited_resource"
+            group_by_fields: ["metric.label.operation"]
+        # Where the PHI project's entries land (on `cloudkms_cryptokey`,
+        # which Cloud Monitoring files under `global`: read 2026-10-11).
+        - name: "a version disabled or scheduled for destruction (on global)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/kms_version_changes" AND resource.type = "global"
+            group_by_fields: ["metric.label.operation"]
 
 projects:
   # ---------------------------------------------------------------------------
@@ -479,6 +908,46 @@ projects:
           AND severity>=ERROR
         labels:
           code: 'EXTRACT(jsonPayload.status)'
+
+      # D-147: the vendors the app project calls. model-gateway writes one line
+      # per form call (model_gateway/app.py, its ClosedFieldFormatter), every
+      # one with `latency_ms`, its `outcome` a vendor_* code when the vendor
+      # failed it; only those four codes are read into `code`.
+      model_gateway_calls:
+        description: >-
+          One per model-gateway form call (its line with `latency_ms`), by the
+          vendor failure code when the model vendor failed the call
+          (vendor_error, vendor_busy, vendor_unavailable, vendor_rejected),
+          and no code otherwise. Nothing else of the line is read.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="model-gateway"
+          AND jsonPayload.service="model-gateway"
+          AND jsonPayload.latency_ms:*
+        labels:
+          code: 'REGEXP_EXTRACT(jsonPayload.outcome, "^(vendor_(?:error|busy|unavailable|rejected))$")'
+
+      # auth's messenger (auth-notary auth/workers/messenger.py): one
+      # `message_not_sent` line per send the vendor refused or never answered,
+      # with the channel and the seam's reason (auth/seams/outbound.py). Only
+      # the vendor's own reasons and the network's; the recipients list, the
+      # allowlist, a template and the identity token are ours and have their
+      # own lines. Empty until auth's workers write JSON (§6).
+      auth_message_vendor_failures:
+        description: >-
+          A sign-in message (an email or a text) the vendor refused or never
+          answered, from auth's messenger: `message_not_sent` with a vendor
+          or network reason. By channel (as `lane`) and reason; never the
+          template, the row or the destination.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="auth-outbox-publisher"
+          AND jsonPayload.logger="auth.workers.messenger"
+          AND jsonPayload.msg="message_not_sent"
+          AND jsonPayload.reason=~"^(vendor_(refused|busy|unavailable|unreadable)|unreachable|no_answer)$"
+        labels:
+          lane: 'EXTRACT(jsonPayload.channel)'
+          code: 'EXTRACT(jsonPayload.reason)'
 
     error_metrics:
       errors:
@@ -932,6 +1401,51 @@ projects:
               per_series_aligner: "ALIGN_MEAN"
               cross_series_reducer: "REDUCE_MAX"
               group_by_fields: ["resource.label.database_id"]
+
+      # D-147: the model vendor, as tpa-api's forms reach it. Only the vendor's
+      # own failures (a 5xx, a 429, no answer, a 400); a refusal or an answer
+      # the gateway's checks set aside is the model's content, not an outage.
+      model-vendor-errors:
+        display_name: "model-gateway: the model vendor is failing"
+        documentation: >-
+          The model vendor failed three or more of model-gateway's calls, and
+          more than a fifth of them, in fifteen minutes (vendor_error,
+          vendor_busy, vendor_unavailable or vendor_rejected; the incident
+          names none). The Ask lanes say "try again", New plan's papers
+          reader fails. Read the vendor's status page, then the gateway's
+          lines for the code; vendor_rejected is most often a request the
+          vendor will not take (its size), vendor_busy its rate limit.
+        conditions:
+          - name: "vendor failures on three calls or more, over a fifth of calls, in fifteen minutes"
+            promql:
+              query: >-
+                sum(increase(logging_googleapis_com:user_model_gateway_calls{monitored_resource="cloud_run_revision", code=~"vendor_.+"}[15m])) >= 3
+                and sum(increase(logging_googleapis_com:user_model_gateway_calls{monitored_resource="cloud_run_revision", code=~"vendor_.+"}[15m]))
+                > 0.2 * sum(increase(logging_googleapis_com:user_model_gateway_calls{monitored_resource="cloud_run_revision"}[15m]))
+              evaluation_interval: "60s"
+
+      # D-147: SendGrid (email) and the text vendor, as auth's messenger
+      # reaches them. One message on its retry ladder (about five minutes a
+      # step) cannot reach three in fifteen minutes on its own.
+      sign-in-message-vendor:
+        display_name: "sign-in messages: the email or text vendor is failing"
+        documentation: >-
+          auth's messenger had three or more sends refused or unanswered by a
+          vendor in fifteen minutes, on one channel (the incident's `lane`:
+          email is SendGrid, sms the text vendor). People waiting for an
+          invitation, a reset or a sign-in code are not getting it;
+          `auth-messages-lag` may be open beside it. Read the vendor's status
+          page and the reason code (vendor_refused with an HTTP 401 or 403 in
+          the row's last error is a revoked or narrowed key), then the NAT
+          path (`nat-port-exhaustion`).
+        conditions:
+          - name: "three vendor failures or more on a channel in fifteen minutes"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_message_vendor_failures" AND resource.type = "cloud_run_revision"
+              threshold_value: 2
+              alignment_period: "900s"
+              group_by_fields: ["metric.label.lane"]
 
   # ---------------------------------------------------------------------------
   # The PHI project: records and its jobs, connectors. Inside the perimeter, so
@@ -1491,6 +2005,29 @@ projects:
               cross_series_reducer: "REDUCE_MAX"
               group_by_fields: ["resource.label.database_id"]
 
+      # D-147: the email and text vendors, as records' message lane reaches
+      # them through connectors. connectors_deliveries carries no destination
+      # (not on the label allowlist), so the two vendors are one lane here. A
+      # refused destination and an unsigned envelope are ours and have their
+      # own policies.
+      message-vendor-errors:
+        display_name: "connectors: the email or text vendor is failing (the message lane)"
+        documentation: >-
+          Five or more of the message lane's sends, and more than a quarter of
+          them, failed at the vendor in thirty minutes (settled retry,
+          unknown or dead): members' notices by email or text are not
+          arriving. Read the vendors' status pages and the lane's codes in
+          connectors' lines, then the NAT path (`nat-port-exhaustion`). An
+          `unknown` is never sent again (R-I): it may have arrived.
+        conditions:
+          - name: "five failures or more, over a quarter of the lane's sends, in thirty minutes"
+            promql:
+              query: >-
+                sum(increase(logging_googleapis_com:user_connectors_deliveries{monitored_resource="cloud_run_revision", lane="message", outcome=~"retry|unknown|dead", code!~"destination_refused|envelope_unsigned"}[30m])) >= 5
+                and sum(increase(logging_googleapis_com:user_connectors_deliveries{monitored_resource="cloud_run_revision", lane="message", outcome=~"retry|unknown|dead", code!~"destination_refused|envelope_unsigned"}[30m]))
+                > 0.25 * sum(increase(logging_googleapis_com:user_connectors_deliveries{monitored_resource="cloud_run_revision", lane="message"}[30m]))
+              evaluation_interval: "60s"
+
   # ---------------------------------------------------------------------------
   # The CRM project: the CRM's engine and its document renderer. The CRM is
   # the other product; this is only what the TPA needs to see of it.
@@ -1644,6 +2181,29 @@ projects:
                 unless sum by (service_name) (increase(run_googleapis_com:request_count{monitored_resource="cloud_run_revision", service_name="svc-voice", response_code_class!="5xx"}[10m])) > 0
               evaluation_interval: "60s"
 
+      # D-147: the phone AI's model vendor (R189: Anthropic's API), from the
+      # error counter's class, the last line of call-center's redacted
+      # traceback. The vendor SDK's exceptions are named under `anthropic`
+      # (a turn that failed, services/voice_gateway/server.py "turn failed").
+      voice-model-errors:
+        display_name: "svc-voice: the model vendor is failing"
+        documentation: >-
+          svc-voice logged three or more errors whose exception is the model
+          vendor's (a class under `anthropic`) in ten minutes: callers to the
+          test line hear the fallback, not the AI. Read the vendor's status
+          page, then svc-voice's ERROR lines for the class (a rate limit, an
+          overload, a refused key).
+        conditions:
+          - name: "three vendor exceptions or more in ten minutes"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/errors" AND resource.type = "cloud_run_revision"
+                AND resource.labels.service_name = "svc-voice"
+                AND metric.labels.class = starts_with("anthropic")
+              threshold_value: 2
+              alignment_period: "600s"
+              group_by_fields: ["metric.label.class"]
+
       jobs-failed:
         display_name: "a call-centre job execution failed"
         documentation: >-
@@ -1701,3 +2261,128 @@ projects:
               per_series_aligner: "ALIGN_MEAN"
               cross_series_reducer: "REDUCE_MAX"
               group_by_fields: ["resource.label.database_id"]
+
+# =============================================================================
+# The synthetic checks' journeys (the owner's Q2 and Q3, 2026-10-11, the orchestrating
+# session: "Yes (Recommended)" and "Yes, job creates them
+# (Recommended)"; docs/infra/monitoring.md §5c). A section of its own, read by
+# beta's root alone (main.tf, local.synthetic_policies) and only for a journey
+# synthetics_enabled builds and whose databases run, so with the switch off
+# nothing here reaches a plan. The app project receives the runner's lines.
+#
+# `__JOB__` in a policy is the journey's Cloud Run job (`synthetics-<journey>`),
+# written in by the root once per running journey, and each policy's key
+# there is `<key>-<journey>`. `urgent` is the journey's own (J1 and J2
+# urgent, J3 normal; main.tf, local.synthetic_journeys), never this file's.
+# No condition is a log match: the incident carries the job's name alone.
+# =============================================================================
+synthetics:
+  log_metrics:
+    synthetic_results:
+      description: >-
+        One per synthetic journey run: the runner's one result line
+        (trellis-watchtower synthetics/, `synthetic_result`), by its Cloud Run
+        job, its outcome (pass, fail, skipped, or error when the runner itself
+        broke or was misconfigured), its closed code and the last answer's
+        status class. The line carries no token, cookie, id, number or body,
+        and only those four are read; its `step` is a field, never a label.
+      filter: |
+        resource.type="cloud_run_job"
+        AND resource.labels.job_name=~"^synthetics-"
+        AND jsonPayload.message="synthetic_result"
+      labels:
+        job: 'EXTRACT(resource.labels.job_name)'
+        outcome: 'REGEXP_EXTRACT(jsonPayload.outcome, "^(pass|fail|skipped|error)$")'
+        code: 'REGEXP_EXTRACT(jsonPayload.code, "^([a-z][a-z0-9_]{0,39})$")'
+        status_class: 'REGEXP_EXTRACT(jsonPayload.status_class, "^([1-5]xx)$")'
+
+  alert_policies:
+    # Two failures and no pass in eleven minutes: two runs of a five-minute
+    # journey, so one bad run never pages and a recovery closes it. The runner
+    # never retries (a retry replays a TOTP step). A failure is a verdict about
+    # the estate (the runner exits 0); a broken runner is `synthetic-broken`
+    # and the job's own `jobs-failed` (it exits 1).
+    synthetic-failing:
+      display_name: "synthetic journey failing: __JOB__"
+      documentation: >-
+        The synthetic journey `__JOB__` failed twice in eleven minutes with no
+        pass between: a person signing in the same way would fail too. The
+        incident names the job alone; the runner's result lines (Logs, the
+        job's executions) carry the failing step's code and the answer's
+        status class and the step it failed at, never a body. `credentials`
+        or `locked` is the test login's (a wrong secret version, or auth's
+        lockout: read auth-synthetic-principals in docs/infra/monitoring.md
+        §5c before rotating); `iap` is the sign-in gate's; a 5xx class is
+        the service's.
+        The journey is paused, and this policy gone, while a database it needs
+        is stopped on purpose (§5b).
+      conditions:
+        - name: "two failed runs and no pass in eleven minutes"
+          promql:
+            query: >-
+              (sum by (job_name) (sum_over_time(logging_googleapis_com:user_synthetic_results{monitored_resource="cloud_run_job", job_name="__JOB__", outcome="fail"}[11m])) >= 2)
+              unless on(job_name)
+              (sum by (job_name) (sum_over_time(logging_googleapis_com:user_synthetic_results{monitored_resource="cloud_run_job", job_name="__JOB__", outcome="pass"}[11m])) > 0)
+            evaluation_interval: "60s"
+
+    # The runner itself is broken or misconfigured (outcome `error`: code
+    # `runner`, an unexpected exception; `config`, a bad setting or an
+    # unusable credentials file; `iap_token`, no identity token). Not a verdict about the estate, so normal
+    # routing whatever the journey's; `jobs-failed` opens beside it (exit 1).
+    synthetic-broken:
+      display_name: "synthetic journey broken: __JOB__"
+      documentation: >-
+        The synthetic journey `__JOB__`'s runner reported `error` in the last
+        eleven minutes: it is broken (code `runner`) or misconfigured (code
+        `config`: a missing or bad setting, or a credentials file it cannot
+        use; code `iap_token`: the metadata server gave its account no
+        identity token), so it is not checking anything. Read the job's last execution and its result line,
+        then the job's environment and its pinned credentials version
+        (synthetic_credentials_versions). `jobs-failed` opens beside this.
+      conditions:
+        - name: "an error result in eleven minutes"
+          promql:
+            query: >-
+              sum by (job_name) (sum_over_time(logging_googleapis_com:user_synthetic_results{monitored_resource="cloud_run_job", job_name="__JOB__", outcome="error"}[11m])) > 0
+            evaluation_interval: "60s"
+
+    # No result line at all for fifteen minutes from a journey that is not
+    # paused ("synthetic checks not running"): three runs missed or mute. The
+    # six-minute hold covers the first run after the policy is made (its
+    # schedule's next five-minute mark, and the run), so a policy made beside
+    # its job never pages; beside it, the module's missed run (900 s).
+    synthetic-blind:
+      display_name: "synthetic checks not running: __JOB__"
+      documentation: >-
+        The synthetic journey `__JOB__` has written no result line for
+        fifteen minutes and its schedule is not paused: nothing is checking
+        that people can sign in. Read the job's executions (a missed run
+        opens beside this one) and its Cloud Scheduler job, then the runner's
+        own lines; a run that ended without its result line is the runner's
+        fault, not the service's.
+      conditions:
+        - name: "no result line for fifteen minutes"
+          promql:
+            query: >-
+              absent_over_time(logging_googleapis_com:user_synthetic_results{monitored_resource="cloud_run_job", job_name="__JOB__"}[15m])
+            duration: "360s"
+            evaluation_interval: "60s"
+
+    # The job itself failed (exit 1: the runner broke, or its line could not
+    # be written). The app project's `jobs-failed` names its jobs one by one,
+    # so each journey's own copy is here, and leaves with its journey; a
+    # failed check is a verdict (exit 0) and never opens it.
+    synthetic-job-failed:
+      display_name: "synthetic job failed: __JOB__"
+      documentation: >-
+        An execution of the synthetic journey's job `__JOB__` failed in the
+        last ten minutes: the runner broke or could not write its result line
+        (a failed check is a verdict and never fails the job). Read the
+        execution's own lines; `synthetic-broken` is open beside this when
+        the runner wrote its `error` line.
+      conditions:
+        - name: "a failed execution in ten minutes"
+          promql:
+            query: >-
+              sum by (job_name) (increase(run_googleapis_com:job_completed_execution_count{monitored_resource="cloud_run_job", job_name="__JOB__", result="failed"}[10m])) > 0
+            evaluation_interval: "60s"

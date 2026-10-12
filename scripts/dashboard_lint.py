@@ -107,8 +107,10 @@ METRIC_LABELS = CATALOGUE_LABELS | GOOGLE_METRIC_LABELS
 RESOURCE_LABELS = {"service_name", "job_name", "database_id", "job_id", "host"}
 ALLOWED_LABELS = {f"metric.label.{x}" for x in METRIC_LABELS} | {f"resource.label.{x}" for x in RESOURCE_LABELS}
 
+# servicedirectory_service: a private uptime check's resource (Google's VPC checkers reading auth's and tpa-api's
+# /ready at their internal balancers; tpa-platform D-149). Its one label read here is service_name.
 MONITORED_RESOURCES = {"cloud_run_revision", "cloud_run_job", "cloudsql_database", "uptime_url", "cloud_scheduler_job",
-                       "audited_resource"}
+                       "audited_resource", "servicedirectory_service"}
 METRIC_TYPE_RE = re.compile(r"^(logging|run|cloudsql|monitoring)\.googleapis\.com/[a-z0-9_/]+$")
 FILTER_OPERATORS = {"=", "=~"}
 CLOUD_PANEL_TYPES = {"row", "stat", "timeseries", "table", "state-timeline", "text", "bargauge"}

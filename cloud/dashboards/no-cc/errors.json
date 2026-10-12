@@ -1313,6 +1313,634 @@
         }
       },
       "id": 12
+    },
+    {
+      "type": "row",
+      "title": "Crashes, out-of-memory kills, and secret or key versions taken away",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "id": 13
+    },
+    {
+      "type": "timeseries",
+      "title": "App project",
+      "description": "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the method alone; who and which stay in the entry.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 41
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed: {{resource.label.service_name}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "OOM: {{resource.label.service_name}}"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "OOM: {{resource.label.job_name}}"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/secret_version_changes"
+            ],
+            "groupBys": [
+              "metric.label.operation"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "secret: {{metric.label.operation}}"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/kms_version_changes"
+            ],
+            "groupBys": [
+              "metric.label.operation"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "key: {{metric.label.operation}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 14
+    },
+    {
+      "type": "timeseries",
+      "title": "PHI project",
+      "description": "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the method alone; who and which stay in the entry.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 41
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed: {{resource.label.service_name}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "OOM: {{resource.label.service_name}}"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "OOM: {{resource.label.job_name}}"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/secret_version_changes"
+            ],
+            "groupBys": [
+              "metric.label.operation"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "secret: {{metric.label.operation}}"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/kms_version_changes"
+            ],
+            "groupBys": [
+              "metric.label.operation"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "key: {{metric.label.operation}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 15
+    },
+    {
+      "type": "timeseries",
+      "title": "CRM",
+      "description": "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the method alone; who and which stay in the entry.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 41
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed: {{resource.label.service_name}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "OOM: {{resource.label.service_name}}"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "OOM: {{resource.label.job_name}}"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/secret_version_changes"
+            ],
+            "groupBys": [
+              "metric.label.operation"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "secret: {{metric.label.operation}}"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/kms_version_changes"
+            ],
+            "groupBys": [
+              "metric.label.operation"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "key: {{metric.label.operation}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 16
     }
   ]
 }

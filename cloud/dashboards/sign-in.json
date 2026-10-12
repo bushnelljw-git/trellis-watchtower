@@ -1063,13 +1063,111 @@
     },
     {
       "type": "timeseries",
-      "title": "Messenger instances",
-      "description": "auth-outbox-publisher's instances. With none, no sign-in message is sent: `auth-messages-lag` opens on that too.",
+      "title": "Message vendor refusals, by lane and reason",
+      "description": "Sign-in texts or emails the vendor would not take, by channel and the messenger's reason (`auth_message_vendor_failures`; `sign-in-message-vendor`).",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
         "y": 26
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_message_vendor_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.lane",
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.lane}} {{metric.label.code}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11
+    },
+    {
+      "type": "timeseries",
+      "title": "Messenger instances",
+      "description": "auth-outbox-publisher's instances. With none, no sign-in message is sent: `auth-messages-lag` opens on that too.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 34
       },
       "datasource": {
         "type": "stackdriver",
@@ -1160,7 +1258,7 @@
           "sort": "desc"
         }
       },
-      "id": 11
+      "id": 12
     },
     {
       "type": "row",
@@ -1171,9 +1269,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 42
       },
-      "id": 12
+      "id": 13
     },
     {
       "type": "timeseries",
@@ -1183,7 +1281,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 43
       },
       "datasource": {
         "type": "stackdriver",
@@ -1267,7 +1365,7 @@
           "sort": "desc"
         }
       },
-      "id": 13
+      "id": 14
     },
     {
       "type": "timeseries",
@@ -1277,7 +1375,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 43
       },
       "datasource": {
         "type": "stackdriver",
@@ -1391,7 +1489,7 @@
           "sort": "desc"
         }
       },
-      "id": 14
+      "id": 15
     },
     {
       "type": "timeseries",
@@ -1401,7 +1499,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 43
+        "y": 51
       },
       "datasource": {
         "type": "stackdriver",
@@ -1517,7 +1615,7 @@
           "sort": "desc"
         }
       },
-      "id": 15
+      "id": 16
     },
     {
       "type": "timeseries",
@@ -1527,7 +1625,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 43
+        "y": 51
       },
       "datasource": {
         "type": "stackdriver",
@@ -1614,7 +1712,7 @@
           "sort": "desc"
         }
       },
-      "id": 16
+      "id": 17
     },
     {
       "type": "row",
@@ -1625,9 +1723,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 59
       },
-      "id": 17
+      "id": 18
     },
     {
       "type": "timeseries",
@@ -1637,7 +1735,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 52
+        "y": 60
       },
       "datasource": {
         "type": "stackdriver",
@@ -1729,7 +1827,7 @@
           "sort": "desc"
         }
       },
-      "id": 18
+      "id": 19
     },
     {
       "type": "timeseries",
@@ -1739,7 +1837,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 52
+        "y": 60
       },
       "datasource": {
         "type": "stackdriver",
@@ -1831,7 +1929,7 @@
           "sort": "desc"
         }
       },
-      "id": 19
+      "id": 20
     }
   ]
 }

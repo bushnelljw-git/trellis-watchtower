@@ -88,6 +88,10 @@ class Catalogue:
         tree = mapping_tree(self.text)
         self.shared = self._metrics(tree["shared"]["log_metrics"])
         self.roles = {role: self._metrics(body.get("log_metrics", {})) for role, body in tree["projects"].items()}
+        # The synthetic journeys' own section (D-149): beta's root reads it alone, and their result lines land in
+        # the app project (the runner is an app-project job), so its metrics are the app role's.
+        self.synthetics = self._metrics((tree.get("synthetics") or {}).get("log_metrics", {}))
+        self.roles.setdefault("app", {}).update(self.synthetics)
 
     @staticmethod
     def _metrics(section: dict) -> dict[str, dict]:

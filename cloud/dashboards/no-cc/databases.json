@@ -1,7 +1,7 @@
 {
   "uid": "tw-cloud-databases",
   "title": "Databases (cloud)",
-  "description": "The three Cloud SQL instances: up, and disk used. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+  "description": "The three Cloud SQL instances: up, disk, CPU, memory, connections, restarts and failed backups. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
   "tags": [
     "trellis-watchtower",
     "cloud",
@@ -532,6 +532,379 @@
       "id": 4
     },
     {
+      "type": "timeseries",
+      "title": "CPU and memory",
+      "description": "Cloud SQL's CPU and memory utilisation (the monitoring module pages CPU at 80% and 95%, memory at 90%).",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/cpu/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth-db CPU"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/memory/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth-db memory"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "Connections",
+      "description": "Backends connected (num_backends, every database of the instance). The module opens at 80% and 95% of max_connections (100 on beta).",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/postgresql/num_backends",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth-db connections"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 6
+    },
+    {
+      "type": "timeseries",
+      "title": "Restarts and failed backups",
+      "description": "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_restarts",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "restarts"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_backup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "backup failed"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 7
+    },
+    {
       "type": "row",
       "title": "tpa-db (records and its jobs; PHI project)",
       "collapsed": false,
@@ -540,9 +913,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 6
+        "y": 12
       },
-      "id": 5
+      "id": 8
     },
     {
       "type": "state-timeline",
@@ -552,7 +925,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 7
+        "y": 13
       },
       "datasource": {
         "type": "stackdriver",
@@ -651,7 +1024,7 @@
           "sort": "none"
         }
       },
-      "id": 6
+      "id": 9
     },
     {
       "type": "timeseries",
@@ -661,7 +1034,7 @@
         "h": 5,
         "w": 8,
         "x": 12,
-        "y": 7
+        "y": 13
       },
       "datasource": {
         "type": "stackdriver",
@@ -756,7 +1129,7 @@
           "sort": "desc"
         }
       },
-      "id": 7
+      "id": 10
     },
     {
       "type": "stat",
@@ -766,7 +1139,7 @@
         "h": 5,
         "w": 4,
         "x": 20,
-        "y": 7
+        "y": 13
       },
       "datasource": {
         "type": "stackdriver",
@@ -972,7 +1345,380 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 8
+      "id": 11
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU and memory",
+      "description": "Cloud SQL's CPU and memory utilisation (the monitoring module pages CPU at 80% and 95%, memory at 90%).",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 18
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/cpu/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-db CPU"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/memory/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-db memory"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12
+    },
+    {
+      "type": "timeseries",
+      "title": "Connections",
+      "description": "Backends connected (num_backends, every database of the instance). The module opens at 80% and 95% of max_connections (400 on beta).",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 18
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/postgresql/num_backends",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-db connections"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 320
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 13
+    },
+    {
+      "type": "timeseries",
+      "title": "Restarts and failed backups",
+      "description": "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 18
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_restarts",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "restarts"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_backup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "backup failed"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 14
     },
     {
       "type": "row",
@@ -983,9 +1729,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 24
       },
-      "id": 9
+      "id": 15
     },
     {
       "type": "state-timeline",
@@ -995,7 +1741,7 @@
         "h": 5,
         "w": 12,
         "x": 0,
-        "y": 13
+        "y": 25
       },
       "datasource": {
         "type": "stackdriver",
@@ -1094,7 +1840,7 @@
           "sort": "none"
         }
       },
-      "id": 10
+      "id": 16
     },
     {
       "type": "timeseries",
@@ -1104,7 +1850,7 @@
         "h": 5,
         "w": 8,
         "x": 12,
-        "y": 13
+        "y": 25
       },
       "datasource": {
         "type": "stackdriver",
@@ -1199,7 +1945,7 @@
           "sort": "desc"
         }
       },
-      "id": 11
+      "id": 17
     },
     {
       "type": "stat",
@@ -1209,7 +1955,7 @@
         "h": 5,
         "w": 4,
         "x": 20,
-        "y": 13
+        "y": 25
       },
       "datasource": {
         "type": "stackdriver",
@@ -1415,7 +2161,380 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 12
+      "id": 18
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU and memory",
+      "description": "Cloud SQL's CPU and memory utilisation (the monitoring module pages CPU at 80% and 95%, memory at 90%).",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 30
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/cpu/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crm-db CPU"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/memory/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crm-db memory"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 19
+    },
+    {
+      "type": "timeseries",
+      "title": "Connections",
+      "description": "Backends connected (num_backends, every database of the instance). The module opens at 80% and 95% of max_connections (200 on beta).",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 30
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/postgresql/num_backends",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crm-db connections"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 160
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 20
+    },
+    {
+      "type": "timeseries",
+      "title": "Restarts and failed backups",
+      "description": "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 30
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_restarts",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "restarts"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_backup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "backup failed"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 21
     }
   ]
 }
