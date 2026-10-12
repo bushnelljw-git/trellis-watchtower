@@ -139,7 +139,13 @@ TPADB_SAYS_DOWN = ('(max(max_over_time(probe_success{job="blackbox-reason", serv
                    " or vector(0))")
 # Alerts the headline already shows as problems of their own: the failing checks, auth not ready, a stale worker.
 SHOWN_ALERTS = "ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale"
-ALERTS_OWN = f'ALERTS{{alertstate="firing", alertname!~"{SHOWN_ALERTS}"}}'
+def live(series: str) -> str:
+    """An ALERTS series only while its rule still writes it (every 30 s). After a restart Prometheus keeps the last
+    sample a cleared alert wrote before it stopped, and a query reads it for five minutes as if it still fired."""
+    return f"({series} and (time() - timestamp({series}) < 75))"
+
+
+ALERTS_OWN = live(f'ALERTS{{alertstate="firing", alertname!~"{SHOWN_ALERTS}"}}')
 # A firing alert is red unless it is about a degraded check (a 2xx whose body says the database is down: amber).
 AMBER_ALERTS = "DatabaseReportedDown"
 
@@ -748,9 +754,10 @@ def watchtower():
             prom("B", f"count({SCRAPES} == 0) or 0 * count({SCRAPES})", "Targets down"),
             prom("C", "min(prometheus_tsdb_lowest_timestamp_seconds) * 1000", "History since"),
             # The count, plus 0.5 when any firing alert is red-class: one number, coloured by its own worst.
-            prom("D", '(count(ALERTS{alertstate="firing"}) or vector(0)) + 0.5 * ((count(ALERTS{alertstate="firing", '
-                      f'alertname!~"{AMBER_ALERTS}"}}) or vector(0)) > bool 0)', "Alerts firing"),
-            prom("E", 'count(ALERTS{alertstate="pending"}) or vector(0)', "Alerts pending"),
+            prom("D", f'(count({live('ALERTS{alertstate="firing"}')}) or vector(0)) + 0.5 * ((count('
+                      f'{live(f'ALERTS{{alertstate="firing", alertname!~"{AMBER_ALERTS}"}}')}) or vector(0))'
+                      " > bool 0)", "Alerts firing"),
+            prom("E", f'count({live('ALERTS{alertstate="pending"}')}) or vector(0)', "Alerts pending"),
         ],
         fieldConfig={"defaults": {"color": {"mode": "thresholds"}, "thresholds": steps((None, INK)),
                                   "noValue": "? Prometheus not answering"},

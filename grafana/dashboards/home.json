@@ -126,7 +126,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_join(label_replace(label_replace(label_replace(max by (alertname) (ALERTS_FOR_STATE{alertname!~\"ProbeDown|DatabaseReportedDown\"}) * 1000 and on (alertname) count by (alertname) (ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"}), \"service\", \"$1\", \"alertname\", \"(.*)\"), \"state\", \"firing\", \"\", \"\"), \"rank\", \"0\", \"\", \"\"), \"check\", \" · \", \"service\", \"probe\"), \"check\", \"$1\", \"check\", \"(.*) · \"), \"dash\", \"tw-tpa-edge-api\", \"service\", \"web-tls|trellis|web|tpa-api\"), \"dash\", \"tw-auth\", \"service\", \"auth|auth-publisher|auth-sweeper|auth-outbox-publisher\"), \"dash\", \"tw-records\", \"service\", \"records\"), \"dash\", \"tw-jobs-connectors\", \"service\", \"connectors|tpa-jobs-drains|crm_transitions|outbox_dispatch\"), \"dash\", \"tw-crm-network\", \"service\", \"network-engine|network-tpa\"), \"dash\", \"tw-forge\", \"service\", \"forge-engine\"), \"dash\", \"tw-enroll\", \"service\", \"enroll-engine\"), \"dash\", \"tw-feed-ingest\", \"service\", \"feed-ingest\"), \"dash\", \"tw-overview\", \"dash\", \"\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_join(label_replace(label_replace(label_replace(max by (alertname) (ALERTS_FOR_STATE{alertname!~\"ProbeDown|DatabaseReportedDown\"}) * 1000 and on (alertname) count by (alertname) ((ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"} and (time() - timestamp(ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"}) < 75))), \"service\", \"$1\", \"alertname\", \"(.*)\"), \"state\", \"firing\", \"\", \"\"), \"rank\", \"0\", \"\", \"\"), \"check\", \" · \", \"service\", \"probe\"), \"check\", \"$1\", \"check\", \"(.*) · \"), \"dash\", \"tw-tpa-edge-api\", \"service\", \"web-tls|trellis|web|tpa-api\"), \"dash\", \"tw-auth\", \"service\", \"auth|auth-publisher|auth-sweeper|auth-outbox-publisher\"), \"dash\", \"tw-records\", \"service\", \"records\"), \"dash\", \"tw-jobs-connectors\", \"service\", \"connectors|tpa-jobs-drains|crm_transitions|outbox_dispatch\"), \"dash\", \"tw-crm-network\", \"service\", \"network-engine|network-tpa\"), \"dash\", \"tw-forge\", \"service\", \"forge-engine\"), \"dash\", \"tw-enroll\", \"service\", \"enroll-engine\"), \"dash\", \"tw-feed-ingest\", \"service\", \"feed-ingest\"), \"dash\", \"tw-overview\", \"dash\", \"\")",
           "legendFormat": "✕ alert {{alertname}}",
           "range": false,
           "instant": true,
@@ -251,7 +251,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "(count((max by (stack, service, probe) (probe:state) > 0 < 3)) or 0 * count(probe:state)) + (count(ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"}) or vector(0))",
+          "expr": "(count((max by (stack, service, probe) (probe:state) > 0 < 3)) or 0 * count(probe:state)) + (count((ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"} and (time() - timestamp(ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"}) < 75))) or vector(0))",
           "legendFormat": "__auto",
           "range": false,
           "instant": true,
@@ -264,7 +264,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "(count(max by (stack, service, probe) (probe:state) == 1) or 0 * count(probe:state)) + (count(ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"}) or vector(0))",
+          "expr": "(count(max by (stack, service, probe) (probe:state) == 1) or 0 * count(probe:state)) + (count((ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"} and (time() - timestamp(ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"}) < 75))) or vector(0))",
           "legendFormat": "__auto",
           "range": false,
           "instant": true,
@@ -1266,7 +1266,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_join(label_replace(label_replace(label_replace(max by (alertname) (ALERTS_FOR_STATE{alertname!~\"ProbeDown|DatabaseReportedDown\"}) * 1000 and on (alertname) count by (alertname) (ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"}), \"service\", \"$1\", \"alertname\", \"(.*)\"), \"state\", \"firing\", \"\", \"\"), \"rank\", \"0\", \"\", \"\"), \"check\", \" · \", \"service\", \"probe\"), \"check\", \"$1\", \"check\", \"(.*) · \"), \"dash\", \"tw-tpa-edge-api\", \"service\", \"web-tls|trellis|web|tpa-api\"), \"dash\", \"tw-auth\", \"service\", \"auth|auth-publisher|auth-sweeper|auth-outbox-publisher\"), \"dash\", \"tw-records\", \"service\", \"records\"), \"dash\", \"tw-jobs-connectors\", \"service\", \"connectors|tpa-jobs-drains|crm_transitions|outbox_dispatch\"), \"dash\", \"tw-crm-network\", \"service\", \"network-engine|network-tpa\"), \"dash\", \"tw-forge\", \"service\", \"forge-engine\"), \"dash\", \"tw-enroll\", \"service\", \"enroll-engine\"), \"dash\", \"tw-feed-ingest\", \"service\", \"feed-ingest\"), \"dash\", \"tw-overview\", \"dash\", \"\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_join(label_replace(label_replace(label_replace(max by (alertname) (ALERTS_FOR_STATE{alertname!~\"ProbeDown|DatabaseReportedDown\"}) * 1000 and on (alertname) count by (alertname) ((ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"} and (time() - timestamp(ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"}) < 75))), \"service\", \"$1\", \"alertname\", \"(.*)\"), \"state\", \"firing\", \"\", \"\"), \"rank\", \"0\", \"\", \"\"), \"check\", \" · \", \"service\", \"probe\"), \"check\", \"$1\", \"check\", \"(.*) · \"), \"dash\", \"tw-tpa-edge-api\", \"service\", \"web-tls|trellis|web|tpa-api\"), \"dash\", \"tw-auth\", \"service\", \"auth|auth-publisher|auth-sweeper|auth-outbox-publisher\"), \"dash\", \"tw-records\", \"service\", \"records\"), \"dash\", \"tw-jobs-connectors\", \"service\", \"connectors|tpa-jobs-drains|crm_transitions|outbox_dispatch\"), \"dash\", \"tw-crm-network\", \"service\", \"network-engine|network-tpa\"), \"dash\", \"tw-forge\", \"service\", \"forge-engine\"), \"dash\", \"tw-enroll\", \"service\", \"enroll-engine\"), \"dash\", \"tw-feed-ingest\", \"service\", \"feed-ingest\"), \"dash\", \"tw-overview\", \"dash\", \"\")",
           "legendFormat": "✕ alert {{alertname}}",
           "range": false,
           "instant": true,
@@ -1396,7 +1396,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace((count(probe:state) > 0) * 0 unless on () (count((max by (stack, service, probe) (probe:state) > 0 < 3)) > 0 or count(ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"}) > 0 or count(up{job=~\"blackbox|loki|alloy|prometheus\"} == 0) > 0), \"service\", \"every running check\", \"\", \"\"), \"check\", \"every running check\", \"\", \"\"), \"state\", \"passing\", \"\", \"\"), \"rank\", \"9\", \"\", \"\"), \"dash\", \"tw-overview\", \"\", \"\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace((count(probe:state) > 0) * 0 unless on () (count((max by (stack, service, probe) (probe:state) > 0 < 3)) > 0 or count((ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"} and (time() - timestamp(ALERTS{alertstate=\"firing\", alertname!~\"ProbeDown|DatabaseReportedDown|AuthNotReady|WorkerStale\"}) < 75))) > 0 or count(up{job=~\"blackbox|loki|alloy|prometheus\"} == 0) > 0), \"service\", \"every running check\", \"\", \"\"), \"check\", \"every running check\", \"\", \"\"), \"state\", \"passing\", \"\", \"\"), \"rank\", \"9\", \"\", \"\"), \"dash\", \"tw-overview\", \"\", \"\")",
           "legendFormat": "__auto",
           "range": false,
           "instant": true,
@@ -2106,7 +2106,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "(count(ALERTS{alertstate=\"firing\"}) or vector(0)) + 0.5 * ((count(ALERTS{alertstate=\"firing\", alertname!~\"DatabaseReportedDown\"}) or vector(0)) > bool 0)",
+          "expr": "(count((ALERTS{alertstate=\"firing\"} and (time() - timestamp(ALERTS{alertstate=\"firing\"}) < 75))) or vector(0)) + 0.5 * ((count((ALERTS{alertstate=\"firing\", alertname!~\"DatabaseReportedDown\"} and (time() - timestamp(ALERTS{alertstate=\"firing\", alertname!~\"DatabaseReportedDown\"}) < 75))) or vector(0)) > bool 0)",
           "legendFormat": "Alerts firing",
           "range": false,
           "instant": true
@@ -2118,7 +2118,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "count(ALERTS{alertstate=\"pending\"}) or vector(0)",
+          "expr": "count((ALERTS{alertstate=\"pending\"} and (time() - timestamp(ALERTS{alertstate=\"pending\"}) < 75))) or vector(0)",
           "legendFormat": "Alerts pending",
           "range": false,
           "instant": true
