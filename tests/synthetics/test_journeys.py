@@ -1,6 +1,6 @@
 """The journeys against a local fake (synthetic_fakes.py): pass, each step failing, timeouts,
-transport failures, configuration, pausing, the egress warm-up, and no secret on stdout or stderr on
-any path.
+transport failures, configuration, pausing, the egress warm-up, connections dialled and requests
+written once, and no secret on stdout or stderr on any path.
 
 Run: python3 -m unittest discover -s tests/synthetics -v   (make synthetics-test)
 """
@@ -27,7 +27,7 @@ sys.path.insert(0, str(HERE))
 import synthetic_fakes as fakes  # noqa: E402
 
 from synthetics import __main__ as cli  # noqa: E402
-from synthetics import journeys, result  # noqa: E402
+from synthetics import client, journeys, result  # noqa: E402
 from synthetics.journeys import Tools  # noqa: E402
 
 #: The start of a TOTP step, so a code minted at it never waits.
@@ -90,6 +90,34 @@ class Network:
 
     def spent(self) -> float:
         return self.clock - self.START
+
+
+@contextlib.contextmanager
+def dialling(attempt):
+    """client._connect_once replaced by `attempt(address, timeout, real)` for the block; yields each
+    attempt's timeout, in order."""
+    real = client._connect_once
+    timeouts: list[float] = []
+
+    def recorded(address, timeout):
+        timeouts.append(timeout)
+        return attempt(address, timeout, real)
+
+    client._connect_once = recorded
+    try:
+        yield timeouts
+    finally:
+        client._connect_once = real
+
+
+def failing_first(errors: list):
+    """Each attempt takes the next of `errors`: an exception is raised at once; None connects."""
+    def attempt(address, timeout, real):
+        error = errors.pop(0) if errors else None
+        if error is not None:
+            raise error
+        return real(address, timeout)
+    return attempt
 
 
 class Case(unittest.TestCase):
@@ -398,16 +426,24 @@ class StaffSignIn(Case):
             probe.bind(("127.0.0.1", 0))
             closed = probe.getsockname()[1]
         with fakes.Fake() as fake:
-            # Without the warm-up, which would wait out its budget here (Egress has that case).
+            # Without the warm-up, which would wait out its budget here (Egress has that case). Refusals are
+            # dialled again until the step's second is spent; the last one stands.
+            started = time.monotonic()
             line, code = self.run_journey("staff-sign-in", self.env(
-                fake, SYNTHETICS_BASE_URL=f"http://127.0.0.1:{closed}", SYNTHETICS_EGRESS_WAIT_S="0"))
+                fake, SYNTHETICS_BASE_URL=f"http://127.0.0.1:{closed}", SYNTHETICS_EGRESS_WAIT_S="0",
+                SYNTHETICS_STEP_TIMEOUT_S="1"))
+            took = time.monotonic() - started
         self.assert_failed(line, code, step="ops_shell", code="connect", status_class="none")
+        self.assertLess(took, 2.5)
 
     def test_https_to_a_plain_server_is_tls(self):
         with fakes.Fake() as fake:
+            started = time.monotonic()
             line, code = self.run_journey("staff-sign-in", self.env(
                 fake, SYNTHETICS_BASE_URL=f"https://127.0.0.1:{fake.port}"))
+            took = time.monotonic() - started
         self.assert_failed(line, code, step="ops_shell", code="tls", status_class="none")
+        self.assertLess(took, 3, "a TLS failure is never dialled again")
 
 
 class Configuration(Case):
@@ -821,6 +857,57 @@ class Egress(Case):
         self.assertEqual((line["outcome"], code), ("pass", 0))
         self.assertEqual(asked, [("127.0.0.1", fake.port)] * 3, "until it resolves, then never again")
         self.assertEqual(len(net.connects), 2)
+
+
+class Connect(Case):
+    """Every connection dialled with a fresh socket until it connects or the step's time is spent; every
+    request written once, whatever happens after (beta, 2026-10-12: a connection opened after the warm-up
+    could still be dropped)."""
+
+    def test_a_request_lands_once_after_connects_that_failed(self):
+        # J2's connections in order: the metadata server's, login's, mfa_verify's, ...
+        for name, errors, extra in [("login, timed out twice", [None, TimeoutError, TimeoutError], 2),
+                                    ("mfa_verify, refused three times",
+                                     [None, None, ConnectionRefusedError, ConnectionRefusedError,
+                                      ConnectionRefusedError], 3)]:
+            with self.subTest(name), fakes.Fake(clock=lambda: FIXED_NOW) as fake:
+                with dialling(failing_first(errors)) as timeouts:
+                    line, code = self.run_journey("ops-desk", self.env(fake))
+                self.assertEqual((line["outcome"], code), ("pass", 0))
+                self.assertEqual(fake.routes(), J2_ROUTES, "each request sent once")
+                self.assertEqual(len(timeouts), len(J2_ROUTES) + extra)
+                self.assertEqual(len(fake.codes_received), 1)
+
+    def test_a_request_is_never_written_twice(self):
+        # The sign-in, the code and the sign-out, each answered by nothing or a dropped connection.
+        for route, behaviour, expected in [("login", "hang", "timeout"), ("login", "drop", "connect"),
+                                           ("mfa_verify", "hang", "timeout"), ("mfa_verify", "drop", "connect"),
+                                           ("logout", "hang", "timeout"), ("logout", "drop", "connect")]:
+            with self.subTest(route=route, behaviour=behaviour), fakes.Fake(
+                    fail={route: behaviour}, clock=lambda: FIXED_NOW, hang_s=1.5) as fake:
+                line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="0.5"))
+                self.assert_failed(line, code, step=route, code=expected, status_class="none")
+                self.assertEqual(fake.routes().count(route), 1)
+                self.assertLessEqual(len(fake.codes_received), 1)
+
+    def test_the_step_bounds_every_attempt(self):
+        # Local mode (no metadata call): login's every attempt is never answered and spends its whole timeout.
+        def stalled(address, timeout, real):
+            time.sleep(timeout)
+            raise TimeoutError
+
+        with fakes.Fake(iap=False) as fake:
+            started = time.monotonic()
+            with dialling(stalled) as timeouts:
+                line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="3.6"),
+                                              use_iap=False)
+            took = time.monotonic() - started
+        self.assert_failed(line, code, step="login", code="timeout", status_class="none")
+        self.assertEqual(len(timeouts), 2)
+        self.assertEqual(timeouts[0], 3.0, "an attempt waits 3 s at most")
+        self.assertLess(timeouts[1], 0.2, "then only what the step has left, after a half-second pause")
+        self.assertLess(took, 4.5)
+        self.assertEqual(fake.requests, [])
 
 
 class EntryPoint(Case):

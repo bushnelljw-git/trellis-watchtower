@@ -15,10 +15,21 @@
   (`__Host-tpa-csrf` into `X-CSRF-Token`, auth's double submit).
 - **Timeouts.** Each request has the smaller of its step timeout and what is
   left of the run's deadline (a sign-out has its own budget instead: see
-  journeys.py). The socket timeout bounds the connect and the wait for the
-  headers; the body is read with `read1`, one socket read at a time, the
+  journeys.py). The connection takes what it needs of that (`dial`, below),
+  and the socket's timeout is then what is left, which bounds the wait for
+  the headers; the body is read with `read1`, one socket read at a time, the
   socket's timeout shrunk before each to what the step has left, so neither a
   stall nor a server trickling a byte at a time can outlast the step.
+- **Every connection is dialled; every request is written once.** Cloud NAT
+  can still drop a new connection's replies after the egress warm-up (beta,
+  2026-10-12: ops-desk's `mfa_verify` timed out at 15 s on a connection the
+  load balancer never saw), and urllib opens one connection per request. So
+  the TCP connection (`dial`) is tried with a fresh socket, at most
+  CONNECT_ATTEMPT_S each, CONNECT_PAUSE_S apart, until one connects or the
+  step's time is spent. Only then is the request written, once: http.client
+  writes nothing before `connect()` returns, and nothing after that is ever
+  tried again, so no sign-in, code or sign-out is sent twice. TLS is not
+  retried: its handshake runs once on the connected socket.
 - **No proxy from the environment**, ever: `HTTP(S)_PROXY` is ignored.
 - **The warm-up's connect** (`knock`, journeys.py's `egress` step): a bare TCP
   connection to one resolved address, closed at once. No byte is sent: no
@@ -53,6 +64,9 @@ LOOPBACK = ("localhost", "127.0.0.1", "::1")
 IAP_GENERATED = "x-goog-iap-generated-response"
 GOOGLE_SIGN_IN_HOST = "accounts.google.com"
 CSRF_COOKIE = "__Host-tpa-csrf"
+#: Opening a TCP connection (`dial`): each attempt's longest wait, and the pause before the next.
+CONNECT_ATTEMPT_S = 3.0
+CONNECT_PAUSE_S = 0.5
 
 
 class StepFailure(Exception):
@@ -135,16 +149,77 @@ def knock(family: int, address: Any, timeout: float) -> None:
         sock.connect(address)
 
 
+def _connect_once(address: tuple[str, int], timeout: float) -> socket.socket:
+    """One fresh TCP connection, getaddrinfo's addresses in turn, or OSError."""
+    return socket.create_connection(address, timeout)
+
+
+def dial(address: tuple[str, int], timeout: float) -> socket.socket:
+    """A TCP connection to host:port inside `timeout` (what the step has left).
+
+    A fresh socket each attempt, for at most CONNECT_ATTEMPT_S and never past the
+    step, CONNECT_PAUSE_S apart, until one connects. When the time is spent the
+    last attempt's error stands, so the step fails as it did before: `timeout`
+    after attempts that timed out, `connect` after refusals. The socket comes back
+    with what is left of the step as its timeout. Nothing is written here.
+    """
+    end = time.monotonic() + timeout
+    while True:
+        left = end - time.monotonic()
+        if left <= 0:
+            raise TimeoutError
+        try:
+            sock = _connect_once(address, min(CONNECT_ATTEMPT_S, left))
+        except OSError:
+            if end - time.monotonic() <= CONNECT_PAUSE_S:
+                raise
+            time.sleep(CONNECT_PAUSE_S)
+            continue
+        left = end - time.monotonic()
+        if left <= 0:
+            sock.close()
+            raise TimeoutError
+        sock.settimeout(left)
+        return sock
+
+
+class _Connection(http.client.HTTPConnection):
+    """http.client's connection, its TCP connection dialled. http.client calls
+    `connect()` before it writes a byte of the request, and only then."""
+
+    def connect(self) -> None:
+        self.sock = dial((self.host, self.port), self.timeout)
+        with contextlib.suppress(OSError):  # as http.client does, where the system has it
+            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+
+class _TlsConnection(http.client.HTTPSConnection, _Connection):
+    """HTTPS: its `connect()` calls `_Connection.connect()` (next in the MRO), then the TLS handshake."""
+
+
+class _Http(urllib.request.HTTPHandler):
+    def http_open(self, req: urllib.request.Request) -> Any:
+        return self.do_open(_Connection, req)
+
+
+class _Https(urllib.request.HTTPSHandler):
+    def __init__(self, context: ssl.SSLContext) -> None:
+        super().__init__(context=context)
+        self._tls = context
+
+    def https_open(self, req: urllib.request.Request) -> Any:
+        return self.do_open(_TlsConnection, req, context=self._tls)
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         return None
 
 
 def opener(ssl_context: ssl.SSLContext | None) -> urllib.request.OpenerDirector:
-    handlers: list[Any] = [urllib.request.ProxyHandler({}), _NoRedirect()]
-    if ssl_context is not None:
-        handlers.append(urllib.request.HTTPSHandler(context=ssl_context))
-    return urllib.request.build_opener(*handlers)
+    """No proxy, no redirect, and every connection dialled (`dial`)."""
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect(), _Http(),
+                                       _Https(ssl_context or ssl.create_default_context()))
 
 
 class Deadline:

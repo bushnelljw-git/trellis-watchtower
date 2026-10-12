@@ -44,6 +44,20 @@ and that is no verdict on the service. Nothing but the configuration is read bef
 A paused run writes its `skipped` line at once, before any warm-up (tpa-platform's runbook relies on it); J3
 switched off, a bad setting and `SYNTHETICS_EGRESS_WAIT_S=0` do no warm-up either, and none records an `egress`.
 
+**Every connection is dialled, and every request is written once.** The warm-up is not always enough. On beta
+(2026-10-12, the runner at `6d652f6`, `task_timeout` 300 s, `SYNTHETICS_EGRESS_WAIT_S=120`) `staff-sign-in` passed
+(`egress` 22133 ms, then every step fast), but `ops-desk`'s `egress` took 38070 ms, its `login` reached the load
+balancer in 264 ms, and its `mfa_verify` then timed out at 15016 ms on a connection the load balancer never saw. A
+fresh connection can still be dropped for a while after the warm-up (the diagnosis saw one take 35.7 s in one task
+and 7.2 s in another, quiet about 60 s after the task started), and the client opens a new connection for every
+request. So each request's TCP connection is tried with a fresh socket, at most 3 s an attempt and 0.5 s apart, until
+one connects or the step's time is spent, as tpa-platform's jobs do since its P121. Then the request is written,
+once: http.client writes nothing before the connection is made, and nothing after that is tried again, so `login`,
+`mfa_verify` and `logout` are each sent at most once, whatever their answer. A step whose time runs out fails as
+before, `timeout` after attempts that timed out and `connect` after refusals. TLS is not retried: its handshake runs
+once on the connected socket, so a certificate refusal is `tls` at once. A code minted for `mfa_verify` has at least
+8 s left in its step, and auth accepts one step either side, so it outlives a step's 15 s of attempts.
+
 | Job | Severity (design §5) | Steps, in order |
 |---|---|---|
 | `staff-sign-in` (J1) | CRITICAL | `config`, `egress`, `secrets`, `iap_token`; on the ops host: `ops_shell` (`GET /ops/`, 200 with `<base href="/ops/">`), `ops_release` (`GET /ops/release.json`, a JSON object), `login` (`POST /auth/login`, a challenge offering `totp`), `mfa_verify` (`POST /auth/mfa/verify`, which must set `__Host-tpa-session` and `__Host-tpa-csrf`), `me` (`GET /auth/me`), `desk_version` (`GET /tpa/api/v1/desk/cases/version`, counts only, reaches tpa-db), `logout` (`POST /auth/logout` with `X-CSRF-Token`, 204); then on the portal host: `portal_shell` (`GET /tpa/`, 200 with `<base href="/tpa/">`) |
@@ -206,11 +220,13 @@ deep, configuration (a credentials file that is a folder, a FIFO or a device; a 
 loopback), pausing, J3's flag, the warm-up (ready only after two fresh connections in a row to every host and port, a
 success then a failure starting over; its budget spent before anything is read or sent, and its bounds; `0` and a
 pause doing none; the run's deadline starting after it; a name that does not resolve tried again; not a byte sent),
-J3's business read (the id `me` names, sent as `X-Tenant-Id` only when it is a UUID) and a CRM login that answers the
-password alone; the sign-out sent after any exception once signed in, with its own budget, and never repeated; the
-exit status of a failed check (0), and of a broken configuration, a warm-up that ran out, a metadata server with no
-token, a runner crash and an unwritable line (1); RFC 6238's vectors; the golden lines; every code and outcome
-against the metric's own extractors (the vendored catalogue's); the result line's labels against tpa-platform's own
-allowlist (`tests/synthetics/tpa_metric_labels.txt`, vendored with its commit and blob, and re-read from the sibling
-checkout when there is one); the image's policy, read statically; and no secret on stdout or stderr on any path,
-in-process and through the real entry point.
+connections dialled again after timeouts and refusals with each request still sent once, no sign-in, code or sign-out
+sent twice when its answer hangs or its connection drops, each attempt cut to what the step has left, and a TLS
+failure never dialled again, J3's business read (the id `me` names, sent as `X-Tenant-Id` only when it is a UUID) and
+a CRM login that answers the password alone; the sign-out sent after any exception once signed in, with its own
+budget, and never repeated; the exit status of a failed check (0), and of a broken configuration, a warm-up that ran
+out, a metadata server with no token, a runner crash and an unwritable line (1); RFC 6238's vectors; the golden
+lines; every code and outcome against the metric's own extractors (the vendored catalogue's); the result line's
+labels against tpa-platform's own allowlist (`tests/synthetics/tpa_metric_labels.txt`, vendored with its commit and
+blob, and re-read from the sibling checkout when there is one); the image's policy, read statically; and no secret on
+stdout or stderr on any path, in-process and through the real entry point.
