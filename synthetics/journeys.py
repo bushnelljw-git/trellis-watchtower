@@ -18,6 +18,12 @@
   member with no book); until the flag is on, J3 reports `skipped` /
   `not_configured` and never fails.
 
+Each journey starts with the `egress` step, after `config` and before anything
+is read or sent: the run's own network path, which Cloud NAT holds shut for a
+new task's first 30 s or more, must answer two fresh TCP connections in a row
+to every host and port the journey uses before the run's deadline starts
+(`_egress`). If it never does, the run is `error` / `egress`, no verdict.
+
 Every journey is read-only past the sign-in: one password and one code per run,
 never retried (a TOTP step is accepted once, and a refused one is charged to the
 lockout budget). **Every run that got a session signs out**, whatever ends it:
@@ -43,16 +49,27 @@ import urllib.parse
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from typing import Any
 
 from synthetics import client, iap, totp
 from synthetics.client import Response, Session, StepFailure
 
 TRUE = frozenset({"1", "true", "yes", "on"})
 DEFAULT_STEP_TIMEOUT_S = 15.0
-#: The job's task_timeout is 120 s (design §3, piece 5). The run's deadline (at
-#: most MOST_DEADLINE_S) plus the sign-out's own budget ends well inside it.
+#: The job's task_timeout, 300 s (design §3, piece 5), holds the egress
+#: warm-up's budget (at most MOST_EGRESS_WAIT_S), then the run's deadline (at
+#: most MOST_DEADLINE_S), then the sign-out's own budget: 220 s with the
+#: defaults, 290 s at most.
 DEFAULT_DEADLINE_S = 90.0
 MOST_DEADLINE_S = 100.0
+#: The egress warm-up (`_egress`): its own budget, spent before the deadline
+#: starts (0 skips it); each fresh connection's timeout; the pause between
+#: rounds; and how many fresh connections in a row make a host and port ready.
+DEFAULT_EGRESS_WAIT_S = 120.0
+MOST_EGRESS_WAIT_S = 180.0
+EGRESS_ATTEMPT_S = 3.0
+EGRESS_PAUSE_S = 1.0
+EGRESS_READY = 2
 #: The sign-out's own budget: the smaller of this and the step timeout, never the deadline's.
 SIGN_OUT_BUDGET_S = 10.0
 MAX_CREDENTIALS_BYTES = 64 * 1024
@@ -108,6 +125,7 @@ class Config:
     metadata_host: str
     step_timeout: float
     deadline: float
+    egress_wait: float
     ca_file: str
 
 
@@ -169,7 +187,8 @@ def truthy(env: Mapping[str, str], name: str) -> bool:
     return env.get(name, "").strip().lower() in TRUE
 
 
-def _seconds(env: Mapping[str, str], name: str, default: float, *, most: float) -> float:
+def _seconds(env: Mapping[str, str], name: str, default: float, *, most: float, zero: bool = False) -> float:
+    """Above 0 and at most `most`; or 0 itself when `zero` (the setting's "off")."""
     raw = env.get(name, "").strip()
     if not raw:
         return default
@@ -177,7 +196,7 @@ def _seconds(env: Mapping[str, str], name: str, default: float, *, most: float) 
         value = float(raw)
     except ValueError:
         raise StepFailure("config") from None
-    if not 0 < value <= most:
+    if not (0 <= value <= most if zero else 0 < value <= most):
         raise StepFailure("config")
     return value
 
@@ -223,6 +242,8 @@ def load_config(env: Mapping[str, str], *, job: str, use_iap: bool) -> Config:
         metadata_host=metadata_host,
         step_timeout=_seconds(env, "SYNTHETICS_STEP_TIMEOUT_S", DEFAULT_STEP_TIMEOUT_S, most=60),
         deadline=_seconds(env, "SYNTHETICS_DEADLINE_S", DEFAULT_DEADLINE_S, most=MOST_DEADLINE_S),
+        egress_wait=_seconds(env, "SYNTHETICS_EGRESS_WAIT_S", DEFAULT_EGRESS_WAIT_S, most=MOST_EGRESS_WAIT_S,
+                             zero=True),
         ca_file=ca_file,
     )
 
@@ -297,19 +318,86 @@ def ssl_context(config: Config) -> ssl.SSLContext:
 
 @dataclass
 class Tools:
-    """What a journey needs from outside: the clock, for the TOTP code."""
+    """What a journey needs from outside: the clock and a pause, for the TOTP code; a
+    steady clock, the pause and a bare TCP connect, for the egress warm-up and the deadline."""
 
     now: Callable[[], float] = time.time
     sleep: Callable[[float], None] = time.sleep
+    monotonic: Callable[[], float] = time.monotonic
+    connect: Callable[[int, Any, float], None] = client.knock
+
+
+def _egress(run: Run, config: Config, tools: Tools) -> None:
+    """Wait for the run's own network path to the edge, before anything is read or sent.
+
+    Every run is a new Cloud Run task, whose Direct VPC egress goes out through
+    Cloud NAT, and for its first 30 to 60 s or more the path drops replies
+    (Google: "With Cloud NAT, you might experience cold start delays of 30s or
+    more on instance startup", docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc).
+    So each host and port the journey uses (the base URL's, and J1's portal's),
+    resolved once, gets a fresh TCP connection of at most EGRESS_ATTEMPT_S,
+    closed at once with nothing sent, a round every EGRESS_PAUSE_S, until
+    EGRESS_READY in a row have connected to every one. Many short connections,
+    never one long one: Linux backs a connect's SYN retries off (0, 1, 3, 7, 15,
+    31, 63 s), which can leave it waiting 32 s on a path that is already up.
+
+    The budget is the setting's own (0 skips the step); spent, the run is
+    `error` / `egress`, as the robot reached nothing and so has no verdict.
+    """
+    if not config.egress_wait:
+        return
+    targets = list(dict.fromkeys(
+        client.host_port(url) for url in (config.base_url, config.portal_base_url) if url))
+    addresses: dict[tuple[str, int], list[tuple[int, Any]]] = {}
+    in_a_row = dict.fromkeys(targets, 0)
+    with run.timed("egress"):
+        end = tools.monotonic() + config.egress_wait
+        while True:
+            for target in targets:
+                if in_a_row[target] < EGRESS_READY:
+                    reached = _reach(target, addresses, end, tools)
+                    in_a_row[target] = in_a_row[target] + 1 if reached else 0
+            if all(count >= EGRESS_READY for count in in_a_row.values()):
+                return
+            left = end - tools.monotonic()
+            if left <= 0:
+                raise StepFailure("egress")
+            tools.sleep(min(EGRESS_PAUSE_S, left))
+
+
+def _reach(target: tuple[str, int], addresses: dict[tuple[str, int], list[tuple[int, Any]]], end: float,
+           tools: Tools) -> bool:
+    """One fresh connection to a host and port: its addresses in order, as the client tries
+    them, each for at most EGRESS_ATTEMPT_S and never past `end`. A name that does not
+    resolve is a failed attempt, resolved again next round; once resolved, never again."""
+    if end - tools.monotonic() <= 0:
+        return False
+    if target not in addresses:
+        try:
+            addresses[target] = client.resolve(*target)
+        except OSError:
+            return False
+    for family, address in addresses[target]:
+        left = end - tools.monotonic()
+        if left <= 0:
+            break
+        try:
+            tools.connect(family, address, min(EGRESS_ATTEMPT_S, left))
+        except OSError:
+            continue
+        return True
+    return False
 
 
 def _prepare(
-    run: Run, env: Mapping[str, str], *, use_iap: bool
+    run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools
 ) -> tuple[Config, Credentials, str | None, ssl.SSLContext, client.Deadline]:
     with run.timed("config"):
         config = load_config(env, job=run.job, use_iap=use_iap)
         context = ssl_context(config)
-    deadline = client.Deadline(config.deadline)
+    _egress(run, config, tools)
+    # The deadline starts once the path is up: the warm-up's time is its own budget's, never the journey's.
+    deadline = client.Deadline(config.deadline, clock=tools.monotonic)
     with run.timed("secrets"):
         credentials = read_credentials(config.credentials_file)
     token = None
@@ -414,7 +502,7 @@ def _json_read(run: Run, session: Session, step: str, path: str, *, bearer: str 
 
 
 def staff_sign_in(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> None:
-    config, credentials, token, context, deadline = _prepare(run, env, use_iap=use_iap)
+    config, credentials, token, context, deadline = _prepare(run, env, use_iap=use_iap, tools=tools)
     ops = _session(config.base_url, config, token, context, deadline)
     _shell(run, ops, "ops_shell", OPS_SHELL, "/ops/")
     with run.timed("ops_release"):
@@ -427,7 +515,7 @@ def staff_sign_in(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Too
 
 
 def ops_desk(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> None:
-    config, credentials, token, context, deadline = _prepare(run, env, use_iap=use_iap)
+    config, credentials, token, context, deadline = _prepare(run, env, use_iap=use_iap, tools=tools)
     ops = _session(config.base_url, config, token, context, deadline)
     with _signed_in_to_auth(run, ops, config, credentials, tools):
         _json_read(run, ops, "live_queue", LIVE_QUEUE)
@@ -437,7 +525,7 @@ def ops_desk(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -
 def crm(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> None:
     if not truthy(env, "SYNTHETICS_CRM_ENABLED"):
         raise Skip("not_configured")
-    config, credentials, token, context, deadline = _prepare(run, env, use_iap=use_iap)
+    config, credentials, token, context, deadline = _prepare(run, env, use_iap=use_iap, tools=tools)
     crm_host = _session(config.base_url, config, token, context, deadline)
     _shell(run, crm_host, "crm_shell", CRM_SHELL, "/")
     with _signed_in_to_crm(run, crm_host, config, credentials, tools) as bearer:

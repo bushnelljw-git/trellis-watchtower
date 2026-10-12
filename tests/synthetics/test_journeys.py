@@ -1,5 +1,6 @@
 """The journeys against a local fake (synthetic_fakes.py): pass, each step failing, timeouts,
-transport failures, configuration, pausing, and no secret on stdout or stderr on any path.
+transport failures, configuration, pausing, the egress warm-up, and no secret on stdout or stderr on
+any path.
 
 Run: python3 -m unittest discover -s tests/synthetics -v   (make synthetics-test)
 """
@@ -33,13 +34,14 @@ from synthetics.journeys import Tools  # noqa: E402
 FIXED_NOW = 1_800_000_000.0 - (1_800_000_000.0 % 30) + 1
 KEYS = ["severity", "level", "message", "job", "outcome", "code", "step", "status_class", "elapsed_ms", "steps_ms"]
 
-J1_STEPS = ["config", "secrets", "iap_token", "ops_shell", "ops_release", "login", "mfa_verify", "me",
+J1_STEPS = ["config", "egress", "secrets", "iap_token", "ops_shell", "ops_release", "login", "mfa_verify", "me",
             "desk_version", "logout", "portal_shell"]
 J1_ROUTES = ["metadata", "ops_shell", "ops_release", "login", "mfa_verify", "me", "desk_version", "logout",
              "portal_shell"]
 J2_ROUTES = ["metadata", "login", "mfa_verify", "live_queue", "desk_version_employers", "logout"]
 J3_ROUTES = ["metadata", "crm_shell", "crm_login", "crm_mfa_verify", "crm_me", "crm_tenant", "crm_logout"]
-J3_STEPS = ["config", "secrets", "iap_token", "crm_shell", "login", "mfa_verify", "me", "crm_tenant", "logout"]
+J3_STEPS = ["config", "egress", "secrets", "iap_token", "crm_shell", "login", "mfa_verify", "me", "crm_tenant",
+            "logout"]
 
 
 def credentials_file(directory: str, value: object | None = None, raw: bytes | None = None) -> str:
@@ -50,6 +52,44 @@ def credentials_file(directory: str, value: object | None = None, raw: bytes | N
     with open(path, "wb") as handle:
         handle.write(raw)
     return path
+
+
+class Network:
+    """The warm-up's steady clock, pause and connect, scripted: no time passes and no socket opens.
+
+    `script[port]` is that port's answers in order: True connects (0.05 s); False is never
+    answered, so it spends the attempt's whole timeout. Past the script's end, `then`.
+    """
+
+    START = 1000.0
+
+    def __init__(self, script: dict[int, list[bool]] | None = None, *, then: bool = True) -> None:
+        self.clock = self.START
+        self.script = {port: list(answers) for port, answers in (script or {}).items()}
+        self.then = then
+        self.connects: list[tuple[int, float]] = []
+        self.pauses: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.clock
+
+    def sleep(self, seconds: float) -> None:
+        self.pauses.append(seconds)
+        self.clock += seconds
+
+    def connect(self, _family: int, address: tuple, timeout: float) -> None:
+        self.connects.append((address[1], timeout))
+        answers = self.script.get(address[1], [])
+        if not (answers.pop(0) if answers else self.then):
+            self.clock += timeout
+            raise TimeoutError
+        self.clock += 0.05
+
+    def tools(self) -> Tools:
+        return Tools(now=lambda: FIXED_NOW, sleep=self.sleep, monotonic=self.monotonic, connect=self.connect)
+
+    def spent(self) -> float:
+        return self.clock - self.START
 
 
 class Case(unittest.TestCase):
@@ -70,12 +110,21 @@ class Case(unittest.TestCase):
         env.update(extra)
         return {k: v for k, v in env.items() if v is not None}
 
-    def run_journey(self, name: str, env: dict[str, str], *, use_iap: bool = True) -> tuple[dict, int]:
+    def run_journey(self, name: str, env: dict[str, str], *, use_iap: bool = True,
+                    tools: Tools | None = None) -> tuple[dict, int]:
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = cli.run(name, env, use_iap=use_iap,
-                           tools=Tools(now=lambda: FIXED_NOW, sleep=lambda _s: None))
+                           tools=tools or Tools(now=lambda: FIXED_NOW, sleep=lambda _s: None))
         return self.parse_clean(out.getvalue(), err.getvalue()), code
+
+    def assert_silent(self, fake: fakes.Fake, expected: int) -> None:
+        """The connections that closed with nothing sent (the warm-up's), once the server has read them."""
+        settle = time.monotonic() + 2
+        while fake.connections.count("silent") < expected and time.monotonic() < settle:
+            time.sleep(0.01)
+        self.assertEqual(fake.connections.count("silent"), expected)
+        self.assertEqual(fake.connections.count("request"), len(fake.requests))
 
     def parse_clean(self, stdout: str, stderr: str) -> dict:
         """Exactly one line on stdout, nothing on stderr, no sentinel anywhere, closed values only."""
@@ -150,6 +199,8 @@ class StaffSignIn(Case):
         self.assertEqual((logout["csrf"], logout["origin"]), (fakes.CSRF, fake.base))
         self.assertEqual(len(fake.codes_received), 1)
         self.assert_no_received_code_printed(fake, line)
+        # The warm-up: two connections in a row to each host (127.0.0.1 and localhost), not a byte sent.
+        self.assert_silent(fake, 4)
 
     def test_each_step_failing(self):
         for route, step in [("ops_shell", "ops_shell"), ("ops_release", "ops_release"), ("login", "login"),
@@ -347,8 +398,9 @@ class StaffSignIn(Case):
             probe.bind(("127.0.0.1", 0))
             closed = probe.getsockname()[1]
         with fakes.Fake() as fake:
+            # Without the warm-up, which would wait out its budget here (Egress has that case).
             line, code = self.run_journey("staff-sign-in", self.env(
-                fake, SYNTHETICS_BASE_URL=f"http://127.0.0.1:{closed}"))
+                fake, SYNTHETICS_BASE_URL=f"http://127.0.0.1:{closed}", SYNTHETICS_EGRESS_WAIT_S="0"))
         self.assert_failed(line, code, step="ops_shell", code="connect", status_class="none")
 
     def test_https_to_a_plain_server_is_tls(self):
@@ -385,11 +437,16 @@ class Configuration(Case):
                             ("SYNTHETICS_METADATA_HOST", "user@127.0.0.1:80"),
                             ("SYNTHETICS_METADATA_HOST", "127.0.0.1:notaport"),
                             ("SYNTHETICS_DEADLINE_S", "101"),
+                            ("SYNTHETICS_EGRESS_WAIT_S", "-1"),
+                            ("SYNTHETICS_EGRESS_WAIT_S", "181"),
+                            ("SYNTHETICS_EGRESS_WAIT_S", "abc"),
+                            ("SYNTHETICS_EGRESS_WAIT_S", "nan"),
                             ("SYNTHETICS_CA_FILE", "/nonexistent/ca.pem")]:
             with self.subTest(name=name, value=value), fakes.Fake() as fake:
                 line, code = self.run_journey("staff-sign-in", self.env(fake, **{name: value}))
                 self.assert_error(line, code, step="config", code="config")
                 self.assertEqual(fake.requests, [])
+                self.assertEqual(fake.connections, [], "and no warm-up")
 
     def test_bad_credentials_file(self):
         for raw in [b"", b"not json", b"[]", b'{"password": "x"}', b'{"password": "", "totp_secret": "JBSWY3DP"}',
@@ -447,6 +504,7 @@ class Configuration(Case):
                                  ("skipped", "paused", "none", "none", 0))
                 self.assertEqual(line["steps_ms"], {})
                 self.assertEqual(fake.requests, [])
+                self.assertEqual(fake.connections, [], "not even the warm-up's")
 
     def test_paused_false_runs(self):
         with fakes.Fake(clock=lambda: FIXED_NOW) as fake:
@@ -581,6 +639,152 @@ class Crm(Case):
         self.assertEqual(fake.routes()[-1], "crm_logout")
 
 
+class Egress(Case):
+    """The warm-up: two fresh TCP connections in a row to every host and port, before anything is
+    read or sent, inside its own budget, which the run's deadline never pays for."""
+
+    def test_ready_after_failures_then_two_in_a_row(self):
+        with fakes.Fake(clock=lambda: FIXED_NOW) as fake:
+            net = Network({fake.port: [False, False, False, True, True]})
+            line, code = self.run_journey("ops-desk", self.env(fake), tools=net.tools())
+        self.assertEqual((line["outcome"], code), ("pass", 0))
+        self.assertEqual(list(line["steps_ms"])[:3], ["config", "egress", "secrets"])
+        self.assertEqual(net.connects, [(fake.port, 3.0)] * 5, "a fresh 3 s connection each time")
+        self.assertEqual(net.pauses, [1.0] * 4, "a pause between rounds, none after the last")
+        self.assertEqual(fake.routes(), J2_ROUTES)
+
+    def test_a_success_then_a_failure_starts_over(self):
+        with fakes.Fake(clock=lambda: FIXED_NOW) as fake:
+            net = Network({fake.port: [True, False, True, False, True, True]})
+            line, code = self.run_journey("ops-desk", self.env(fake), tools=net.tools())
+        self.assertEqual((line["outcome"], code), ("pass", 0))
+        self.assertEqual(len(net.connects), 6, "ready at the first two in a row, and no sooner")
+
+    def test_never_two_in_a_row_is_never_ready(self):
+        with fakes.Fake() as fake:
+            net = Network({fake.port: [True, False] * 50})
+            line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_EGRESS_WAIT_S="30"),
+                                          tools=net.tools())
+        self.assert_error(line, code, step="egress", code="egress")
+        self.assertGreater(net.connects.count((fake.port, 3.0)), 6)
+
+    def test_every_host_and_port_needs_two_in_a_row(self):
+        # J1 with its portal on another port: the ops host is ready at once, the portal only later.
+        with fakes.Fake(clock=lambda: FIXED_NOW) as ops, fakes.Fake() as portal:
+            net = Network({ops.port: [True, True], portal.port: [False, True, False, False, True, True]})
+            line, code = self.run_journey("staff-sign-in", self.env(ops, SYNTHETICS_PORTAL_BASE_URL=portal.base),
+                                          tools=net.tools())
+        self.assertEqual((line["outcome"], code), ("pass", 0))
+        ports = [port for port, _timeout in net.connects]
+        self.assertEqual(ports.count(ops.port), 2, "a ready host is not asked again")
+        self.assertEqual(ports.count(portal.port), 6)
+        self.assertEqual(portal.routes(), ["portal_shell"])
+
+    def test_one_origin_is_one_host_and_port(self):
+        with fakes.Fake(clock=lambda: FIXED_NOW) as fake:
+            net = Network()
+            line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_PORTAL_BASE_URL=fake.base),
+                                          tools=net.tools())
+        self.assertEqual((line["outcome"], code), ("pass", 0))
+        self.assertEqual(len(net.connects), 2)
+
+    def test_out_of_budget_is_an_error_that_sends_and_reads_nothing(self):
+        # A credentials file that is not there: had it been read, the run would be error / config at secrets.
+        absent = os.path.join(self.tmp.name, "absent")
+        with fakes.Fake() as fake:
+            net = Network(then=False)
+            line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_CREDENTIALS_FILE=absent),
+                                          tools=net.tools())
+        self.assert_error(line, code, step="egress", code="egress")
+        self.assertEqual(list(line["steps_ms"]), ["config", "egress"])
+        self.assertEqual(fake.requests, [], "no metadata call, no request")
+        self.assertTrue(all(timeout <= 3.0 for _port, timeout in net.connects))
+
+    def test_the_budget(self):
+        for value, budget in [(None, 120.0), ("180", 180.0), ("2.5", 2.5)]:
+            with self.subTest(value=value), fakes.Fake() as fake:
+                net = Network(then=False)
+                line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_EGRESS_WAIT_S=value),
+                                              tools=net.tools())
+                self.assert_error(line, code, step="egress", code="egress")
+                self.assertAlmostEqual(net.spent(), budget, msg="the whole budget, and not a moment past it")
+
+    def test_nothing_listening_is_an_error_once_the_budget_is_spent(self):
+        # Real sockets, a real clock and real pauses.
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            closed = probe.getsockname()[1]
+        with fakes.Fake() as fake:
+            started = time.monotonic()
+            line, code = self.run_journey("ops-desk", self.env(
+                fake, SYNTHETICS_BASE_URL=f"http://127.0.0.1:{closed}", SYNTHETICS_EGRESS_WAIT_S="1.5"),
+                tools=Tools(now=lambda: FIXED_NOW))
+            took = time.monotonic() - started
+        self.assert_error(line, code, step="egress", code="egress")
+        self.assertGreaterEqual(line["steps_ms"]["egress"], 1400)
+        self.assertLess(took, 3)
+        self.assertEqual(fake.requests, [])
+
+    def test_zero_skips_it(self):
+        with fakes.Fake(clock=lambda: FIXED_NOW) as fake:
+            net = Network()
+            line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_EGRESS_WAIT_S="0"),
+                                          tools=net.tools())
+        self.assertEqual((line["outcome"], code), ("pass", 0))
+        self.assertEqual(list(line["steps_ms"]), [step for step in J1_STEPS if step != "egress"])
+        self.assertEqual((net.connects, net.pauses), ([], []))
+
+    def test_a_paused_run_writes_its_line_before_any_warm_up(self):
+        # tpa-platform's runbook relies on it: paused, the run answers at once, however long the path would take.
+        with fakes.Fake() as fake:
+            net = Network(then=False)
+            line, code = self.run_journey("staff-sign-in", self.env(fake, SYNTHETICS_PAUSED="true"), tools=net.tools())
+        self.assertEqual((line["outcome"], line["code"], line["step"], line["steps_ms"], code),
+                         ("skipped", "paused", "none", {}, 0))
+        self.assertEqual((net.connects, net.pauses, net.spent()), ([], [], 0))
+        self.assertEqual((fake.requests, fake.connections), ([], []))
+
+    def test_none_when_switched_off_or_misconfigured(self):
+        for job, extra in [("crm", {}), ("staff-sign-in", {"SYNTHETICS_EMAIL": "no-at-sign"})]:
+            with self.subTest(job=job, extra=extra), fakes.Fake() as fake:
+                net = Network()
+                line, _code = self.run_journey(job, self.env(fake, **extra), tools=net.tools())
+                self.assertIn(line["code"], ("not_configured", "config"))
+                self.assertNotIn("egress", line["steps_ms"])
+                self.assertEqual((net.connects, net.pauses), ([], []))
+                self.assertEqual(fake.requests, [])
+
+    def test_the_deadline_starts_after_it(self):
+        # 100 s of the warm-up's 120 spent before the path answers; the journey still has its whole 5 s.
+        with fakes.Fake(clock=lambda: FIXED_NOW) as fake:
+            net = Network({fake.port: [False] * 25})
+            line, code = self.run_journey("staff-sign-in", self.env(
+                fake, SYNTHETICS_PORTAL_BASE_URL=fake.base, SYNTHETICS_DEADLINE_S="5"), tools=net.tools())
+        self.assertGreater(net.spent(), 100)
+        self.assertEqual((line["outcome"], line["code"], code), ("pass", "ok", 0))
+
+    def test_a_name_that_does_not_resolve_is_resolved_again_then_kept(self):
+        original = journeys.client.resolve
+        asked = []
+
+        def flaky(host, port):
+            asked.append((host, port))
+            if len(asked) <= 2:
+                raise socket.gaierror(socket.EAI_AGAIN, "sentinel")
+            return original(host, port)
+
+        journeys.client.resolve = flaky
+        try:
+            with fakes.Fake(clock=lambda: FIXED_NOW) as fake:
+                net = Network()
+                line, code = self.run_journey("ops-desk", self.env(fake), tools=net.tools())
+        finally:
+            journeys.client.resolve = original
+        self.assertEqual((line["outcome"], code), ("pass", 0))
+        self.assertEqual(asked, [("127.0.0.1", fake.port)] * 3, "until it resolves, then never again")
+        self.assertEqual(len(net.connects), 2)
+
+
 class EntryPoint(Case):
     """The real entry point, as the job runs it: a child process with a real clock."""
 
@@ -595,7 +799,9 @@ class EntryPoint(Case):
     def test_pass(self):
         with fakes.Fake() as fake:
             line, code = self.spawn(fake, "staff-sign-in")
+            self.assert_silent(fake, 4)
         self.assertEqual((line["outcome"], code), ("pass", 0))
+        self.assertEqual(list(line["steps_ms"]), J1_STEPS)
         self.assert_no_received_code_printed(fake, line)
 
     def test_a_failing_journey_exits_zero_with_outcome_fail(self):
@@ -636,6 +842,19 @@ class EntryPoint(Case):
             self.assertEqual((line["outcome"], line["code"], code), ("skipped", "not_configured", 0))
             line, code = self.spawn(fake, "staff-sign-in", SYNTHETICS_PAUSED="1")
             self.assertEqual((line["outcome"], line["code"], code), ("skipped", "paused", 0))
+
+    def test_a_paused_run_answers_at_once_before_any_warm_up(self):
+        # The real process and clock, a path that never comes up and the warm-up's 120 s: the line comes first.
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            closed = probe.getsockname()[1]
+        with fakes.Fake() as fake:
+            started = time.monotonic()
+            line, code = self.spawn(fake, "ops-desk", SYNTHETICS_PAUSED="true", SYNTHETICS_EGRESS_WAIT_S="120",
+                                    SYNTHETICS_BASE_URL=f"http://127.0.0.1:{closed}")
+            took = time.monotonic() - started
+        self.assertEqual((line["outcome"], line["code"], line["steps_ms"], code), ("skipped", "paused", {}, 0))
+        self.assertLess(took, 10)
 
     def test_bad_command_line_exits_two_and_prints_no_result(self):
         env = dict(os.environ, PYTHONPATH=str(ROOT))

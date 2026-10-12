@@ -20,6 +20,9 @@
   socket's timeout shrunk before each to what the step has left, so neither a
   stall nor a server trickling a byte at a time can outlast the step.
 - **No proxy from the environment**, ever: `HTTP(S)_PROXY` is ignored.
+- **The warm-up's connect** (`knock`, journeys.py's `egress` step): a bare TCP
+  connection to one resolved address, closed at once. No byte is sent: no
+  TLS, no HTTP, no header, no token.
 
 Nothing here logs. A transport failure becomes a `StepFailure` carrying a code
 from result.CODES and nothing else: no URL, no exception text.
@@ -109,6 +112,27 @@ def origin_of(base_url: str) -> str:
 
 def is_loopback(base_url: str) -> bool:
     return (urllib.parse.urlsplit(base_url).hostname or "") in LOOPBACK
+
+
+def host_port(origin: str) -> tuple[str, int]:
+    """The host and port an origin's connections go to."""
+    parts = urllib.parse.urlsplit(origin)
+    return parts.hostname or "", parts.port or (443 if parts.scheme == "https" else 80)
+
+
+def resolve(host: str, port: int) -> list[tuple[int, Any]]:
+    """Each (family, address) a connection to host:port may use, in getaddrinfo's order,
+    IPv4 and IPv6 alike, as http.client's own connect tries them. Raises OSError."""
+    return [(family, address) for family, _type, _proto, _name, address
+            in socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)]
+
+
+def knock(family: int, address: Any, timeout: float) -> None:
+    """One fresh TCP connection to one address, closed at once with nothing sent.
+    Raises OSError (TimeoutError among them) when it does not connect in `timeout`."""
+    with socket.socket(family, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout)
+        sock.connect(address)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

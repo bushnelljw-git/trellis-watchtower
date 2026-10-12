@@ -18,6 +18,9 @@ memory and recording every request. It models what the runner relies on:
   its me, tenant and logout need that bearer in `Authorization`; me names one
   business (`CRM_TENANT_ID`) and `/api/v1/tenants/current` needs it in
   `X-Tenant-Id`.
+- **Connections**: each one the server accepts is recorded as `request`, or as
+  `silent` when it closes before its first byte (the egress warm-up's), which
+  never reaches a route.
 
 Every secret here is a sentinel the tests then look for in the runner's output.
 `fail` maps a route name to a behaviour: an int status; "hang" (no answer for
@@ -98,6 +101,7 @@ class Fake:
         self.clock = clock
         self.hang_s = hang_s
         self.requests: list[dict] = []
+        self.connections: list[str] = []
         self.current = ""
         self.codes_received: list[str] = []
         self.lock = threading.Lock()
@@ -108,6 +112,16 @@ class Fake:
 
             def log_message(self, *args):  # silence the server
                 return
+
+            def handle(self):
+                try:
+                    spoke = bool(self.rfile.peek(1))
+                except OSError:
+                    spoke = False
+                with fake.lock:
+                    fake.connections.append("request" if spoke else "silent")
+                if spoke:
+                    super().handle()
 
             def do_GET(self):
                 fake.handle(self, "GET")

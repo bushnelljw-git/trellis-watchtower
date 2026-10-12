@@ -9,11 +9,12 @@ result line alone drives `synthetic-failing`. **Non-zero only when the runner
 itself broke**, so the job's own `jobs-failed` means "the job is broken" and one
 failure never pages twice:
 - 1: an `error` line (`config`: a setting or the mounted credentials unusable;
-  `runner`: an unexpected exception), or the line could not be written at all;
+  `egress`: the run's own network path to the edge never came up; `runner`: an
+  unexpected exception), or the line could not be written at all;
 - 2: a bad command line (argparse; no line, since no journey was named).
 
 - `SYNTHETICS_PAUSED` true (a database stopped on purpose): `skipped` / `paused`
-  at once, with no request of any kind.
+  at once, before the egress warm-up, with no connection or request of any kind.
 - `--no-iap`: the local mode, for this machine's own stack (https://localhost:4310),
   which has no IAP. No metadata call, no `Proxy-Authorization`, and every base URL
   must be a loopback host.

@@ -12,24 +12,32 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import catalogue as cat  # noqa: E402
 
 from synthetics import result  # noqa: E402
 
 GOLDEN_PASS = (
     '{"severity":"INFO","level":"INFO","message":"synthetic_result","job":"staff-sign-in","outcome":"pass",'
-    '"code":"ok","step":"none","status_class":"2xx","elapsed_ms":4210,"steps_ms":{"config":0,"secrets":0,'
-    '"iap_token":38,"ops_shell":61,"ops_release":22,"login":180,"mfa_verify":96,"me":41,"desk_version":133,'
-    '"logout":35,"portal_shell":58}}'
+    '"code":"ok","step":"none","status_class":"2xx","elapsed_ms":5222,"steps_ms":{"config":0,"egress":1012,'
+    '"secrets":0,"iap_token":38,"ops_shell":61,"ops_release":22,"login":180,"mfa_verify":96,"me":41,'
+    '"desk_version":133,"logout":35,"portal_shell":58}}'
 )
 GOLDEN_FAIL = (
     '{"severity":"ERROR","level":"ERROR","message":"synthetic_result","job":"ops-desk","outcome":"fail",'
-    '"code":"status","step":"live_queue","status_class":"5xx","elapsed_ms":15022,"steps_ms":{"config":0,'
-    '"secrets":0,"iap_token":40,"login":171,"mfa_verify":90,"live_queue":15001}}'
+    '"code":"status","step":"live_queue","status_class":"5xx","elapsed_ms":16031,"steps_ms":{"config":0,'
+    '"egress":1009,"secrets":0,"iap_token":40,"login":171,"mfa_verify":90,"live_queue":15001}}'
 )
 GOLDEN_ERROR = (
     '{"severity":"ERROR","level":"ERROR","message":"synthetic_result","job":"staff-sign-in","outcome":"error",'
-    '"code":"runner","step":"login","status_class":"none","elapsed_ms":212,"steps_ms":{"config":0,"secrets":0,'
-    '"iap_token":41,"ops_shell":60,"ops_release":21,"login":88}}'
+    '"code":"runner","step":"login","status_class":"none","elapsed_ms":1223,"steps_ms":{"config":0,'
+    '"egress":1011,"secrets":0,"iap_token":41,"ops_shell":60,"ops_release":21,"login":88}}'
+)
+GOLDEN_EGRESS = (
+    '{"severity":"ERROR","level":"ERROR","message":"synthetic_result","job":"ops-desk","outcome":"error",'
+    '"code":"egress","step":"egress","status_class":"none","elapsed_ms":120004,"steps_ms":{"config":0,'
+    '"egress":120003}}'
 )
 GOLDEN_SKIP = (
     '{"severity":"INFO","level":"INFO","message":"synthetic_result","job":"crm","outcome":"skipped",'
@@ -37,9 +45,9 @@ GOLDEN_SKIP = (
 )
 
 PASS_FIELDS = dict(
-    job="staff-sign-in", outcome="pass", code="ok", step="none", status_class="2xx", elapsed_ms=4210,
-    steps_ms={"config": 0, "secrets": 0, "iap_token": 38, "ops_shell": 61, "ops_release": 22, "login": 180,
-              "mfa_verify": 96, "me": 41, "desk_version": 133, "logout": 35, "portal_shell": 58},
+    job="staff-sign-in", outcome="pass", code="ok", step="none", status_class="2xx", elapsed_ms=5222,
+    steps_ms={"config": 0, "egress": 1012, "secrets": 0, "iap_token": 38, "ops_shell": 61, "ops_release": 22,
+              "login": 180, "mfa_verify": 96, "me": 41, "desk_version": 133, "logout": 35, "portal_shell": 58},
 )
 
 
@@ -50,16 +58,22 @@ class Golden(unittest.TestCase):
     def test_fail(self):
         self.assertEqual(result.render(
             job="ops-desk", outcome="fail", code="status", step="live_queue", status_class="5xx",
-            elapsed_ms=15022,
-            steps_ms={"config": 0, "secrets": 0, "iap_token": 40, "login": 171, "mfa_verify": 90,
+            elapsed_ms=16031,
+            steps_ms={"config": 0, "egress": 1009, "secrets": 0, "iap_token": 40, "login": 171, "mfa_verify": 90,
                       "live_queue": 15001}), GOLDEN_FAIL)
 
     def test_error(self):
         self.assertEqual(result.render(
             job="staff-sign-in", outcome="error", code="runner", step="login", status_class="none",
-            elapsed_ms=212,
-            steps_ms={"config": 0, "secrets": 0, "iap_token": 41, "ops_shell": 60, "ops_release": 21,
-                      "login": 88}), GOLDEN_ERROR)
+            elapsed_ms=1223,
+            steps_ms={"config": 0, "egress": 1011, "secrets": 0, "iap_token": 41, "ops_shell": 60,
+                      "ops_release": 21, "login": 88}), GOLDEN_ERROR)
+
+    def test_egress(self):
+        # The warm-up's budget spent (Cloud NAT's cold start never ended): the runner's error, not a verdict.
+        self.assertEqual(result.render(
+            job="ops-desk", outcome="error", code="egress", step="egress", status_class="none",
+            elapsed_ms=120004, steps_ms={"config": 0, "egress": 120003}), GOLDEN_EGRESS)
 
     def test_skip(self):
         self.assertEqual(result.render(job="crm", outcome="skipped", code="not_configured", step="none",
@@ -67,7 +81,7 @@ class Golden(unittest.TestCase):
 
     def test_readme_carries_the_same_lines(self):
         readme = (ROOT / "synthetics" / "README.md").read_text(encoding="utf-8")
-        for golden in (GOLDEN_PASS, GOLDEN_FAIL, GOLDEN_ERROR, GOLDEN_SKIP):
+        for golden in (GOLDEN_PASS, GOLDEN_FAIL, GOLDEN_ERROR, GOLDEN_EGRESS, GOLDEN_SKIP):
             self.assertIn(golden, readme)
         for values in (result.JOBS, result.OUTCOMES, result.CODES, result.STEPS, result.STATUS_CLASSES):
             for value in values:
@@ -104,6 +118,15 @@ class Labels(unittest.TestCase):
         _pins, labels = vendored_labels()
         self.assertLessEqual(METRIC_LABELS, set(labels))
         self.assertNotIn("step", labels, "step is a field of the line, not a label (README)")
+
+    def test_every_code_and_outcome_passes_the_metrics_extractor(self):
+        """The extractors of tpa-platform's metric, as vendored (cloud/catalogue/monitoring.yml): a value one
+        does not match reaches the metric as an empty label."""
+        extractors = cat.Catalogue().synthetics["synthetic_results"]["extractors"]
+        for label, values in (("code", result.CODES), ("outcome", result.OUTCOMES)):
+            pattern = re.fullmatch(r'REGEXP_EXTRACT\(jsonPayload\.\w+, "(.*)"\)', extractors[label]).group(1)
+            for value in values:
+                self.assertRegex(value, pattern, f"{label} {value}")
 
     def test_the_vendored_allowlist_is_tpa_platforms(self):
         sibling = Path(os.environ.get("TPA_PLATFORM_DIR") or ROOT.parent / "tpa-platform")
@@ -152,12 +175,14 @@ class Refusals(unittest.TestCase):
         # A broken runner is never a check's verdict, and a check's verdict never the runner's error.
         self.refuse(outcome="fail", code="config", step="config")
         self.refuse(outcome="fail", code="runner", step="login")
+        self.refuse(outcome="fail", code="egress", step="egress")
         self.refuse(outcome="error", code="status", step="login")
         self.refuse(outcome="error", code="ok")
 
     def test_every_code_has_one_outcome(self):
         self.assertEqual(set(result.OUTCOME_OF), set(result.CODES))
-        self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "error"}, {"config", "iap_token", "runner"})
+        self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "error"},
+                         {"config", "egress", "iap_token", "runner"})
         self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "pass"}, {"ok"})
         self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "skipped"}, {"paused", "not_configured"})
 

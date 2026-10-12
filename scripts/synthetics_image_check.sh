@@ -10,7 +10,9 @@
 #     - paused: one `skipped`/`paused` line, exit 0;
 #     - J3 with the CRM flag off: one `skipped`/`not_configured` line, exit 0;
 #     - J1 with no configuration: one `error`/`config` line, exit 1 (the runner is broken);
-#     - J1 configured but with no network: the metadata call fails, one `error`/`iap_token` line, exit 1 (the job's
+#     - J1 configured but with no network, the warm-up given 2 s: no host answers, one `error`/`egress` line, exit 1
+#       (the job's own network path, not the site);
+#     - the same with the warm-up off: the metadata call fails, one `error`/`iap_token` line, exit 1 (the job's
 #       environment, not the site);
 #     - no arguments: refused by argparse, exit 2, nothing on stdout.
 #     And nothing on stderr on any of the first four.
@@ -87,11 +89,13 @@ expect 0 skipped not_configured "$tag" journey crm
 expect 1 error config "$tag" journey staff-sign-in
 printf '{"password":"check-only-not-a-secret","totp_secret":"JBSWY3DPEHPK3PXP"}' >"$work/credentials.json"
 chmod 0644 "$work/credentials.json"
-expect 1 error iap_token -v "$work/credentials.json:/secrets/credentials.json:ro" \
-  -e SYNTHETICS_BASE_URL=https://ops.check.invalid -e SYNTHETICS_PORTAL_BASE_URL=https://portal.check.invalid \
-  -e SYNTHETICS_EMAIL=synthetic-staff@check.invalid -e SYNTHETICS_CREDENTIALS_FILE=/secrets/credentials.json \
-  -e SYNTHETICS_IAP_AUDIENCE=0-check.apps.googleusercontent.com -e SYNTHETICS_STEP_TIMEOUT_S=3 \
-  "$tag" journey staff-sign-in
+configured=(-v "$work/credentials.json:/secrets/credentials.json:ro"
+  -e SYNTHETICS_BASE_URL=https://ops.check.invalid -e SYNTHETICS_PORTAL_BASE_URL=https://portal.check.invalid
+  -e SYNTHETICS_EMAIL=synthetic-staff@check.invalid -e SYNTHETICS_CREDENTIALS_FILE=/secrets/credentials.json
+  -e SYNTHETICS_IAP_AUDIENCE=0-check.apps.googleusercontent.com -e SYNTHETICS_STEP_TIMEOUT_S=3)
+expect 1 error egress "${configured[@]}" -e SYNTHETICS_EGRESS_WAIT_S=2 "$tag" journey staff-sign-in
+grep -q check-only-not-a-secret "$work/out" && fail "the password reached stdout"
+expect 1 error iap_token "${configured[@]}" -e SYNTHETICS_EGRESS_WAIT_S=0 "$tag" journey staff-sign-in
 grep -q check-only-not-a-secret "$work/out" && fail "the password reached stdout"
 got=0
 docker run --rm --network none "$tag" >"$work/out" 2>"$work/err" || got=$?
