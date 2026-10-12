@@ -2266,9 +2266,12 @@ projects:
 # The synthetic checks' journeys (the owner's Q2 and Q3, 2026-10-11, the orchestrating
 # session: "Yes (Recommended)" and "Yes, job creates them
 # (Recommended)"; docs/infra/monitoring.md §5c). A section of its own, read by
-# beta's root alone (main.tf, local.synthetic_policies) and only for a journey
-# synthetics_enabled builds and whose databases run, so with the switch off
-# nothing here reaches a plan. The app project receives the runner's lines.
+# beta's root alone (synthetics.tf): its metric while any journey is built,
+# paused or not (local.synthetic_log_metrics: a PromQL policy is refused over
+# a log metric with no series, so the metric outlives a pause), its policies
+# once per running journey, built, not paused and with every database it
+# needs running (local.synthetic_policies). With every switch off nothing here
+# reaches a plan. The app project receives the runner's lines.
 #
 # `__JOB__` in a policy is the journey's Cloud Run job (`synthetics-<journey>`),
 # written in by the root once per running journey, and each policy's key
@@ -2283,7 +2286,7 @@ synthetics:
         One per synthetic journey run: the runner's one result line
         (trellis-watchtower synthetics/, `synthetic_result`), by its Cloud Run
         job, its outcome (pass, fail, skipped, or error when the runner itself
-        broke or was misconfigured), its closed code and the last answer's
+        broke, was misconfigured or never got its own network path), its closed code and the last answer's
         status class. The line carries no token, cookie, id, number or body,
         and only those four are read; its `step` is a field, never a label.
       filter: |
@@ -2301,7 +2304,8 @@ synthetics:
     # journey, so one bad run never pages and a recovery closes it. The runner
     # never retries (a retry replays a TOTP step). A failure is a verdict about
     # the estate (the runner exits 0); a broken runner is `synthetic-broken`
-    # and the job's own `jobs-failed` (it exits 1).
+    # and the journey's own `synthetic-job-failed` (it exits 1; the app
+    # project's `jobs-failed` names its jobs one by one, never these).
     synthetic-failing:
       display_name: "synthetic journey failing: __JOB__"
       documentation: >-
@@ -2327,18 +2331,32 @@ synthetics:
 
     # The runner itself is broken or misconfigured (outcome `error`: code
     # `runner`, an unexpected exception; `config`, a bad setting or an
-    # unusable credentials file; `iap_token`, no identity token). Not a verdict about the estate, so normal
-    # routing whatever the journey's; `jobs-failed` opens beside it (exit 1).
+    # unusable credentials file; `iap_token`, no identity token; `egress`, its
+    # own network path never opened within SYNTHETICS_EGRESS_WAIT_S). Not a verdict about the estate, so normal
+    # routing whatever the journey's; the journey's `synthetic-job-failed`
+    # opens beside it (exit 1), and errors run after run add its missed run
+    # (900 s with no successful execution).
     synthetic-broken:
       display_name: "synthetic journey broken: __JOB__"
       documentation: >-
         The synthetic journey `__JOB__`'s runner reported `error` in the last
-        eleven minutes: it is broken (code `runner`) or misconfigured (code
+        eleven minutes: it is broken (code `runner`), misconfigured (code
         `config`: a missing or bad setting, or a credentials file it cannot
         use; code `iap_token`: the metadata server gave its account no
-        identity token), so it is not checking anything. Read the job's last execution and its result line,
+        identity token), or never got its own network path (code `egress`:
+        no two fresh connections in a row to the load balancer within its
+        wait, SYNTHETICS_EGRESS_WAIT_S), so it is not checking anything.
+        Read the job's last execution and its result line,
         then the job's environment and its pinned credentials version
-        (synthetic_credentials_versions). `jobs-failed` opens beside this.
+        (synthetic_credentials_versions). For `egress`, the line's
+        `steps_ms.egress` is how long it waited: a fresh Cloud Run job task's
+        Direct VPC egress through Cloud NAT can pass no traffic for 30 s or
+        more after it starts (Google's documented cold start), so one such
+        run is the job's network still warming; run after run is the job's
+        network or its firewall rules (1450 and 1460), unless the edge's own
+        uptime checks are failing beside it. The journey's
+        `synthetic-job-failed` opens beside this (an `error` exits 1), and an
+        error on every run adds the job's missed run after 900 s.
       conditions:
         - name: "an error result in eleven minutes"
           promql:
@@ -2348,9 +2366,14 @@ synthetics:
 
     # No result line at all for fifteen minutes from a journey that is not
     # paused ("synthetic checks not running"): three runs missed or mute. The
-    # six-minute hold covers the first run after the policy is made (its
-    # schedule's next five-minute mark, and the run), so a policy made beside
-    # its job never pages; beside it, the module's missed run (900 s).
+    # ten-minute hold covers the first run after the policy is made, as at an
+    # unpause: the schedule's next five-minute mark, the runner's egress
+    # warm-up (at most 120 s as each job sets it), the run, and Cloud
+    # Logging's delay before the metric counts its line (the orchestrating
+    # session's ruling, 2026-10-12: six minutes could open on a slow
+    # warm-up). When it opens it is normal routing: email, Slack and
+    # PagerDuty at WARNING, never a text. Beside it, the module's missed run
+    # (900 s), also normal.
     synthetic-blind:
       display_name: "synthetic checks not running: __JOB__"
       documentation: >-
@@ -2365,7 +2388,7 @@ synthetics:
           promql:
             query: >-
               absent_over_time(logging_googleapis_com:user_synthetic_results{monitored_resource="cloud_run_job", job_name="__JOB__"}[15m])
-            duration: "360s"
+            duration: "600s"
             evaluation_interval: "60s"
 
     # The job itself failed (exit 1: the runner broke, or its line could not
