@@ -855,7 +855,8 @@ class Egress(Case):
         finally:
             journeys.client.resolve = original
         self.assertEqual((line["outcome"], code), ("pass", 0))
-        self.assertEqual(asked, [("127.0.0.1", fake.port)] * 3, "until it resolves, then never again")
+        # The warm-up's three (two failed, then kept for good), then one per connection the client dials.
+        self.assertEqual(asked, [("127.0.0.1", fake.port)] * (3 + len(J2_ROUTES)))
         self.assertEqual(len(net.connects), 2)
 
 
@@ -908,6 +909,108 @@ class Connect(Case):
         self.assertLess(timeouts[1], 0.2, "then only what the step has left, after a half-second pause")
         self.assertLess(took, 4.5)
         self.assertEqual(fake.requests, [])
+
+    def test_an_answer_has_the_rest_of_the_step_not_an_attempts_3_s(self):
+        # The connected socket's timeout is what the step has left: a 3.5 s answer inside a 5 s step is a pass.
+        with fakes.Fake(fail={"live_queue": "hang"}, hang_s=3.5, clock=lambda: FIXED_NOW) as fake:
+            line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="5"))
+        self.assertEqual((line["outcome"], line["code"], code), ("pass", "ok", 0))
+        self.assertGreaterEqual(line["steps_ms"]["live_queue"], 3500)
+
+    def test_a_connection_made_too_late_is_closed(self):
+        # Connected only after the step's half second: closed, never written to, and the step times out.
+        made = []
+
+        def late(address, timeout, real):
+            sock = real(address, timeout)
+            made.append(sock)
+            time.sleep(0.6)
+            return sock
+
+        with fakes.Fake(iap=False) as fake:
+            with dialling(late):
+                line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="0.5"),
+                                              use_iap=False)
+        self.assert_failed(line, code, step="login", code="timeout", status_class="none")
+        self.assertEqual(len(made), 1)
+        self.assertEqual(made[0].fileno(), -1, "closed, not left open")
+        self.assertEqual(fake.requests, [])
+
+    def test_a_hosts_addresses_are_tried_in_turn(self):
+        # The name resolves to a refused address first: the next one connects, and each request goes once.
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            closed = probe.getsockname()[1]
+        real = client.resolve
+        client.resolve = lambda host, port: [(socket.AF_INET, ("127.0.0.1", closed))] + real(host, port)
+        try:
+            with fakes.Fake(clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_journey("ops-desk", self.env(fake))
+        finally:
+            client.resolve = real
+        self.assertEqual((line["outcome"], code), ("pass", 0))
+        self.assertEqual(fake.routes(), J2_ROUTES)
+
+    def test_one_attempt_shares_its_time_across_the_addresses(self):
+        # Two addresses: the first refuses after 1 s, the second is never answered. The second has the
+        # attempt's 2 s left, not 3 s of its own, and the step's 3.6 s is never overrun.
+        opened = []
+
+        def opening(family, address, timeout):
+            opened.append((address[1], timeout))
+            if address[1] == 1:
+                time.sleep(min(1.0, timeout))
+                raise ConnectionRefusedError if timeout > 1.0 else TimeoutError
+            time.sleep(timeout)
+            raise TimeoutError
+
+        real_resolve, real_open = client.resolve, client._open
+        client.resolve = lambda host, port: [(socket.AF_INET, ("127.0.0.1", 1)), (socket.AF_INET, ("127.0.0.1", 2))]
+        client._open = opening
+        try:
+            with fakes.Fake(iap=False) as fake:
+                started = time.monotonic()
+                line, code = self.run_journey("ops-desk", self.env(
+                    fake, SYNTHETICS_STEP_TIMEOUT_S="3.6", SYNTHETICS_EGRESS_WAIT_S="0"), use_iap=False)
+                took = time.monotonic() - started
+        finally:
+            client.resolve, client._open = real_resolve, real_open
+        self.assert_failed(line, code, step="login", code="timeout", status_class="none")
+        self.assertEqual([port for port, _timeout in opened], [1, 2, 1])
+        self.assertAlmostEqual(opened[0][1], 3.0, delta=0.01)
+        self.assertAlmostEqual(opened[1][1], 2.0, delta=0.1)
+        self.assertLess(opened[2][1], 0.2)
+        self.assertLess(took, 4.5)
+        self.assertEqual(fake.requests, [])
+
+    def test_a_code_is_never_sent_after_auth_would_refuse_it(self):
+        # A 60 s step, but the code has 1 s of accepted life left: its connection, never answered, fails
+        # `timeout` inside that second, and the code is never sent (a stale one costs a lockout strike).
+        for job, nth, extra in [("ops-desk", 2, {}), ("crm", 3, {"SYNTHETICS_CRM_ENABLED": "1"})]:
+            calls = []
+
+            def attempt(address, timeout, real):
+                calls.append(timeout)
+                if len(calls) == nth:  # local mode: J2's login then mfa_verify; J3's shell, login, mfa_verify
+                    time.sleep(timeout)
+                    raise TimeoutError
+                return real(address, timeout)
+
+            real_accepted_for = journeys.totp.accepted_for
+            journeys.totp.accepted_for = lambda _now: 1.0
+            try:
+                with self.subTest(job=job), fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
+                    started = time.monotonic()
+                    with dialling(attempt):
+                        line, code = self.run_journey(job, self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="60", **extra),
+                                                      use_iap=False)
+                    took = time.monotonic() - started
+                    self.assert_failed(line, code, step="mfa_verify", code="timeout", status_class="none")
+                    self.assertEqual(fake.codes_received, [])
+                    self.assertLessEqual(calls[nth - 1], 1.0)
+                    self.assertLess(took, 3)
+            finally:
+                journeys.totp.accepted_for = real_accepted_for
 
 
 class EntryPoint(Case):

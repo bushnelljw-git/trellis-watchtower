@@ -51,12 +51,17 @@ balancer in 264 ms, and its `mfa_verify` then timed out at 15016 ms on a connect
 fresh connection can still be dropped for a while after the warm-up (the diagnosis saw one take 35.7 s in one task
 and 7.2 s in another, quiet about 60 s after the task started), and the client opens a new connection for every
 request. So each request's TCP connection is tried with a fresh socket, at most 3 s an attempt and 0.5 s apart, until
-one connects or the step's time is spent, as tpa-platform's jobs do since its P121. Then the request is written,
-once: http.client writes nothing before the connection is made, and nothing after that is tried again, so `login`,
-`mfa_verify` and `logout` are each sent at most once, whatever their answer. A step whose time runs out fails as
-before, `timeout` after attempts that timed out and `connect` after refusals. TLS is not retried: its handshake runs
-once on the connected socket, so a certificate refusal is `tls` at once. A code minted for `mfa_verify` has at least
-8 s left in its step, and auth accepts one step either side, so it outlives a step's 15 s of attempts.
+one connects or the step's time is spent, as tpa-platform's jobs do since its P121. An attempt resolves the name
+(getaddrinfo, which no timeout bounds) and tries its addresses in turn, all inside the attempt's 3 s; the connected
+socket's timeout is then what the step has left, for the answer. Then the request is written, once: http.client
+writes nothing before the connection is made, and nothing after that is tried again, so `login`, `mfa_verify` and
+`logout` are each sent at most once, whatever their answer. A step whose time runs out fails as before, `timeout`
+after attempts that timed out and `connect` after refusals; a name that never resolves now spends the step, then
+fails `connect`. TLS is not retried: its handshake runs once on the connected socket, so a certificate refusal is
+`tls` at once. `mfa_verify` never outlives its code: auth and the CRM accept a code for the rest of its step and one
+step more (at least 38 s, as it is minted with 8 s left), and that caps the request's budget, so a connection made
+too late fails `timeout` rather than sending a stale code that costs a lockout strike. It can bind only when
+`SYNTHETICS_STEP_TIMEOUT_S` is above 38.
 
 | Job | Severity (design §5) | Steps, in order |
 |---|---|---|
@@ -221,12 +226,14 @@ loopback), pausing, J3's flag, the warm-up (ready only after two fresh connectio
 success then a failure starting over; its budget spent before anything is read or sent, and its bounds; `0` and a
 pause doing none; the run's deadline starting after it; a name that does not resolve tried again; not a byte sent),
 connections dialled again after timeouts and refusals with each request still sent once, no sign-in, code or sign-out
-sent twice when its answer hangs or its connection drops, each attempt cut to what the step has left, and a TLS
-failure never dialled again, J3's business read (the id `me` names, sent as `X-Tenant-Id` only when it is a UUID) and
-a CRM login that answers the password alone; the sign-out sent after any exception once signed in, with its own
-budget, and never repeated; the exit status of a failed check (0), and of a broken configuration, a warm-up that ran
-out, a metadata server with no token, a runner crash and an unwritable line (1); RFC 6238's vectors; the golden
-lines; every code and outcome against the metric's own extractors (the vendored catalogue's); the result line's
-labels against tpa-platform's own allowlist (`tests/synthetics/tpa_metric_labels.txt`, vendored with its commit and
-blob, and re-read from the sibling checkout when there is one); the image's policy, read statically; and no secret on
-stdout or stderr on any path, in-process and through the real entry point.
+sent twice when its answer hangs or its connection drops, each attempt cut to what the step has left and shared
+across the name's addresses, which are tried in turn, a 3.5 s answer inside a 5 s step, a connection made too late
+closed, `mfa_verify` never past its code's accepted life (J2 and J3), and a TLS failure never dialled again, J3's
+business read (the id `me` names, sent as `X-Tenant-Id` only when it is a UUID) and a CRM login that answers the
+password alone; the sign-out sent after any exception once signed in, with its own budget, and never repeated; the
+exit status of a failed check (0), and of a broken configuration, a warm-up that ran out, a metadata server with no
+token, a runner crash and an unwritable line (1); RFC 6238's vectors; the golden lines; every code and outcome
+against the metric's own extractors (the vendored catalogue's); the result line's labels against tpa-platform's own
+allowlist (`tests/synthetics/tpa_metric_labels.txt`, vendored with its commit and blob, and re-read from the sibling
+checkout when there is one); the image's policy, read statically; and no secret on stdout or stderr on any path,
+in-process and through the real entry point.

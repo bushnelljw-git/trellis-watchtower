@@ -72,6 +72,13 @@ class Minting(unittest.TestCase):
         self.assertAlmostEqual(slept[0], 2.2, places=3)
         self.assertEqual(code, totp.code_at(SEED_SHA1, 2))
 
+    def test_a_code_is_accepted_for_the_rest_of_its_step_and_one_more(self):
+        # auth and the CRM take a code one step late: a code minted with 8 s left lives 38 s, 29 s left 59 s.
+        self.assertEqual(totp.ACCEPTED_LATE_STEPS, 1)
+        self.assertAlmostEqual(totp.accepted_for(60 + 22.0), 38.0)
+        self.assertAlmostEqual(totp.accepted_for(60 + 1.0), 59.0)
+        self.assertAlmostEqual(totp.accepted_for(60 + 29.5), 30.5)
+
     def test_a_bad_secret_fails_before_any_wait(self):
         slept = []
         with self.assertRaises(totp.SecretUnusable):

@@ -25,8 +25,9 @@
   2026-10-12: ops-desk's `mfa_verify` timed out at 15 s on a connection the
   load balancer never saw), and urllib opens one connection per request. So
   the TCP connection (`dial`) is tried with a fresh socket, at most
-  CONNECT_ATTEMPT_S each, CONNECT_PAUSE_S apart, until one connects or the
-  step's time is spent. Only then is the request written, once: http.client
+  CONNECT_ATTEMPT_S each (the name resolved, then its addresses in turn, all
+  inside it), CONNECT_PAUSE_S apart, until one connects or the step's time is
+  spent. Only then is the request written, once: http.client
   writes nothing before `connect()` returns, and nothing after that is ever
   tried again, so no sign-in, code or sign-out is sent twice. TLS is not
   retried: its handshake runs once on the connected socket.
@@ -149,9 +150,34 @@ def knock(family: int, address: Any, timeout: float) -> None:
         sock.connect(address)
 
 
+def _open(family: int, address: Any, timeout: float) -> socket.socket:
+    """A fresh socket connected to one address inside `timeout`, or OSError (the socket closed)."""
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    try:
+        sock.settimeout(timeout)
+        sock.connect(address)
+    except BaseException:
+        sock.close()
+        raise
+    return sock
+
+
 def _connect_once(address: tuple[str, int], timeout: float) -> socket.socket:
-    """One fresh TCP connection, getaddrinfo's addresses in turn, or OSError."""
-    return socket.create_connection(address, timeout)
+    """One attempt: the name resolved (getaddrinfo, which no timeout bounds), then its
+    addresses in turn as socket.create_connection tries them, but all of them inside
+    `timeout` together rather than each with the whole of it. OSError: the last
+    address's, or TimeoutError once the attempt's time is spent."""
+    end = time.monotonic() + timeout
+    failed: OSError = OSError("the name has no address")
+    for family, resolved in resolve(*address):
+        left = end - time.monotonic()
+        if left <= 0:
+            raise TimeoutError
+        try:
+            return _open(family, resolved, left)
+        except OSError as error:
+            failed = error
+    raise failed
 
 
 def dial(address: tuple[str, int], timeout: float) -> socket.socket:
@@ -402,10 +428,12 @@ class Session:
         tenant: str | None = None,
         csrf: bool = False,
         timeout: float | None = None,
+        at_most: float | None = None,
     ) -> Response:
         """One request to this origin. `timeout` replaces the step's timeout and the
-        run's deadline with a budget of its own (the sign-out's). `tenant` is the CRM's
-        `X-Tenant-Id`, which the caller has already checked is a UUID."""
+        run's deadline with a budget of its own (the sign-out's); `at_most` caps
+        whichever applies (a TOTP code's accepted life, for its `mfa_verify`). `tenant`
+        is the CRM's `X-Tenant-Id`, which the caller has already checked is a UUID."""
         if not path.startswith("/") or path.startswith("//"):
             raise StepFailure("runner")
         headers = {
@@ -437,7 +465,10 @@ class Session:
                 raise StepFailure("csrf")
             headers["X-CSRF-Token"] = token
         request = urllib.request.Request(self.origin + path, data=data, headers=headers, method=method)
-        response = send(self._open, request, timeout=self._timeout() if timeout is None else timeout)
+        budget = self._timeout() if timeout is None else timeout
+        if at_most is not None:
+            budget = min(budget, at_most)
+        response = send(self._open, request, timeout=budget)
         self.last_status = response.status
         self.cookies.take(response.headers, cookie_path)
         return response

@@ -26,6 +26,11 @@ STEP_SECONDS = 30
 DIGITS = 6
 #: The fewest seconds a minted code may have left in its step.
 MIN_SECONDS_LEFT = 8
+#: How many steps late auth and the CRM still accept a code (each takes one step
+#: either side: auth-notary's `TOTP_WINDOW_STEPS`, auth/domain/clocks.py; the CRM's
+#: `VALID_STEPS`, engine/app/lattice/modules/identity/totp.py). A code minted with
+#: MIN_SECONDS_LEFT is so accepted for 38 s at least.
+ACCEPTED_LATE_STEPS = 1
 
 
 class SecretUnusable(ValueError):
@@ -61,6 +66,13 @@ def step_at(epoch_seconds: float) -> int:
 def code_for_time(secret: str, epoch_seconds: float) -> str:
     """auth's code (SHA-1, 30 s, six digits) for the step covering a time."""
     return code_at(decode_base32(secret), step_at(epoch_seconds))
+
+
+def accepted_for(epoch_seconds: float) -> float:
+    """How much longer a code for the step covering this time is accepted: the rest of
+    its step and ACCEPTED_LATE_STEPS more. `mfa_verify` never reaches auth after that,
+    where the code would be refused and charged to the lockout budget."""
+    return (step_at(epoch_seconds) + 1 + ACCEPTED_LATE_STEPS) * STEP_SECONDS - epoch_seconds
 
 
 def mint(

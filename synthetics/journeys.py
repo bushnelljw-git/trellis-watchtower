@@ -446,8 +446,10 @@ def _auth_sign_in(run: Run, session: Session, email: str, credentials: Credentia
             raise StepFailure("shape", session.last_status)
     code = totp.mint(credentials.totp_secret, now=tools.now, sleep=tools.sleep)
     with run.timed("mfa_verify"):
+        # Never past the code's accepted life, however long the connection takes (client.dial).
         run.check(
-            session.post(AUTH_VERIFY, payload={"challenge_id": challenge, "code": code}),
+            session.post(AUTH_VERIFY, payload={"challenge_id": challenge, "code": code},
+                         at_most=totp.accepted_for(tools.now())),
             sign_in=True,
         ).json_object()
         if not {SESSION_COOKIE, CSRF_COOKIE} <= session.cookies.names():
@@ -596,7 +598,8 @@ def _signed_in_to_crm(run: Run, session: Session, config: Config, credentials: C
         code = totp.mint(credentials.totp_secret, now=tools.now, sleep=tools.sleep)
         with run.timed("mfa_verify"):
             verified = run.check(
-                session.post(CRM_VERIFY, payload={"challenge_id": challenge, "code": code}),
+                session.post(CRM_VERIFY, payload={"challenge_id": challenge, "code": code},
+                             at_most=totp.accepted_for(tools.now())),
                 sign_in=True,
             ).json_object()
             token = verified.get("token")
