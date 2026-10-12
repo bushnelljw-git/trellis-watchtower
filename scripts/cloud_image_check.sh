@@ -2,8 +2,9 @@
 # Build cloud/ under a throwaway tag, run it with no network (as cloud/README.md describes), check it, and remove
 # the containers and the image. Never pushes anything; nothing leaves this machine.
 #
-#  0. The image's configured user is exactly 10001:10001 (tpa-platform's shared builder refuses any other) and its base
-#     is pinned by digest.
+#  0. The image's configured user is exactly 10001:10001 (tpa-platform's shared builder refuses any other); every
+#     base is pinned by digest, and the image's stage is the official Grafana's; Grafana's three Go binaries were
+#     rebuilt with Go 1.26.9 (read from each binary's own build information); and its zlib is 1.3.2-r1.
 #  1. As it ships, set up as production-full (no call-centre project): Grafana starts, render-dashboards writes the
 #     eight production pages, the four datasources are inserted, /api/search answers 401 without an IAP assertion,
 #     Grafana (PID 1) runs as uid 10001 and gid 10001, the config, IAP's pinned keys, provisioning, dashboards and
@@ -63,9 +64,55 @@ echo "== 0. the image's configuration"
 user="$(docker image inspect --format '{{.Config.User}}' "$tag")"
 [ "$user" = "10001:10001" ] || fail "the image runs as '${user:-root}', not 10001:10001 (the shared builder refuses it)"
 echo "   configured user: $user"
-grep -Eq '^FROM [^ ]+@sha256:[0-9a-f]{64}$' "$here/cloud/Dockerfile" || fail "cloud/Dockerfile's base is not pinned by digest"
-[ "$(grep -c '^FROM ' "$here/cloud/Dockerfile")" = 1 ] || fail "cloud/Dockerfile should have exactly one FROM"
-echo "   base pinned by digest: $(sed -n 's/^FROM //p' "$here/cloud/Dockerfile" | cut -c1-40)..."
+# Every FROM is an image pinned by digest, scratch, or an earlier stage; the last is the stage named grafana, which is
+# grafana/grafana by digest.
+python3 - "$here/cloud/Dockerfile" <<'EOF' || fail "cloud/Dockerfile's stages are not as pinned"
+import re, sys
+stages, froms = {}, re.findall(r"^FROM (.+)$", open(sys.argv[1]).read(), re.M)
+for line in froms:
+    m = re.fullmatch(r"(\S+)(?: AS ([a-z][a-z0-9-]*))?", line)
+    if not m:
+        sys.exit(f"unreadable FROM: {line}")
+    base, name = m.groups()
+    if not (base == "scratch" or base in stages or re.fullmatch(r"[^ @]+@sha256:[0-9a-f]{64}", base)):
+        sys.exit(f"FROM {base} is not pinned by digest")
+    if name:
+        stages[name] = stages.get(base, base)
+if froms[-1] != "grafana" or not stages.get("grafana", "").startswith("grafana/grafana:"):
+    sys.exit("the image's stage is not the grafana stage, grafana/grafana by digest")
+print(f"   bases pinned by digest; the image is {stages['grafana'][:40]}...")
+EOF
+docker create --name "$name" "$tag" >/dev/null
+mkdir -p "$work/bin"
+for b in grafana grafana-server grafana-cli; do
+  docker cp "$name:/usr/share/grafana/bin/$b" "$work/bin/$b" >/dev/null
+done
+docker rm "$name" >/dev/null
+# Each binary's Go, from its build information (Go 1.18's format: the magic, then, with flag 2, the version as a
+# varint-length string 32 bytes in), so the check needs no Go of its own.
+python3 - "$work/bin" <<'EOF' || fail "Grafana's binaries are not all built with go1.26.9"
+import os, sys
+for name in ("grafana", "grafana-server", "grafana-cli"):
+    data = open(os.path.join(sys.argv[1], name), "rb").read()
+    at = data.find(b"\xff Go buildinf:")
+    if at < 0 or not data[at + 15] & 2:
+        sys.exit(f"{name}: no readable Go build information")
+    at, length, shift = at + 32, 0, 0
+    while True:
+        byte = data[at]
+        at += 1
+        length |= (byte & 0x7F) << shift
+        shift += 7
+        if byte < 0x80:
+            break
+    version = data[at:at + length].decode()
+    print(f"   {name}: {version}")
+    if version != "go1.26.9":
+        sys.exit(f"{name} is built with {version}")
+EOF
+zlib="$(docker run --rm --network none --entrypoint apk "$tag" info -v 2>/dev/null | grep '^zlib-' || true)"
+[ "$zlib" = zlib-1.3.2-r1 ] || fail "the image's zlib is '$zlib', not zlib-1.3.2-r1"
+echo "   $zlib"
 
 # A throwaway ES256 key ("good", whose set replaces the baked one in part 2), another ("other"), and the signer.
 mkdir -p "$work/check"
@@ -126,6 +173,10 @@ inserted="$(grep -c '"msg":"inserting datasource from configuration"' <<<"$logs"
 echo "   datasources inserted: $inserted"
 [ "$inserted" = 4 ] || fail "expected 4 datasources"
 if grep -E '"level":"(error|crit)"' <<<"$logs" >&2; then fail "Grafana logged an error at start"; fi
+started="$(grep '"msg":"Starting Grafana"' <<<"$logs" || true)"
+grep -q '"commit":"60d1cb9522f234508f98e9c88295cc920c965d10"' <<<"$started" && grep -q '"version":"12.4.12"' <<<"$started" ||
+  fail "the Grafana that started is not 12.4.12 rebuilt from commit 60d1cb95: $started"
+echo "   Grafana 12.4.12, rebuilt from commit 60d1cb95, started"
 ids="$(docker exec "$name" awk '$1 == "Uid:" || $1 == "Gid:" { print $1, $2 }' /proc/1/status)"
 [ "$ids" = $'Uid: 10001\nGid: 10001' ] || fail "Grafana (PID 1) runs as '$ids', not uid 10001 and gid 10001"
 pid1="$(docker exec "$name" readlink /proc/1/exe)"

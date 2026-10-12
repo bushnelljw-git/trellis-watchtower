@@ -16,7 +16,7 @@ host, the perimeter rule and the IAM rows. Nothing here is pushed or deployed fr
 
 | File | What it does |
 |---|---|
-| `Dockerfile` | `grafana/grafana:12.4.12` pinned by digest, config, IAP's pinned keys, provisioning and dashboards baked in, root's and read-only, no plugins. Runs as `10001:10001` (below, "The image's user and what it writes"). Its entrypoint is `render-dashboards.sh`. Build context is `cloud/`. |
+| `Dockerfile` | `grafana/grafana:12.4.12` pinned by digest, with Grafana's three Go binaries rebuilt from the v12.4.12 source with Go 1.26.9, zlib 1.3.2-r1, config, IAP's pinned keys, provisioning and dashboards baked in, root's and read-only, no plugins. Runs as `10001:10001` (below, "The image's user and what it writes"). Its entrypoint is `render-dashboards.sh`. Build context is `cloud/`. |
 | `grafana.ini` | Sign-in by the IAP assertion only (`[auth.jwt]` on `X-Goog-Iap-Jwt-Assertion`, Google's IAP keys from the pinned `iap_keys.json`, `aud` and `iss` checked, email claim, auto sign-up as Viewer). Login form, basic auth and anonymous access off. No initial admin. Alerting, snapshots, public dashboards, Explore, query history, plugin downloads, update checks and reporting off. The home page is the cloud overview; no refresh faster than a minute. |
 | `provisioning/datasources/cloud-monitoring.yml` | Four Cloud Monitoring datasources, `cloud-app`, `cloud-crm`, `cloud-phi` and `cloud-cc`, using the attached identity (`authenticationType: gce`). Each sets both `defaultProject` and `gceDefaultProject`: under `gce` Grafana's browser side reads only the second, and without it all four would read the app project. `cloud-phi` works only once the perimeter rule admits `sa-watchtower` to the PHI project's Monitoring read. |
 | `iap_keys.json` | IAP's public keys (Google's JWK set from `https://www.gstatic.com/iap/verify/public_key-jwk`), pinned on the day it names, read by `grafana.ini`'s `jwk_set_file`. `scripts/refresh_iap_keys.sh` re-pins it (below, "IAP's keys"). |
@@ -229,17 +229,28 @@ this image meets it:
   starts. The base's other world-writable folders (`/var/log/grafana`, unused with console logging;
   `/usr/share/grafana/.aws`, unused; `/var/tmp`) are root's and closed. The config, provisioning, baked dashboards
   and entrypoint are root's and read-only.
-- **The base is pinned by digest.** Nothing is installed at build time (no `apk`, no plugins), so there is no
-  dependency to hash-lock.
+- **Every base is pinned by digest, and everything fetched by its hash.** The official 12.4.12 image's Go binaries
+  are built with Go 1.26.6, whose standard library Container Scanning finds two CRITICAL and eight fixable HIGH
+  advisories in, and no Grafana release ships a newer Go yet. So `grafana`, `grafana-server` and `grafana-cli` are
+  rebuilt from Grafana's public v12.4.12 source (BuildKit refuses the tag unless it is commit `60d1cb95`) with Go
+  1.26.9 (the `golang` image web's Caddy is built with), as Grafana's `make build-go` builds them, every module checked
+  against Grafana's own `go.sum` and `go.work.sum`, and each binary's module list and build settings must be the
+  official one's exactly. With Go 1.26.6 and the official stamps, that source gives the official binaries byte for
+  byte (checked 2026-10-12), so Grafana's release build compiled nothing the public source lacks. Everything else
+  in the image (the frontend, the bundled plugins, Alpine) is Grafana's. zlib is moved to 1.3.2-r1 (CVE-2026-85091),
+  from Alpine's package by its sha256, installed with no repository and no network; apk checks its signature too.
+  When a Grafana release ships Go 1.26.9 or later and the fixed zlib, the rebuild and the package go.
 - **A shell stays.** The builder's no-shell rule covers tpa-platform's own Python images and `web`, not this one:
   its start check for `watchtower` builds the image, requires the user above, starts it with no network as beta's
   `watch.tf` does, and asks `/api/health` and `/api/search` (401) through `docker exec … wget`, so it needs the
   base's busybox. The entrypoint is a POSIX `sh` script too.
 - **`security/scan-exceptions.yaml`** (at this repository's root) is the builder's exceptions file for this image,
-  read at the image's own commit. It excepts exactly the fixable HIGH findings a scan of the 12.4.12 base reports
-  (Go's standard library 1.26.6, `golang.org/x/net`, `github.com/grafana/tempo`; no CRITICAL), each until
-  2026-11-10, when the builder refuses the file until each is renewed or removed. Re-check on the next Grafana
-  release: a base that fixes them drops its entries.
+  read at the image's own commit, by Container Scanning's package names. It excepts exactly the two fixable HIGH
+  findings in `github.com/grafana/tempo`, each until 2026-11-10, when the builder refuses the file until each is
+  renewed or removed. No CRITICAL. Both are matched by version alone: Grafana pins Tempo at a main-branch commit of
+  2026-04-27 whose pseudo-version (v1.5.1-...) the scanner compares with the fixed 2.x releases, though that commit
+  already contains both fixes (and the library serves only the Tempo datasource, which this image never
+  provisions). Re-check on the next Grafana release.
 
 ## What tpa-platform's lane provides
 

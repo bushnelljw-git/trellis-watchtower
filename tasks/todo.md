@@ -127,6 +127,43 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   - [ ] For tpa-platform's lane: lift the hold, and drop the `www.gstatic.com` egress (`watch_key_egress_approved`,
     the `watch-run-egress` rule): the image no longer fetches anything.
 
+- [x] IMG2 (2026-10-12, for the orchestrating session bodyfirst-a9) the cloud image through the builder's scan
+  policy, branch `image-scan-clean`. tpa-platform's build 4122c0b2 of 3f7fc36 failed its policy step: Container
+  Scanning names Go's standard library `go` (two CRITICAL, eight fixable HIGH, five with no severity, all fixed in Go
+  1.26.9) and found zlib 1.3.2-r0 (CVE-2026-85091, HIGH); only the two Tempo entries matched.
+  - [x] No Grafana release has a newer Go: 12.4.12, 12.4.12-ubuntu, 13.2.3, -ubuntu and -distroless are all Go
+    1.26.6 (only `nightly` has 1.27.2). Grafana's release-12.4.13 and release-13.2.4 branches (cut 2026-10-12) are at Go
+    1.26.9 and golang.org/x/net 0.60.0: when 12.4.13 is published, moving to it drops the rebuild below.
+  - [x] Grafana's three Go binaries rebuilt in `cloud/Dockerfile` from the public v12.4.12 source (BuildKit refuses
+    the tag unless it is commit 60d1cb95) with Go 1.26.9 (web's Caddy's `golang` image), as `make build-go` builds
+    them; modules by Grafana's own go.sum and go.work.sum (`-mod=readonly`); each binary's module list and build
+    settings must equal the official one's (`cmp`), and the caches are emptied in the same RUN.
+  - [x] Proof the public source is what Grafana shipped (its release build is from its security mirror's
+    `release-12.4.12#patched`): that commit with Go 1.26.6 and the official stamps rebuilds the official amd64
+    grafana, grafana-server and grafana-cli byte for byte. With Go 1.26.9, the module lists equal the official
+    ones on amd64 and arm64.
+  - [x] zlib 1.3.2-r1 (Alpine 3.24 main, 2026-10-07; no image carries it yet) by sha256 per architecture, installed
+    with no repository and no network; apk checks its signature, and a tampered copy is refused.
+  - [x] `security/scan-exceptions.yaml`: the two Tempo HIGH alone, by Container Scanning's names, dated 2026-11-10;
+    both matched by version only (Grafana's Tempo is main at 525d1bab of 2026-04-27, which contains both fix commits,
+    650eb198 and bb8ca663, by GitHub's compare). The trivy-named stdlib and golang.org/x/net entries are gone.
+  - [x] `make check` (with `tests/cloud/test_image_policy.py`, 8 tests, each pin mutation-checked); the image check
+    now also reads each binary's Go (go1.26.9), the zlib version and the started commit; `make cloud-image-check`
+    gets `build-guard` (6 GB of memory available and 12 GB of disk free in the Docker VM, or it refuses).
+  - [x] Measured on this Mac: the compile is ~950 CPU-seconds (108 s on 12 cores, 295 s at GOMAXPROCS=2 -p 2); its
+    peaks are aws-sdk-go-v2's ec2 package (3.0 GB) and the link (1.7 GB, 5.2 GB resident with mapped files). In a
+    BuildKit v0.33.1 builder (build.sh's) capped at 2 GB and 4 CPUs, the source by commit, the modules over the
+    bridge network and the zlib step all passed and the ec2 compile was killed by the cap, so the full build was
+    not run in this Docker VM (7.8 GB, ~2.9 GB available, shared with the live stack). The image's stages were run
+    with the same binaries built on the host: `scripts/cloud_image_check.sh` and tpa-platform's
+    `image_start_check.sh watchtower` pass, and trivy 0.75.0 (amd64) goes from 27 findings over the policy to 6:
+    Tempo's two, golang.org/x/net 0.58.0 (one HIGH, two unknown) and golang.org/x/crypto GO-2026-5932 (unknown, no
+    fix), neither of which Container Scanning reported in 4122c0b2.
+  - [ ] For tpa-platform's lane: the build step now compiles Grafana. web's Caddy took 380 s on the default machine
+    (19 s here), so this step may take 20 to 40 minutes against its 2400 s limit; a larger machine for watchtower
+    (e2-highcpu-8) or a longer step. Its start check (`image_start_check.sh`, plain `docker build`) compiles it in
+    this Mac's Docker VM too, which has too little memory now.
+
 - [x] NF (2026-10-11, the owner: "There will be NO systems in fly ONLY the gcp project") every Fly piece removed,
   branch `remove-fly`:
   - [x] `prometheus/targets/fly.yml` (the `fly` stack's two laptop probes), the Fly production dashboard, and the

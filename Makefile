@@ -33,11 +33,18 @@ DB_PROFILE := $(shell grep -qE '^PG_DSN_NETWORK=.+' .env 2>/dev/null && grep -qE
 # The Docker VM disk is shared with the live :4310 stack. The images here are
 # about 2 GB; refuse to start below this much free space.
 MIN_FREE_MB ?= 4096
+# Building cloud/ compiles Grafana's Go binaries (cloud/Dockerfile): one compile
+# alone (aws-sdk-go-v2's ec2) peaks near 3 GB and the link near 1.7 GB, with
+# others beside them, and the module and build caches take some 8 GB of disk
+# while it runs. The VM's memory is shared with the live :4310 stack too; refuse
+# below this much available rather than let its OOM killer choose.
+MIN_BUILD_MEM_MB ?= 6144
+MIN_BUILD_FREE_MB ?= 12288
 
 # The pinned image of a compose service, read from compose.yml (one source).
 img = $$($(CHECK_ENV) $(COMPOSE) -f compose.yml --profile db --profile test config --format json | jq -r '.services["$(1)"].image')
 
-.PHONY: help up down check lint probe-check scrub-check stub-test disk-guard pagerduty-test pagerduty-plan cloud-dashboards cloud-image-check synthetics-test synthetics-image-check
+.PHONY: help up down check lint probe-check scrub-check stub-test disk-guard build-guard pagerduty-test pagerduty-plan cloud-dashboards cloud-image-check synthetics-test synthetics-image-check
 
 help:
 	@sed -n '3,21p' Makefile | sed 's/^# \{0,1\}//'
@@ -47,6 +54,14 @@ disk-guard:
 	if [ "$$free" -lt "$(MIN_FREE_MB)" ]; then \
 	  echo "refusing: the Docker VM has $${free} MB free (< $(MIN_FREE_MB) MB). It is shared with the live :4310 stack; free space first."; exit 1; \
 	else echo "docker VM free: $${free} MB"; fi
+
+# cloud-image-check's build: available memory and free disk, both in the Docker VM.
+build-guard:
+	@avail=$$(docker run --rm $(call img,stub) awk '/MemAvailable/ {print int($$2/1024)}' /proc/meminfo); \
+	free=$$(docker run --rm $(call img,stub) df -Pm / | awk 'NR==2{print $$4}'); \
+	if [ "$$avail" -lt "$(MIN_BUILD_MEM_MB)" ] || [ "$$free" -lt "$(MIN_BUILD_FREE_MB)" ]; then \
+	  echo "refusing: building cloud/ compiles Grafana, which needs $(MIN_BUILD_MEM_MB) MB of memory available and $(MIN_BUILD_FREE_MB) MB of disk free in the Docker VM; it has $${avail} MB and $${free} MB, shared with the live :4310 stack."; exit 1; \
+	else echo "docker VM: $${avail} MB of memory available, $${free} MB of disk free"; fi
 
 up: disk-guard
 	@test -f .env || { echo "no .env: copy .env.example to .env and fill it in"; exit 1; }
@@ -89,7 +104,7 @@ lint:
 cloud-dashboards:
 	@python3 scripts/cloud_dashboards.py
 
-cloud-image-check: disk-guard
+cloud-image-check: disk-guard build-guard
 	@./scripts/cloud_image_check.sh
 
 pagerduty-test:
