@@ -8,8 +8,8 @@ What it makes (each found by its exact name, created when absent and corrected w
   - one service per Google Cloud project ("TPA beta · Portal & API", "· Member records", "· Call centre"), each with
     urgency from severity, a 30-minute acknowledgement timeout, no auto-resolve, the Google Cloud Monitoring
     integration, an alert grouping setting (intelligent, or time-based where the account refuses it) and a service
-    event orchestration that turns Monitoring's severity, in any letter case, into the alert's severity and the
-    incident's priority;
+    event orchestration that titles the incident with the alert policy's own subject (else "policy · condition") and
+    turns Monitoring's severity, in any letter case, into the alert's severity and the incident's priority;
   - business service "Trellis TPA (beta)", supported by the three services;
   - with --add-rules only, each person's designed notification rules that are missing (never adding or changing a
     contact method).
@@ -336,6 +336,34 @@ def service_fields(cfg: dict, policy_id: str) -> dict:
     }
 
 
+def title_rules() -> list[dict]:
+    """The "start" set: retitle the event, copy four payload fields into its details, then go on to the severity set.
+    The first rule that matches wins (pdlib.py, "The incident's title")."""
+    details = [{"target": f"event.custom_details.{key}", "source": source, "regex": regex}
+               for key, source, regex in d.TITLE_DETAILS]
+
+    def variable(name: str, path: str) -> dict:
+        return {"name": name, "path": path, "type": "regex", "value": d.FIRST_LINE}
+
+    def title(template: str) -> list[dict]:
+        return [{"target": "event.summary", "template": template}]
+
+    return [
+        {"label": "Title: the policy's own subject",
+         "conditions": [{"expression": d.SUBJECT_EXPRESSION}],
+         "actions": {"variables": [variable("subject", d.SUBJECT_FIELD)],
+                     "extractions": title("{{variables.subject}}") + details, "route_to": d.SEVERITY_SET}},
+        {"label": "Title: policy · condition (the policy has no subject of its own)",
+         "conditions": [{"expression": d.NAMES_EXPRESSION}],
+         "actions": {"variables": [variable("policy", d.POLICY_FIELD), variable("condition", d.CONDITION_FIELD)],
+                     "extractions": title("{{variables.policy}}" + d.TITLE_SEPARATOR + "{{variables.condition}}")
+                     + details, "route_to": d.SEVERITY_SET}},
+        {"label": "Title: as Monitoring wrote it (no policy or condition name)",
+         "conditions": [],
+         "actions": {"extractions": details, "route_to": d.SEVERITY_SET}},
+    ]
+
+
 def desired_orchestration(service_id: str, priorities: dict[str, str]) -> dict:
     rules = [{
         "label": d.rule_label(r),
@@ -343,18 +371,61 @@ def desired_orchestration(service_id: str, priorities: dict[str, str]) -> dict:
         "actions": {"severity": r["severity"], "priority": priorities[r["priority"]]},
     } for r in d.SEVERITY_RULES]
     return {"type": "service", "parent": ref("service", service_id),
-            "sets": [{"id": "start", "rules": rules}], "catch_all": {"actions": {}}}
+            "sets": [{"id": "start", "rules": title_rules()}, {"id": d.SEVERITY_SET, "rules": rules}],
+            "catch_all": {"actions": {}}}
 
 
-def _set_actions(actions: dict | None) -> dict:
-    return {k: v for k, v in (actions or {}).items() if v not in (None, False, "", [], {})}
+def _set_actions(actions):
+    """Actions as compared: unset and empty fields dropped at every depth (PagerDuty returns each field, null or
+    not)."""
+    if isinstance(actions, dict):
+        return {k: _set_actions(v) for k, v in actions.items() if v not in (None, False, "", [], {})}
+    if isinstance(actions, list):
+        return [_set_actions(v) for v in actions]
+    return actions
+
+
+def _rule_shape(rule: dict) -> tuple:
+    return ([c.get("expression") for c in rule.get("conditions") or []], _set_actions(rule.get("actions") or {}),
+            bool(rule.get("disabled")))
 
 
 def orchestration_shape(path: dict) -> tuple:
-    sets = [(s.get("id"), [(r.get("label"), [c.get("expression") for c in r.get("conditions") or []],
-                            _set_actions(r.get("actions")), bool(r.get("disabled"))) for r in s.get("rules") or []])
+    sets = [(s.get("id"), [(r.get("label"), *_rule_shape(r)) for r in s.get("rules") or []])
             for s in path.get("sets") or []]
-    return sets, _set_actions((path.get("catch_all") or {}).get("actions"))
+    return sets, _set_actions((path.get("catch_all") or {}).get("actions") or {})
+
+
+def orchestration_changes(have: dict, want: dict) -> list[str]:
+    """What an update changes, rule by rule (found by label), in words: added, moved, changed, removed."""
+    def placed(path):
+        return [(s.get("id"), r.get("label"), _rule_shape(r)) for s in path.get("sets") or []
+                for r in s.get("rules") or []]
+
+    old, new = placed(have), placed(want)
+    lines = []
+    for set_id, label, shape in new:
+        if (set_id, label, shape) in old:
+            continue
+        same_label = [(s, sh) for s, lab, sh in old if lab == label]
+        moved = [s for s, sh in same_label if sh == shape]
+        if moved:
+            lines.append(f'~ {set_id}: "{label}" (moved from set "{moved[0]}", unchanged)')
+        elif same_label:
+            was_in, was = same_label[0]
+            what = [p for i, p in enumerate(("conditions", "actions", "disabled")) if was[i] != shape[i]]
+            where = f'moved from set "{was_in}", ' if was_in != set_id else ""
+            lines.append(f'~ {set_id}: "{label}" ({where}{", ".join(what)} changed)')
+        else:
+            lines.append(f'+ {set_id}: "{label}"')
+    for set_id, label, _ in old:
+        if label not in {lab for _, lab, _ in new}:
+            lines.append(f'- {set_id}: "{label}"')
+    if orchestration_shape(have)[1] != orchestration_shape(want)[1]:
+        lines.append("~ catch-all: actions changed")
+    if not lines:
+        lines.append("~ the order of the rules or sets")
+    return lines
 
 
 def ours(integration: dict) -> bool:
@@ -428,12 +499,13 @@ def ensure_services(pd: PagerDuty, plan: Plan, policy_id: str, priorities: dict[
 
 def ensure_orchestration(pd: PagerDuty, plan: Plan, name: str, sid: str, new: bool, priorities: dict[str, str]):
     what = f'  event orchestration on "{name}"'
-    detail = "; ".join(f"{r['monitoring']} -> {r['severity']} {r['priority']}" for r in d.SEVERITY_RULES)
+    detail = f"title: the policy's subject, else policy{d.TITLE_SEPARATOR}condition; "
+    detail += "; ".join(f"{r['monitoring']} -> {r['severity']} {r['priority']}" for r in d.SEVERITY_RULES)
     detail += " (any letter case); anything else keeps the default (critical)"
+    want = desired_orchestration(sid, priorities)
 
     def put():
-        return pd.write("PUT", f"/event_orchestrations/services/{sid}",
-                        {"orchestration_path": desired_orchestration(sid, priorities)})
+        return pd.write("PUT", f"/event_orchestrations/services/{sid}", {"orchestration_path": want})
 
     def activate():
         return pd.write("PUT", f"/event_orchestrations/services/{sid}/active", {"active": True})
@@ -443,10 +515,12 @@ def ensure_orchestration(pd: PagerDuty, plan: Plan, name: str, sid: str, new: bo
         plan.change("create", f'  event orchestration active on "{name}"', "", activate)
         return
     path = pd.get(f"/event_orchestrations/services/{sid}")["orchestration_path"]
-    if orchestration_shape(path) == orchestration_shape(desired_orchestration(sid, priorities)):
+    if orchestration_shape(path) == orchestration_shape(want):
         plan.ok(what, detail)
     else:
         plan.change("update", what, detail, put)
+        for line in orchestration_changes(path, want):
+            out(f"{'':14}{line}")
     active = (pd.get(f"/event_orchestrations/services/{sid}/active") or {}).get("active")
     if active:
         plan.ok(f'  event orchestration active on "{name}"')

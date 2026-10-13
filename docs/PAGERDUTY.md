@@ -11,7 +11,8 @@ to Slack.
 alert policy (severity CRITICAL or WARNING)
   -> the project's `pagerduty` notification channel          (tpa-platform's Terraform; tf_with_keys.py gives it the key)
   -> PagerDuty service "TPA beta · …"                        (pd_setup.py makes it)
-       event orchestration: severity (any letter case) -> alert severity + priority
+       event orchestration: the title (the policy's subject, else "policy · condition"), then
+                            severity (any letter case) -> alert severity + priority
        urgency from severity: critical/error = high, warning/info = low
   -> escalation policy "TPA Platform"                        (high urgency only; low urgency never escalates)
        level 1: on call on "TPA primary on-call" (15 min)
@@ -31,7 +32,7 @@ All of it was made by `scripts/pagerduty/pd_setup.py` on 2026-10-11 and is check
 | Team | TPA Platform | Jonathan Bushnell and Rafeale Hill, both **manager**. PagerDuty gives an account owner or admin the manager role only. |
 | Schedule | TPA primary on-call | America/Chicago. One weekly layer, handed off Monday at 09:00. Jonathan alone today. To make it a rotation, add a name to `ROTATION` in `pdlib.py` and re-run. The script only changes a schedule that has exactly one active layer. |
 | Escalation policy | TPA Platform | Owned by the team. Level 1: the schedule, 15 min. Level 2: Rafeale Hill, 15 min. Repeats twice. |
-| Services | TPA beta · Portal & API (app project), TPA beta · Member records (PHI project), TPA beta · Call centre (call-centre project) | The escalation policy above. Urgency from severity (dynamic notifications). Acknowledgement timeout 30 min. No auto-resolve, because Monitoring resolves. One "Google Cloud Monitoring" integration each. A service event orchestration (next section). |
+| Services | TPA beta · Portal & API (app project), TPA beta · Member records (PHI project), TPA beta · Call centre (call-centre project) | The escalation policy above. Urgency from severity (dynamic notifications). Acknowledgement timeout 30 min. No auto-resolve, because Monitoring resolves. One "Google Cloud Monitoring" integration each. A service event orchestration: the title first ("Incident titles"), then the severity (next section). |
 | Alert grouping settings | one per service, named after it | Intelligent grouping (PagerDuty set a 5-minute window). The script falls back to time-based grouping (10 minutes) only if PagerDuty's refusal says "intelligent". It uses `/alert_grouping_settings`, because the service field `alert_grouping_parameters` is deprecated. |
 | Business service | Trellis TPA (beta) | Supported by the three services. It is what PagerDuty's status dashboard shows. |
 | Notification rules | Jonathan Bushnell, Rafeale Hill | Built from the contact methods each person already has, and created only with `--add-rules` (next sections). |
@@ -76,6 +77,59 @@ escalate one by hand without first raising it to high urgency. A WARNING therefo
 **Acknowledge, don't resolve, while the problem is still there.** If you resolve an incident in PagerDuty while its
 alert is still open in Monitoring, Monitoring reopens it. Acknowledge it, fix the problem, and let Monitoring close
 the alert, which resolves the incident. An acknowledged incident that is still open after 30 minutes pages again.
+
+## Incident titles
+
+The owner, 2026-10-13, showing a PagerDuty message in Slack: *"Arent all of these messages supposed to be formatted
+better?"* Monitoring titles every event with its own generated summary, and PagerDuty uses it as the incident's title
+in the app, by email and in Slack. Incident #31's title was:
+
+> tpa_jobs_alerts for trellistpa-beta-tpa-app Cloud Run Job labels {project_id=trellistpa-beta-tpa-app} with metric
+> labels {code=workload_orphan, job=workload_audit} is above the threshold of 0.000 with a value of 2.000. | Violation
+> started: … | Policy: beta: a job raised an alert | Condition: from a scheduled run | View incident: https://…
+
+So each service's event orchestration now has two sets. The `start` set picks the title, and every rule in it then
+sends the event on (`route_to`) to the `severity` set, which holds the three severity rules of the section above,
+unchanged. In each set, the first rule that matches wins:
+
+| Rule in `start` | Matches when | Title |
+|---|---|---|
+| Title: the policy's own subject | `documentation.subject` has a character other than a space, and doesn't start with `[ALERT - ` | the subject, e.g. "beta · tpa-jobs workload_audit raised workload_orphan" |
+| Title: policy · condition | `policy_name` and `condition_name` both have one | "beta: a job raised an alert · from a scheduled run" |
+| Title: as Monitoring wrote it | always (no conditions) | unchanged |
+
+- **The subject is tpa-platform's.** Each alert policy's `documentation.subject` is a short, plain line that names
+  the environment and what happened. GCP fills in variables before it sends the subject. A policy without a subject
+  gets Monitoring's default, `[ALERT - Warning] <condition> on <resource>` (incident #31). The first rule skips it,
+  and the title becomes "policy · condition".
+- **The conditions.** `event.custom_details.incident.documentation.subject matches regex '[^[:space:]]' and not
+  (… matches regex '^[[]ALERT - ')`. `[[]` is a literal `[`, because the condition language refuses a backslash
+  inside a quoted string.
+- **How the title is made.** Each rule reads its fields into `variables` (regex `^[[:space:]]*(.+)`: the first line
+  that isn't blank) and writes the title with a template `extraction` into `event.summary`
+  (`{{variables.subject}}`, or `{{variables.policy}} · {{variables.condition}}`).
+- **Details.** Every rule in `start` also copies four fields of the same event to the top level of the alert's
+  details, where the PagerDuty app and web show each on its own line beside the nested payload. A field that is
+  missing, or that its regex doesn't match, is left out (the fake's reading; "PagerDuty API behaviour" below):
+
+  | Detail | From | |
+  |---|---|---|
+  | `what_to_check` | `documentation.content` | its first line that isn't blank (tpa-platform writes a policy's documentation as one paragraph: what happened, then what to read) |
+  | `console` | `url` | the incident's Google Cloud console link, only when it starts `https://console.cloud.google.com/` |
+  | `observed` | `observed_value` | e.g. `2.000` |
+  | `threshold` | `threshold_value` | e.g. `0` |
+
+  Nothing is fetched and nothing outside the event is added, so what reaches PagerDuty is what reached it before
+  ("What reaches PagerDuty").
+- **Resolves still match.** No rule touches the dedup key (Monitoring's `incident_key`) or the event action. A
+  resolve event finds its incident exactly as before.
+- **Severity is untouched.** The three rules keep their labels, conditions and actions, and only move from `start` to
+  `severity`. An event that matches none of them reaches the end of `severity` and the empty catch-all. It keeps its
+  title and PagerDuty's default severity, critical, as before.
+
+`pd_setup.py`'s dry run lists an orchestration update rule by rule: `+` added, `~` moved or changed, `-` removed.
+`pd_test_event.py` gives its event a subject and checks the title: the subject, or, with `--monitoring-subject`
+(Monitoring's own `[ALERT - …]` subject), "policy · condition".
 
 ## Notification rules
 
@@ -167,7 +221,7 @@ unset PD_KEY
 |---|---|---|---|
 | `scripts/pagerduty/pd_setup.py` | Makes PagerDuty match this page, found by exact name. Never deletes. Never touches what it did not make, except the two people's notification rules, and those only with `--add-rules`. Stops when a parent object is refused. | dry run: prints create / update / ok / kept / refused / by hand | `--apply`; `--add-rules` (create missing designed notification rules: the only way any rule is created); `--retry-intelligent-grouping` |
 | `scripts/pagerduty/tf_with_keys.py -- terraform -chdir=DIR plan\|apply [-flag=value …]` | Reads the three services' integration keys and runs that one Terraform command with `TF_VAR_pagerduty_service_keys` in its environment only. Prints one line saying which keys it found. Stops before Terraform if one is missing. Refuses any other command. | none: it runs the plan or apply it is given (`plan` is the dry run) | `--env production` (the "TPA production ·" services) |
-| `scripts/pagerduty/pd_test_event.py --role app\|phi\|cc --severity <text>` | Sends one Monitoring-shaped test event through the service's own integration. The severity can be in any case, for example `critical`, `WARNING` or `"no severity"`. Prints the urgency, severity and priority PagerDuty gave it, checks them against the table above, and resolves it. | dry run: shows the event (key hidden) | `--send`; `--keep` (leave it open) |
+| `scripts/pagerduty/pd_test_event.py --role app\|phi\|cc --severity <text>` | Sends one Monitoring-shaped test event through the service's own integration. The severity can be in any case, for example `critical`, `WARNING` or `"no severity"`. Prints the urgency, severity, priority and title PagerDuty gave it, checks them against the tables above, and resolves it. | dry run: shows the event (key hidden) | `--send`; `--keep` (leave it open); `--monitoring-subject` (Monitoring's own subject, so the title must be "policy · condition") |
 
 `make pagerduty-plan` is the `pd_setup.py` dry run. `make pagerduty-test` runs the scripts' tests against a local fake
 PagerDuty and a fake `terraform` (part of `make check`). The fakes are an automated gate only; the live account is the real proof.
@@ -328,6 +382,13 @@ A new alert policy's documentation must keep to the same rule. Each service's de
     the app and call-centre projects (never PHI), and the PHI path is the same.
   - **The "no severity → critical" row.** It comes from Google's guide and the fake's model. Confirm it with
     `pd_test_event.py --role app --severity "no severity" --send`, which pages at high urgency.
+- **The titles (2026-10-13), planned, not yet applied.** `make pagerduty-plan` against the account (read only):
+  "0 to create, 3 to update, 27 ok, 4 kept, 0 refused, 3 by hand". The three updates are the event orchestrations,
+  each listing the three title rules added and the three severity rules "moved from set "start", unchanged". After
+  the apply, check it live with one test event per path, each resolved by the test:
+  `pd_test_event.py --role app --severity warning --send` (the title is the event's subject) and
+  `pd_test_event.py --role app --severity warning --monitoring-subject --send` (the title is "policy · condition").
+  Before the apply, both say "NOT as designed" because of the title only.
 
 ## PagerDuty API behaviour the scripts rely on (seen 2026-10-11)
 
@@ -340,3 +401,10 @@ A new alert policy's documentation must keep to the same rule. Each service's de
   `after` cursor, one setting per service here.
 - The Slack integration API: the workspace list answers on `api.pagerduty.com`, and the connections only on
   `app.pagerduty.com`.
+- Not yet seen live, from PagerDuty's documentation (the Terraform provider's `pagerduty_event_orchestration_service`
+  and the PCL reference): a rule's actions carry on into the set its `route_to` names, and later rules win. A rule
+  with no conditions always matches. The catch-all applies when an event reaches the end of any set without a match.
+  A regex variable takes its capture group, or else the whole match. A template names variables as
+  `{{variables.name}}`. A regex extraction joins its capture groups. `matches`, `matches part` and `matches regex`
+  ignore case unless written `exactly`. The fake models the narrower reading wherever the documentation leaves room:
+  case-sensitive matching, and a regex extraction that matches nothing changes nothing.

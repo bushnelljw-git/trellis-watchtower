@@ -51,6 +51,17 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     `TF_VAR_pagerduty_service_keys` in the child's environment only. It refuses other commands, `-out`, `TF_LOG*` and
     another environment's root, and stops before Terraform if a key is missing. `--env` picks the service names.
   - docs/PAGERDUTY.md's Google Cloud half rewritten for Terraform. Tests: `tests/pagerduty/test_tf_with_keys.py`.
+- [x] PD titles (2026-10-13, the owner: "Arent all of these messages supposed to be formatted better?"), branch
+  `pd-titles` (docs/PAGERDUTY.md, "Incident titles"):
+  - Each service orchestration's `start` set titles the incident with the policy's `documentation.subject` (not
+    Monitoring's `[ALERT - …]` default), else "policy · condition", else Monitoring's summary. It copies
+    `what_to_check`, `console`, `observed` and `threshold` from the payload into the details, then routes to the
+    `severity` set: the three severity rules, unchanged. The dedup key is untouched.
+  - The plan lists an orchestration update rule by rule. `pd_test_event.py` checks the title (`--monitoring-subject`
+    for the fallback). The fake models nested sets, variables and extractions. 70 tests; 6 mutants killed.
+  - `make pagerduty-plan` (live, read only): 3 to update, the orchestrations only.
+- [ ] PD titles, by the orchestrator: `pd_setup.py --apply`, then the two live test events (docs/PAGERDUTY.md,
+  "Verified live").
 - [x] CD (2026-10-11, the owner: hosted dashboard "Yes, everything") the cloud dashboards, branch `cloud-dashboards`:
   - [x] Vendored tpa-platform's `infra/monitoring.yml` (beta-alert-gaps `d88305db`, blob `3e19a7d0`, D-141 included) into
     `cloud/catalogue/`; `scripts/vendor_catalogue.sh` re-vendors from committed objects only and checks drift.

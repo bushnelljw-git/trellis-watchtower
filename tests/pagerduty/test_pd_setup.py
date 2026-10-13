@@ -76,6 +76,10 @@ class Base(unittest.TestCase):
     def service_id(self, name):
         return next(s for s, v in self.state.services.items() if v["name"] == name)
 
+    def rules(self, sid, set_id="severity"):
+        """A set's rules as the fake stored them."""
+        return next(s for s in self.state.orchestrations[sid]["sets"] if s["id"] == set_id)["rules"]
+
 
 class DryRunAndIdempotency(Base):
     def test_dry_run_writes_nothing_and_plans_the_design(self):
@@ -122,7 +126,7 @@ class DryRunAndIdempotency(Base):
         self.apply()
         sid = self.service_id("TPA beta · Member records")
         self.state.services[sid]["acknowledgement_timeout"] = 600
-        self.state.orchestrations[sid]["sets"][0]["rules"].pop()
+        self.rules(sid).pop()
         drift = self.pd()
         self.assertIn('update    service "TPA beta · Member records"  [acknowledgement timeout]', drift.stdout)
         self.assertIn('update      event orchestration on "TPA beta · Member records"', drift.stdout)
@@ -133,13 +137,12 @@ class DryRunAndIdempotency(Base):
     def test_the_old_case_sensitive_rules_are_replaced(self):
         self.apply()
         sid = self.service_id("TPA beta · Portal & API")
-        for rule in self.state.orchestrations[sid]["sets"][0]["rules"]:
+        for rule in self.rules(sid):
             word = re.search(r"\*(\w+)\[", rule["conditions"][0]["expression"]).group(1)
             rule["conditions"] = [{"expression": f"event.custom_details.incident.severity matches part '{word}'"}]
         self.assertIn('update      event orchestration on "TPA beta · Portal & API"', self.pd().stdout)
         self.apply()
-        self.assertIn("matches regex", self.state.orchestrations[sid]["sets"][0]["rules"][0]["conditions"][0]
-                      ["expression"])
+        self.assertIn("matches regex", self.rules(sid)[0]["conditions"][0]["expression"])
 
 
 class TheDesign(Base):
@@ -186,10 +189,11 @@ class TheDesign(Base):
     def test_orchestration_rules_exact_conditions(self):
         for svc in (self.by_name[n] for n in ("TPA beta · Portal & API", "TPA beta · Call centre")):
             path = self.state.orchestrations[svc["id"]]
-            (start,) = path["sets"]
-            self.assertEqual(start["id"], "start")
+            self.assertEqual([s["id"] for s in path["sets"]], ["start", "severity"])
+            self.assertEqual({r["actions"]["route_to"] for r in self.rules(svc["id"], "start")}, {"severity"},
+                             "every title rule must go on to the severity rules")
             got = [([c["expression"] for c in r["conditions"]], r["actions"]["severity"], r["actions"]["priority"])
-                   for r in start["rules"]]
+                   for r in self.rules(svc["id"])]
             field = "event.custom_details.incident.severity matches regex"
             self.assertEqual(got, [
                 ([f"{field} '(?i)^[[:space:]]*Critical[[:space:]]*$'"], "critical", "PRI1"),
@@ -202,7 +206,7 @@ class TheDesign(Base):
     def test_the_rules_ignore_letter_case(self):
         """Every casing Monitoring might send, through the rules exactly as written to PagerDuty."""
         sid = self.by_name["TPA beta · Portal & API"]["id"]
-        rules = self.state.orchestrations[sid]["sets"][0]["rules"]
+        rules = self.rules(sid)
 
         def outcome(severity):
             details = {"incident": {"severity": severity}}

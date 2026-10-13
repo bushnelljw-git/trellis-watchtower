@@ -2,18 +2,25 @@
 
 An automated gate only: one local HTTP server on 127.0.0.1 answering the calls the scripts make, holding its state in
 memory and recording every request. It also models what the design relies on, so the tests can check it end to end:
-a v1 event's `details` become `custom_details`; a service orchestration's first matching rule (`matches part` is a
-case-sensitive substring test, the cautious reading; `matches regex` is an RE2-like search: (?i), the POSIX class
-[[:space:]], and $ only at the very end of the text) sets the
-alert's severity and the incident's priority; an event no rule matches keeps severity critical; a severity-based
-service pages critical and error at high urgency, warning and info at low. Error bodies echo what they were sent, as
-a careless API might, so the tests can prove the scripts never print a secret that comes back in one.
+a v1 event's `description` becomes the summary and its `details` become `custom_details`; a service orchestration
+starts at its "start" set, where the first matching rule (no conditions: it always matches) applies its actions and
+its `route_to` moves the event to the next set, later actions winning; a set with no match applies the catch-all and
+ends. Conditions: `matches part` is a case-sensitive substring test, the cautious reading; `matches regex` is an
+RE2-like search ((?i), the POSIX class [[:space:]], [[] for a "[", and $ only at the very end of the text); `exists`;
+`and`; `not (…)`. A regex variable takes its capture group, else the whole match, and is unset when nothing matches;
+a template names only variables of its own rule, and an unset one renders empty; a regex extraction joins its capture
+groups and changes nothing when nothing matches. The rules set the alert's severity, the incident's priority and its
+title (the final summary); an event no rule gives a severity keeps critical; a severity-based service pages critical
+and error at high urgency, warning and info at low. A resolve finds its alert by the incident key alone. Error bodies
+echo what they were sent, as a careless API might, so the tests can prove the scripts never print a secret that comes
+back in one.
 
 The live account is the real proof (docs/PAGERDUTY.md, "Verified"); this is the model the scripts are tested against.
 """
 
 from __future__ import annotations
 
+import copy
 import itertools
 import json
 import re
@@ -30,16 +37,58 @@ ACTION_DEFAULTS = {
     "event_action": None, "variables": [], "extractions": [], "incident_custom_field_updates": [],
     "escalation_policy": None, "automation_action": None, "pagerduty_automation_action": None,
 }
-PCL = re.compile(r"^event\.custom_details\.([A-Za-z0-9_.]+) matches (part|regex) '([^']*)'$")
+FIELD = r"event\.custom_details\.([A-Za-z0-9_.]+)"
+# One condition term: `<field> matches part|regex '<text>'` or `<field> exists`, optionally inside `not ( … )`.
+TERM = re.compile(rf"(not \()?{FIELD} (?:matches (part|regex) '([^']*)'|(exists))(\))?")
+EVENT_PATH = re.compile(r"^event\.(summary|custom_details(?:\.[A-Za-z0-9_]+)+)$")
+TARGET = re.compile(r"^event\.(summary|custom_details\.[A-Za-z0-9_]+)$")
+TEMPLATE_VARIABLE = re.compile(r"\{\{variables\.([A-Za-z0-9_]+)\}\}")
+
+
+def re2(pattern: str) -> re.Pattern:
+    """RE2's meaning in Python's re: the class [:space:] inside brackets is \\s ([[:space:]], [^[:space:]]), [[] is a
+    literal "[", and $ (outside multi-line mode) matches only at the very end of the text. Python's own $ also matches
+    before a final newline, which RE2's never does."""
+    pat = pattern.replace("[:space:]", r"\s").replace("[[]", r"\[")
+    if pat.endswith("$") and not pat.endswith(r"\$"):
+        pat = pat[:-1] + r"\Z"
+    return re.compile(pat)
 
 
 def re2_search(pattern: str, text: str) -> bool:
-    """RE2's meaning in Python's re: [[:space:]] is \\s, and $ (outside multi-line mode) matches only at the very end
-    of the text. Python's own $ also matches before a final newline, which RE2's never does."""
-    pat = pattern.replace("[[:space:]]", r"\s")
-    if pat.endswith("$") and not pat.endswith(r"\$"):
-        pat = pat[:-1] + r"\Z"
-    return re.search(pat, text) is not None
+    return re2(pattern).search(text) is not None
+
+
+def parse_pcl(expression: str) -> list[tuple] | None:
+    """[(negated, field, operator, text)] for `term and term …`, or None for a form this fake does not know."""
+    terms, pos = [], 0
+    while True:
+        m = TERM.match(expression, pos)
+        if not m or bool(m.group(1)) != bool(m.group(6)):
+            return None
+        terms.append((bool(m.group(1)), m.group(2), m.group(3) or "exists", m.group(4)))
+        pos = m.end()
+        if pos == len(expression):
+            return terms
+        if not expression.startswith(" and ", pos):
+            return None
+        pos += len(" and ")
+
+
+def lookup(value, dotted: str):
+    for part in dotted.split("."):
+        value = value.get(part) if isinstance(value, dict) else None
+    return value
+
+
+def regex_value(pattern: str, value, join_groups: bool):
+    """A variable's (first capture group) or an extraction's (every group, joined) value; None when nothing matches."""
+    m = re2(pattern).search(value) if isinstance(value, str) else None
+    if m is None:
+        return None
+    if not m.groups():
+        return m.group(0)
+    return "".join(g or "" for g in m.groups()) if join_groups else m.group(1)
 
 
 class Fail(Exception):
@@ -337,24 +386,110 @@ class FakeState:
                                "time_zone": s["time_zone"], "teams": s.get("teams", []), "schedule_layers": layers}
         return self.schedules[sid]
 
+    @staticmethod
+    def invalid(text):
+        return Fail(400, {"error": {"message": "Invalid payload", "errors": [text]}})
+
+    def check_actions(self, actions, set_ids, catch_all=False):
+        """Refuse what the design must never send. A backslash in any regex is refused, the cautious reading of the
+        live parser's refusal of one inside a quoted condition string (2026-10-11)."""
+        names = set()
+        for v in actions.get("variables") or []:
+            if v.get("type") != "regex" or not EVENT_PATH.match(v.get("path") or "") or "\\" in v.get("value", "\\"):
+                raise self.invalid(f"bad variable {v}")
+            re2(v["value"])
+            names.add(v["name"])
+        for x in actions.get("extractions") or []:
+            by_template = x.get("template") is not None
+            by_regex = x.get("regex") is not None and x.get("source") is not None
+            if not TARGET.match(x.get("target") or "") or by_template == by_regex:
+                raise self.invalid(f"bad extraction {x}")
+            if by_regex:
+                if not EVENT_PATH.match(x["source"]) or "\\" in x["regex"]:
+                    raise self.invalid(f"bad extraction {x}")
+                re2(x["regex"])
+            elif not set(TEMPLATE_VARIABLE.findall(x["template"])) <= names:
+                raise self.invalid(f"template names a variable its rule does not define: {x['template']}")
+        route = actions.get("route_to")
+        if route is not None and (catch_all or route not in set_ids):
+            raise self.invalid(f"route_to {route!r} is not a set of this orchestration")
+
     def store_orchestration(self, path):
+        set_ids = [s["id"] for s in path["sets"]]
+        if set_ids[:1] != ["start"] or len(set(set_ids)) != len(set_ids):
+            raise self.invalid(f"sets {set_ids}: the first must be start, and each id unique")
         for s in path["sets"]:
             for r in s.get("rules", []):
                 for c in r.get("conditions", []):
-                    if "\\" in c["expression"] or not PCL.match(c["expression"]):
+                    if "\\" in c["expression"] or parse_pcl(c["expression"]) is None:
                         # Like the live parser (2026-10-11): no backslash inside a quoted string.
-                        raise Fail(400, {"error": {"message": "Invalid payload", "errors": [
-                            f"unexpected symbols in {c['expression']}"]}})
+                        raise self.invalid(f"unexpected symbols in {c['expression']}")
+                self.check_actions(r.get("actions", {}), set_ids)
+        self.check_actions(path.get("catch_all", {}).get("actions", {}), set_ids, catch_all=True)
         sets = []
         for s in path["sets"]:
             rules = [{"id": self.new_id("r"), "label": r.get("label"), "conditions": r.get("conditions", []),
-                      "actions": {**ACTION_DEFAULTS, **r.get("actions", {})}, "disabled": False}
+                      "actions": self.stored_actions(r.get("actions", {})), "disabled": False}
                      for r in s.get("rules", [])]
             sets.append({"id": s["id"], "rules": rules})
         return {"type": "service", "parent": path["parent"], "sets": sets,
-                "catch_all": {"actions": {**ACTION_DEFAULTS, **path.get("catch_all", {}).get("actions", {})}}}
+                "catch_all": {"actions": self.stored_actions(path.get("catch_all", {}).get("actions", {}))}}
+
+    @staticmethod
+    def stored_actions(actions):
+        """As the API returns them: every action field, and every extraction field, null or not."""
+        stored = {**ACTION_DEFAULTS, **copy.deepcopy(actions)}
+        stored["extractions"] = [{"regex": None, "source": None, "template": None, **x} for x in stored["extractions"]]
+        return stored
 
     # ---- PagerDuty Events API v1 -----------------------------------------------------------------------------------
+    def orchestrate(self, sid, body) -> tuple[dict, dict]:
+        """The event ({summary, custom_details}) after the service's orchestration, and the severity and priority it
+        set. From "start", each set's first matching rule applies its actions and its route_to moves the event on; a
+        set where nothing matches applies the catch-all and ends."""
+        event = {"summary": body.get("description"), "custom_details": copy.deepcopy(body.get("details") or {})}
+        outcome: dict = {}
+        path = self.orchestrations.get(sid)
+        if not path or not self.active.get(sid):
+            return event, outcome
+        sets = {s["id"]: s["rules"] for s in path["sets"]}
+        current, visited = "start", set()
+        while current is not None and current not in visited:
+            visited.add(current)
+            rule = next((r for r in sets[current] if not r.get("disabled") and self.matches(r, event)), None)
+            actions = rule["actions"] if rule else path["catch_all"]["actions"]
+            self.apply_actions(actions, event, outcome)
+            current = actions.get("route_to") if rule else None
+        return event, outcome
+
+    def matches(self, rule, event) -> bool:
+        """Any one condition matches; a rule with none always does."""
+        return not rule["conditions"] or any(self.pcl(c["expression"], event["custom_details"])
+                                             for c in rule["conditions"])
+
+    @staticmethod
+    def apply_actions(actions, event, outcome):
+        variables = {}
+        for v in actions.get("variables") or []:
+            value = regex_value(v["value"], lookup(event, v["path"].removeprefix("event.")), join_groups=False)
+            if value is not None:
+                variables[v["name"]] = value
+        for x in actions.get("extractions") or []:
+            if x.get("template") is not None:
+                value = TEMPLATE_VARIABLE.sub(lambda m: variables.get(m.group(1), ""), x["template"])
+            else:
+                value = regex_value(x["regex"], lookup(event, x["source"].removeprefix("event.")), join_groups=True)
+                if value is None:
+                    continue
+            field = x["target"].removeprefix("event.")
+            if field == "summary":
+                event["summary"] = value
+            else:
+                event["custom_details"][field.removeprefix("custom_details.")] = value
+        for k in ("severity", "priority"):
+            if actions.get(k):
+                outcome[k] = actions[k]
+
     def event(self, body):
         found = [(sid, i) for sid, items in self.integrations.items() for i in items
                  if i["integration_key"] == body.get("service_key")]
@@ -367,14 +502,8 @@ class FakeState:
                 if any(a["alert_key"] == key for a in alerts):
                     self.incidents[inc_id]["status"] = "resolved"
             return 200, {"status": "success", "message": "Event processed", "incident_key": key}
-        severity, priority = "critical", None
-        path = self.orchestrations.get(sid)
-        if path and self.active.get(sid):
-            for rule in path["sets"][0]["rules"]:
-                if all(self.pcl(c["expression"], body.get("details") or {}) for c in rule["conditions"]):
-                    severity = rule["actions"].get("severity") or severity
-                    priority = rule["actions"].get("priority")
-                    break
+        event, outcome = self.orchestrate(sid, body)
+        severity, priority = outcome.get("severity") or "critical", outcome.get("priority")
         svc = self.services[sid]
         if svc["incident_urgency_rule"].get("urgency") == "severity_based":
             urgency = "high" if severity in ("critical", "error") else "low"
@@ -383,25 +512,30 @@ class FakeState:
         inc_id = self.new_id("PINC")
         prio = next(({"id": p["id"], "summary": p["name"]} for p in self.priorities if p["id"] == priority), None)
         self.incidents[inc_id] = {"id": inc_id, "incident_number": len(self.incidents) + 1, "status": "triggered",
-                                  "urgency": urgency, "priority": prio, "service": {"id": sid}, "title":
-                                  body.get("description")}
+                                  "urgency": urgency, "priority": prio, "service": {"id": sid},
+                                  "title": event["summary"]}
         self.alerts[inc_id] = [{"id": self.new_id("PA"), "alert_key": key, "severity": severity,
-                                "status": "triggered"}]
+                                "status": "triggered", "summary": event["summary"],
+                                "body": {"details": event["custom_details"]}}]
         return 200, {"status": "success", "message": "Event processed", "incident_key": key}
 
     @staticmethod
     def pcl(expression, custom_details):
-        m = PCL.match(expression)
-        if not m:
+        terms = parse_pcl(expression)
+        if terms is None:
             raise Fail(400, {"error": f"unsupported condition {expression}"})
-        value = custom_details
-        for part in m.group(1).split("."):
-            value = value.get(part) if isinstance(value, dict) else None
+        return all(negated != FakeState.term(field, op, text, custom_details) for negated, field, op, text in terms)
+
+    @staticmethod
+    def term(field, op, text, custom_details) -> bool:
+        value = lookup(custom_details, field)
+        if op == "exists":
+            return value is not None
         if not isinstance(value, str):
             return False
-        if m.group(2) == "part":
-            return m.group(3) in value
-        return re2_search(m.group(3), value)
+        if op == "part":
+            return text in value
+        return re2_search(text, value)
 
 
 class Server:

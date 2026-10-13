@@ -135,6 +135,48 @@ def rule_label(rule: dict) -> str:
 # Severity-based urgency (dynamic notifications): critical and error page at high urgency, warning and info at low.
 EXPECTED_URGENCY = {"critical": "high", "error": "high", "warning": "low", "info": "low"}
 
+# The incident's title (docs/PAGERDUTY.md, "Incident titles"). Monitoring titles each event with its generated summary
+# ("tpa_jobs_alerts for trellistpa-beta-tpa-app Cloud Run Job labels {…} with metric labels {…} is above the threshold
+# of 0.000 with a value of 2.000. | Violation started: … | Policy: … | View incident: <url>"), and PagerDuty and Slack
+# show it as the incident's title. Each service orchestration's "start" set retitles the event, then sends it on to the
+# "severity" set (the rules above, unchanged). The first title rule that matches wins:
+#   1. the policy's own subject, documentation.subject. tpa-platform gives every policy a short plain one, such as
+#      "beta · engine p95 above 2 s". A policy without one gets Monitoring's, "[ALERT - Warning] <condition> on
+#      <resource>", which is not used;
+#   2. else "<policy name> · <condition name>";
+#   3. else (an event without them) the title as Monitoring wrote it.
+# Every title rule also copies four fields of the same payload to the top of the alert's details, where the PagerDuty
+# app and web show them first. Nothing is fetched, and nothing outside the payload is added. No rule touches the dedup
+# key, so a resolve event still finds its incident.
+#
+# PagerDuty's condition language refuses a backslash inside a quoted string, so the "[" of "[ALERT - " is the class
+# [[]. A field is present when it holds a character other than a space.
+INCIDENT_FIELD = "event.custom_details.incident"
+SUBJECT_FIELD = f"{INCIDENT_FIELD}.documentation.subject"
+POLICY_FIELD = f"{INCIDENT_FIELD}.policy_name"
+CONDITION_FIELD = f"{INCIDENT_FIELD}.condition_name"
+MONITORING_SUBJECT = "^[[]ALERT - "
+SEVERITY_SET = "severity"
+TITLE_SEPARATOR = " · "
+# The first line that is not blank (RE2's . never matches a newline), and the incident's own Google Cloud console link.
+FIRST_LINE = "^[[:space:]]*(.+)"
+CONSOLE_LINK = "^https://console[.]cloud[.]google[.]com/[^[:space:]]+"
+# (key in the alert's details, the payload field it is copied from, the regex that picks it out)
+TITLE_DETAILS = [
+    ("what_to_check", f"{INCIDENT_FIELD}.documentation.content", FIRST_LINE),
+    ("console", f"{INCIDENT_FIELD}.url", CONSOLE_LINK),
+    ("observed", f"{INCIDENT_FIELD}.observed_value", FIRST_LINE),
+    ("threshold", f"{INCIDENT_FIELD}.threshold_value", FIRST_LINE),
+]
+
+
+def present(field: str) -> str:
+    return f"{field} matches regex '[^[:space:]]'"
+
+
+SUBJECT_EXPRESSION = f"{present(SUBJECT_FIELD)} and not ({SUBJECT_FIELD} matches regex '{MONITORING_SUBJECT}')"
+NAMES_EXPRESSION = f"{present(POLICY_FIELD)} and {present(CONDITION_FIELD)}"
+
 # Each person's notification rules, built only from contact methods they already have: minutes after an incident is
 # assigned to them. Phone and SMS are for high urgency only. Rules are created only with --add-rules: a plain --apply
 # never creates one, so a rule a person removed (even a method's only rule) stays removed.

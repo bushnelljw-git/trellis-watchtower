@@ -53,6 +53,29 @@ class TestEvents(Base):
         (incident,) = self.state.incidents.values()
         self.assertTrue(incident["title"].startswith("TEST — PagerDuty setup check, please ignore"))
 
+    def test_the_title_is_the_events_subject_and_the_resolve_still_finds_it(self):
+        result = self.event("--role", "cc", "--severity", "warning", "--send", "--wait", "5")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('title "TEST — PagerDuty setup check, please ignore (warning, TPA beta · Call centre)"',
+                      result.stdout)
+        self.assertIn("status resolved", result.stdout, "the resolve is matched by the incident key alone")
+
+    def test_monitorings_own_subject_titles_policy_and_condition(self):
+        result = self.event("--role", "app", "--severity", "Critical", "--monitoring-subject", "--send", "--wait", "5")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('title "TEST — PagerDuty setup check, please ignore · test condition"', result.stdout)
+        self.assertIn("as designed", result.stdout)
+
+    def test_without_the_title_rules_the_check_fails(self):
+        """Before pd_setup.py --apply adds the title rules, the live check must say so."""
+        sid = self.service_id("TPA beta · Portal & API")
+        path = self.state.orchestrations[sid]
+        path["sets"] = [{"id": "start", "rules": next(s for s in path["sets"] if s["id"] == "severity")["rules"]}]
+        result = self.event("--role", "app", "--severity", "warning", "--send", "--wait", "5")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("urgency low, alert severity warning, priority P3", result.stdout)
+        self.assertIn('NOT as designed: wanted urgency low, severity warning, priority P3, title "TEST', result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
