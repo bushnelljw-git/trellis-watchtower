@@ -102,14 +102,14 @@ class RenderTest(unittest.TestCase):
         overview = pages["overview.json"]
         self.assertNotIn("Call centre", [p["title"].split(" (")[0] for p in overview["panels"] if p["type"] == "row"])
         self.assertNotIn("call centre](", json.dumps(overview))
-        uptime = stat(overview, "Right now", "Uptime (24 h)")["description"]
+        uptime = stat(overview, "Right now", "Uptime")["description"]
         self.assertIn("public host", uptime)
         self.assertNotIn("IAP", uptime)
         self.assertNotIn("cc-db", [p["title"].split(" ")[0] for p in pages["databases.json"]["panels"]
                                    if p["type"] == "row"])
 
     def test_beta_words_uptime_for_iap(self):
-        uptime = stat(self.rendered(BETA)["overview.json"], "Right now", "Uptime (24 h)")["description"]
+        uptime = stat(self.rendered(BETA)["overview.json"], "Right now", "Uptime")["description"]
         self.assertIn("behind IAP", uptime)
         self.assertNotIn("public host", uptime)
 

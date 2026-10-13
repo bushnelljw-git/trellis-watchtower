@@ -206,6 +206,15 @@ class Infra:
                 "share": float(share.group(1)), "period": get("alignment_period").strip('"'),
                 "aligner": get("per_series_aligner").strip('"'), "reducer": get("cross_series_reducer").strip('"')}
 
+    def module_policy(self, resource: str) -> dict:
+        """A module policy's first threshold condition: its aligner, window, reducer, comparison, value, duration."""
+        body = self.block(self.show("infra/modules/monitoring/main.tf"),
+                          f'resource "google_monitoring_alert_policy" "{resource}"')
+        get = lambda key: re.search(rf'^\s*{key}\s*=\s*"?([^"\n]+?)"?\s*$', body, re.M).group(1)
+        return {"aligner": get("per_series_aligner"), "period": get("alignment_period"),
+                "reducer": get("cross_series_reducer"), "comparison": get("comparison"),
+                "value": int(float(get("threshold_value"))), "duration": get("duration")}
+
     def inside_policy(self) -> dict:
         """`inside-down` (the module's private checks' policy): its aligner, window, reducer and the count it opens
         below."""
@@ -215,6 +224,60 @@ class Infra:
         assert get("comparison") == "COMPARISON_LT", get("comparison")
         return {"aligner": get("per_series_aligner"), "period": get("alignment_period"),
                 "reducer": get("cross_series_reducer"), "below": int(float(get("threshold_value")))}
+
+    def min_defaults(self, env: str) -> dict[str, int]:
+        """The root's `service_min_instances` defaults (its variables.tf), by key."""
+        body = self.block(self.show(f"{ROOTS[env]}/variables.tf"), 'variable "service_min_instances"')
+        return {k: int(v) for k, v in re.findall(r"^\s*([a-z_]+)\s*=\s*optional\(number,\s*(\d+)\)", body, re.M)}
+
+    def value(self, env: str, expr: str) -> int:
+        """A minimum as a root writes it, with the root's defaults and every switch on (a service the environment
+        runs is built): a number; `var.service_min_instances.K`; `<switch> ? A : B` (A); a `max(...)`."""
+        expr = expr.strip()
+        if expr.isdigit():
+            return int(expr)
+        m = re.fullmatch(r"var\.service_min_instances\.([a-z_]+)", expr)
+        if m:
+            return self.min_defaults(env)[m.group(1)]
+        m = re.fullmatch(r"[^?]+\?\s*(.+?)\s*:\s*(.+)", expr)
+        if m:
+            return self.value(env, m.group(1))
+        raise AssertionError(f"{env}: cannot read the minimum `{expr}`")
+
+    def min_instances(self, env: str) -> dict[str, int]:
+        """Each Cloud Run service's min_instances as its root sets it (the run-service module's default, 0, where
+        unset), read with value()."""
+        default = self.module_default("run-service", "min_instances")
+        out = {}
+        for m in re.finditer(r'^module "[^"]+" \{\n(.*?)^\}', self.root_text(env), re.M | re.S):
+            body = m.group(1)
+            if not re.search(r'^\s*source\s*=\s*"[./]*modules/run-service"', body, re.M):
+                continue
+            name = re.search(r'^  name\s*=\s*"([a-z0-9-]+)"', body, re.M).group(1)
+            set_ = re.search(r"^  min_instances\s*=\s*(.+?)\s*$", body, re.M)
+            out[name] = self.value(env, set_.group(1)) if set_ else default
+        return out
+
+    def no_instance_policies(self, env: str) -> set[str]:
+        """The services the root gives the module's `<service> has no instance` policy (its warm_services), with the
+        root's defaults and every switch on: a literal list, or beta's map of minimums and its call centre's
+        `<switch> && <minimum> >= 1 ? ["svc"] : []` list."""
+        text, out = self.root_text(env), set()
+        for literal in re.findall(r"^\s*warm_services\s*=\s*\[([^\]]*)\]", text, re.M):
+            out |= set(re.findall(r'"([a-z0-9-]+)"', literal))
+        if "warm_services = {" in text:
+            for name, expr in re.findall(r"^\s*([a-z][a-z0-9-]*)\s*=\s*(var\.[^\n]+?|\d+)\s*$",
+                                         self.block(text, "warm_services = {"), re.M):
+                if self.value(env, expr) >= 1:
+                    out.add(name)
+        if "cc_warm_services = concat(" in text:
+            body = text[text.index("cc_warm_services = concat("):]
+            body = body[:body.index("\n  )")]
+            for cond, name in re.findall(r"^\s*(.+?)\s*\?\s*\[\"([a-z0-9-]+)\"\]\s*:\s*\[\]", body, re.M):
+                minimum = re.search(r"var\.service_min_instances\.([a-z_]+)\s*>=\s*1", cond)
+                if not minimum or self.min_defaults(env)[minimum.group(1)] >= 1 or "||" in cond:
+                    out.add(name)
+        return out
 
     def latency_left_out(self, env: str) -> set[str]:
         """The services the root's monitoring calls leave out of `canary-latency` (latency_excluded_services)."""

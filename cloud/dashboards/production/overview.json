@@ -118,7 +118,7 @@
     {
       "type": "stat",
       "title": "Portal & sign-in",
-      "description": "The last 15 minutes in this project: how many problems, of 5xx answers, uptime and inside checks failing (beta's checks pass on IAP's sign-in page), synthetic journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the database was down. Each one, named with its count, is in the shut row What's wrong now (details) below, and on Portal & API and Sign-in. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "The last 15 minutes in this project: how many problems, of 5xx answers, uptime and inside checks failing (beta's checks pass on IAP's sign-in page), synthetic journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the database was down, and five minutes or more with no instance for a service kept warm (auth, auth-outbox-publisher, model-gateway, tpa-jobs-drains: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Portal & API and Sign-in. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -554,6 +554,165 @@
             "filters": [
               "metric.type",
               "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "instances reported"
+        },
+        {
+          "refId": "N",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "auth"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth instances"
+        },
+        {
+          "refId": "O",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "auth-outbox-publisher"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth-outbox-publisher instances"
+        },
+        {
+          "refId": "P",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "model-gateway"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "model-gateway instances"
+        },
+        {
+          "refId": "Q",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "tpa-jobs-drains"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-jobs-drains instances"
+        },
+        {
+          "refId": "R",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
               "cloudsql.googleapis.com/database/up",
               "AND",
               "resource.type",
@@ -567,8 +726,8 @@
             "groupBys": [
               "resource.label.database_id"
             ],
-            "crossSeriesReducer": "REDUCE_MIN",
-            "perSeriesAligner": "ALIGN_MIN",
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MAX",
             "alignmentPeriod": "+60s",
             "view": "FULL",
             "preprocessor": "none"
@@ -576,7 +735,7 @@
           "aliasBy": "auth-db up"
         },
         {
-          "refId": "N",
+          "refId": "S",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -607,7 +766,7 @@
           "aliasBy": "auth-db points"
         },
         {
-          "refId": "O",
+          "refId": "T",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -792,6 +951,509 @@
                   "id": "byName",
                   "options": "auth-db up"
                 }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "project ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances reported"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "project ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances reported"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "project ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "project ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "auth instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "auth instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "auth ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "auth ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "auth ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "auth ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · auth (minutes)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth ran"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · auth (spells)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "✕ no instance · auth (minutes)"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "auth-outbox-publisher instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "auth-outbox-publisher instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "auth-outbox-publisher ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth-outbox-publisher instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "auth-outbox-publisher ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth-outbox-publisher instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth-outbox-publisher ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "auth-outbox-publisher ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "auth-outbox-publisher ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · auth-outbox-publisher (minutes)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth-outbox-publisher ran"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · auth-outbox-publisher (spells)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "✕ no instance · auth-outbox-publisher (minutes)"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "model-gateway instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "model-gateway instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "model-gateway ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "model-gateway instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "model-gateway ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "model-gateway instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "model-gateway ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "model-gateway ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "model-gateway ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · model-gateway (minutes)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "model-gateway ran"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · model-gateway (spells)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "✕ no instance · model-gateway (minutes)"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "tpa-jobs-drains instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "tpa-jobs-drains instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "tpa-jobs-drains ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-jobs-drains instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "tpa-jobs-drains ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-jobs-drains instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-jobs-drains ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "tpa-jobs-drains ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "tpa-jobs-drains ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · tpa-jobs-drains (minutes)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-jobs-drains ran"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · tpa-jobs-drains (spells)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "✕ no instance · tpa-jobs-drains (minutes)"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
               }
             }
           }
@@ -1092,6 +1754,34 @@
               "auth-db wrote +1": true,
               "auth-db wrote /": true,
               "auth-db wrote": true,
+              "instances reported": true,
+              "project ran +1": true,
+              "project ran /": true,
+              "project ran": true,
+              "auth instances": true,
+              "auth instances or none": true,
+              "auth ran +1": true,
+              "auth ran /": true,
+              "auth ran": true,
+              "✕ no instance · auth (minutes)": true,
+              "auth-outbox-publisher instances": true,
+              "auth-outbox-publisher instances or none": true,
+              "auth-outbox-publisher ran +1": true,
+              "auth-outbox-publisher ran /": true,
+              "auth-outbox-publisher ran": true,
+              "✕ no instance · auth-outbox-publisher (minutes)": true,
+              "model-gateway instances": true,
+              "model-gateway instances or none": true,
+              "model-gateway ran +1": true,
+              "model-gateway ran /": true,
+              "model-gateway ran": true,
+              "✕ no instance · model-gateway (minutes)": true,
+              "tpa-jobs-drains instances": true,
+              "tpa-jobs-drains instances or none": true,
+              "tpa-jobs-drains ran +1": true,
+              "tpa-jobs-drains ran /": true,
+              "tpa-jobs-drains ran": true,
+              "✕ no instance · tpa-jobs-drains (minutes)": true,
               "inside passing · tpa-api": true,
               "inside reporting · tpa-api": true,
               "inside passed · tpa-api +1": true,
@@ -1126,11 +1816,23 @@
           "id": "calculateField",
           "options": {
             "mode": "unary",
+            "alias": "whole",
+            "replaceFields": false,
+            "unary": {
+              "operator": "floor",
+              "fieldName": "Total"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
             "alias": "|Total|",
             "replaceFields": false,
             "unary": {
               "operator": "abs",
-              "fieldName": "Total"
+              "fieldName": "whole"
             }
           }
         },
@@ -1144,7 +1846,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "Total"
+                  "options": "whole"
                 }
               },
               "operator": "+",
@@ -1238,7 +1940,7 @@
     {
       "type": "stat",
       "title": "Member records",
-      "description": "The last 15 minutes in this project: how many problems, of its 5xx answers, crashes, out-of-memory kills, failed job runs and the minutes tpa-db was down. Each one, named with its count, is in the shut row What's wrong now (details) below, and on Member records. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "The last 15 minutes in this project: how many problems, of its 5xx answers, crashes, out-of-memory kills, failed job runs and the minutes tpa-db was down, and five minutes or more with no instance for a service kept warm (connectors: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Member records. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -1442,6 +2144,66 @@
             "filters": [
               "metric.type",
               "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "instances reported"
+        },
+        {
+          "refId": "G",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "connectors"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "connectors instances"
+        },
+        {
+          "refId": "H",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
               "cloudsql.googleapis.com/database/up",
               "AND",
               "resource.type",
@@ -1455,8 +2217,8 @@
             "groupBys": [
               "resource.label.database_id"
             ],
-            "crossSeriesReducer": "REDUCE_MIN",
-            "perSeriesAligner": "ALIGN_MIN",
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MAX",
             "alignmentPeriod": "+60s",
             "view": "FULL",
             "preprocessor": "none"
@@ -1464,7 +2226,7 @@
           "aliasBy": "tpa-db up"
         },
         {
-          "refId": "G",
+          "refId": "I",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-phi"
@@ -1495,7 +2257,7 @@
           "aliasBy": "tpa-db points"
         },
         {
-          "refId": "H",
+          "refId": "J",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-phi"
@@ -1692,6 +2454,173 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
+            "alias": "project ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances reported"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "project ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances reported"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "project ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "project ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "connectors instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "connectors instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "connectors ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "connectors instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "connectors ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "connectors instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "connectors ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "connectors ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "connectors ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · connectors (minutes)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "connectors ran"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · connectors (spells)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "✕ no instance · connectors (minutes)"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
             "alias": "✓ member records",
             "replaceFields": false,
             "binary": {
@@ -1717,7 +2646,17 @@
               "seeing": true,
               "tpa-db wrote +1": true,
               "tpa-db wrote /": true,
-              "tpa-db wrote": true
+              "tpa-db wrote": true,
+              "instances reported": true,
+              "project ran +1": true,
+              "project ran /": true,
+              "project ran": true,
+              "connectors instances": true,
+              "connectors instances or none": true,
+              "connectors ran +1": true,
+              "connectors ran /": true,
+              "connectors ran": true,
+              "✕ no instance · connectors (minutes)": true
             }
           }
         },
@@ -1736,11 +2675,23 @@
           "id": "calculateField",
           "options": {
             "mode": "unary",
+            "alias": "whole",
+            "replaceFields": false,
+            "unary": {
+              "operator": "floor",
+              "fieldName": "Total"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
             "alias": "|Total|",
             "replaceFields": false,
             "unary": {
               "operator": "abs",
-              "fieldName": "Total"
+              "fieldName": "whole"
             }
           }
         },
@@ -1754,7 +2705,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "Total"
+                  "options": "whole"
                 }
               },
               "operator": "+",
@@ -2065,8 +3016,8 @@
             "groupBys": [
               "resource.label.database_id"
             ],
-            "crossSeriesReducer": "REDUCE_MIN",
-            "perSeriesAligner": "ALIGN_MIN",
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MAX",
             "alignmentPeriod": "+60s",
             "view": "FULL",
             "preprocessor": "none"
@@ -2346,11 +3297,23 @@
           "id": "calculateField",
           "options": {
             "mode": "unary",
+            "alias": "whole",
+            "replaceFields": false,
+            "unary": {
+              "operator": "floor",
+              "fieldName": "Total"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
             "alias": "|Total|",
             "replaceFields": false,
             "unary": {
               "operator": "abs",
-              "fieldName": "Total"
+              "fieldName": "whole"
             }
           }
         },
@@ -2364,7 +3327,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "Total"
+                  "options": "whole"
                 }
               },
               "operator": "+",
@@ -2457,11 +3420,11 @@
     },
     {
       "type": "stat",
-      "title": "Uptime (24 h)",
-      "description": "The worst host's share of uptime checks passed in the last 24 h: each host's is in the shut row Right now (details), and over time on Portal & API. @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@Beta's hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
+      "title": "Uptime",
+      "description": "now: the hosts as their outage policy reads them (each checker region's latest result over twenty minutes, the regions failing counted): ✕ down, red, when more than 1 region fails on any host, as `outage: <host>` pages; one region failing alone does not page. 24 h: the worst host's share of checks passed in the last 24 hours (each host's is in the shut row Right now (details), and over time on Portal & API). @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@Beta's hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
       "gridPos": {
         "h": 5,
-        "w": 3,
+        "w": 4,
         "x": 12,
         "y": 1
       },
@@ -2498,6 +3461,39 @@
             "preprocessor": "none"
           },
           "aliasBy": "{{resource.label.host}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "monitoring.googleapis.com/uptime_check/check_passed",
+              "AND",
+              "resource.type",
+              "=",
+              "uptime_url"
+            ],
+            "groupBys": [
+              "resource.label.host"
+            ],
+            "crossSeriesReducer": "REDUCE_COUNT_FALSE",
+            "perSeriesAligner": "ALIGN_NEXT_OLDER",
+            "alignmentPeriod": "+1200s",
+            "view": "FULL",
+            "preprocessor": "none",
+            "secondaryCrossSeriesReducer": "REDUCE_MAX",
+            "secondaryPerSeriesAligner": "ALIGN_MAX",
+            "secondaryAlignmentPeriod": "+1200s",
+            "secondaryGroupBys": []
+          },
+          "aliasBy": "now"
         }
       ],
       "interval": "1m",
@@ -2530,7 +3526,85 @@
           "decimals": 2,
           "noValue": "no uptime checks"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mean"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "24 h"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "now"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "✓ up",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "⚠ 1 region",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": 2,
+                      "to": 1000000000.0,
+                      "result": {
+                        "text": "✕ down",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#14b8a6",
+                      "value": null
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 1
+                    },
+                    {
+                      "color": "#d03b3b",
+                      "value": 2
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -2538,10 +3612,10 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "/^Mean$/"
+          "fields": "/^(24 h|now)$/"
         },
         "orientation": "auto",
-        "textMode": "value",
+        "textMode": "value_and_name",
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -2551,12 +3625,30 @@
       "transformations": [
         {
           "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "A"
+          },
           "options": {
             "mode": "seriesToRows",
             "reducers": [
               "mean"
             ],
             "labelsToFields": false,
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "B"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "lastNotNull"
+            ],
             "includeTimeField": false
           }
         },
@@ -2586,8 +3678,8 @@
       "description": "Each journey's runs in the last hour, by outcome (`synthetic_results`, one result line per run): `synthetics-staff-sign-in` (J1 staff sign-in): the portal, auth and a desk read that reaches tpa-db; `synthetics-ops-desk` (J2 ops desk): the ops host, auth and the live queue in svc-ops; `synthetics-crm` (J3 CRM sign-in): the CRM's own sign-in. pass is teal; fail is amber, red from two (`synthetic-failing` pages on two fails and no pass in eleven minutes; J1 and J2 urgent); error is amber (the runner itself broke: `synthetic-broken`). No runs at all: the journeys are off or paused (`synthetic-blind` when one goes quiet 15 minutes).",
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 15,
+        "w": 5,
+        "x": 16,
         "y": 1
       },
       "datasource": {
@@ -2914,7 +4006,7 @@
     {
       "type": "stat",
       "title": "web",
-      "description": "web (Portal & API): its status (errors when it answered a 5xx in the last 15 minutes, `canary-5xx` paging above 0.1% and five; ✓ up with an instance running; idle with none, as a scale-to-zero service rests), its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "web (Portal & API). Its status, worst first: ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running; idle with none, as a service Terraform lets scale to zero rests. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -2998,6 +4090,68 @@
             "preprocessor": "none"
           },
           "aliasBy": "instances"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "web"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "web"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory"
         }
       ],
       "interval": "1m",
@@ -3053,8 +4207,12 @@
                         "index": 2
                       },
                       "3": {
-                        "text": "✕ down",
+                        "text": "⚠ crashing",
                         "index": 3
+                      },
+                      "4": {
+                        "text": "✕ down",
+                        "index": 4
                       }
                     }
                   }
@@ -3078,8 +4236,32 @@
                       "value": 2
                     },
                     {
-                      "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
+                      "color": "@@F,auth-db,tpa-db,@@text@@#fab219@@",
                       "value": 3
+                    },
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "instances"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                      "value": null
                     }
                   ]
                 }
@@ -3152,6 +4334,20 @@
         {
           "id": "calculateField",
           "options": {
+            "mode": "reduceRow",
+            "alias": "instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
             "mode": "binary",
             "alias": "running +1",
             "replaceFields": false,
@@ -3159,7 +4355,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "+",
@@ -3179,7 +4375,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "/",
@@ -3283,6 +4479,96 @@
           "id": "calculateField",
           "options": {
             "mode": "reduceRow",
+            "alias": "exits",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "crashed",
+                "killed for memory"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "crashing",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "crashing /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing ×3",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "3"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
             "alias": "status",
             "replaceFields": false,
             "reduce": {
@@ -3290,7 +4576,9 @@
               "include": [
                 "running",
                 "errors ×2",
-                "down ×3"
+                "crashing ×3",
+                "inside down ×4",
+                "no instance ×4"
               ]
             }
           }
@@ -3316,7 +4604,7 @@
     {
       "type": "stat",
       "title": "tpa-api",
-      "description": "tpa-api (Portal & API): idle (0), ✓ up (1), errors (2), ✕ down (3). Its status: ✕ down when its private uptime check has no checker region passing, as `inside-down` decides (the balancer answers its own region alone, so the other two fail by design); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running; idle with none, as a scale-to-zero service rests. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "tpa-api (Portal & API). Its status, worst first: ✕ down when its private check has no checker region passing, as `inside-down` decides (the balancer answers its own region alone, so the other two fail by design); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running; idle with none, as a service Terraform lets scale to zero rests. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -3413,6 +4701,68 @@
             "filters": [
               "metric.type",
               "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "tpa-api"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "tpa-api"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
               "monitoring.googleapis.com/uptime_check/check_passed",
               "AND",
               "resource.type",
@@ -3488,8 +4838,12 @@
                         "index": 2
                       },
                       "3": {
-                        "text": "✕ down",
+                        "text": "⚠ crashing",
                         "index": 3
+                      },
+                      "4": {
+                        "text": "✕ down",
+                        "index": 4
                       }
                     }
                   }
@@ -3513,8 +4867,32 @@
                       "value": 2
                     },
                     {
-                      "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
+                      "color": "@@F,auth-db,tpa-db,@@text@@#fab219@@",
                       "value": 3
+                    },
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "instances"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                      "value": null
                     }
                   ]
                 }
@@ -3587,6 +4965,20 @@
         {
           "id": "calculateField",
           "options": {
+            "mode": "reduceRow",
+            "alias": "instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
             "mode": "binary",
             "alias": "running +1",
             "replaceFields": false,
@@ -3594,7 +4986,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "+",
@@ -3614,7 +5006,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "/",
@@ -3710,6 +5102,96 @@
               "operator": "*",
               "right": {
                 "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "exits",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "crashed",
+                "killed for memory"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "crashing",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "crashing /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing ×3",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "3"
               }
             }
           }
@@ -3793,7 +5275,7 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
-            "alias": "down ×3",
+            "alias": "inside down ×4",
             "replaceFields": false,
             "binary": {
               "left": {
@@ -3804,7 +5286,7 @@
               },
               "operator": "*",
               "right": {
-                "fixed": "3"
+                "fixed": "4"
               }
             }
           }
@@ -3820,7 +5302,9 @@
               "include": [
                 "running",
                 "errors ×2",
-                "down ×3"
+                "crashing ×3",
+                "inside down ×4",
+                "no instance ×4"
               ]
             }
           }
@@ -3846,7 +5330,7 @@
     {
       "type": "stat",
       "title": "model-gateway",
-      "description": "model-gateway (Portal & API): its status (errors when it answered a 5xx in the last 15 minutes, `canary-5xx` paging above 0.1% and five; ✓ up with an instance running; idle with none, as a scale-to-zero service rests), its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "model-gateway (Portal & API). Its status, worst first: ✕ down when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -3930,6 +5414,68 @@
             "preprocessor": "none"
           },
           "aliasBy": "instances"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "model-gateway"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "model-gateway"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory"
         }
       ],
       "interval": "1m",
@@ -3945,14 +5491,14 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
                 "value": null
               }
             ]
           },
           "mappings": [],
           "decimals": 0,
-          "noValue": "@@R,auth-db,tpa-db,@@idle@@",
+          "noValue": "@@R,auth-db,tpa-db,@@✕ down@@",
           "displayName": "@@R,auth-db,tpa-db,@@@@"
         },
         "overrides": [
@@ -3985,8 +5531,12 @@
                         "index": 2
                       },
                       "3": {
-                        "text": "✕ down",
+                        "text": "⚠ crashing",
                         "index": 3
+                      },
+                      "4": {
+                        "text": "✕ down",
+                        "index": 4
                       }
                     }
                   }
@@ -4010,8 +5560,32 @@
                       "value": 2
                     },
                     {
-                      "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
+                      "color": "@@F,auth-db,tpa-db,@@text@@#fab219@@",
                       "value": 3
+                    },
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "instances"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                      "value": null
                     }
                   ]
                 }
@@ -4084,6 +5658,20 @@
         {
           "id": "calculateField",
           "options": {
+            "mode": "reduceRow",
+            "alias": "instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
             "mode": "binary",
             "alias": "running +1",
             "replaceFields": false,
@@ -4091,7 +5679,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "+",
@@ -4111,7 +5699,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "/",
@@ -4215,6 +5803,136 @@
           "id": "calculateField",
           "options": {
             "mode": "reduceRow",
+            "alias": "exits",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "crashed",
+                "killed for memory"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "crashing",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "crashing /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing ×3",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "3"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
             "alias": "status",
             "replaceFields": false,
             "reduce": {
@@ -4222,7 +5940,9 @@
               "include": [
                 "running",
                 "errors ×2",
-                "down ×3"
+                "crashing ×3",
+                "inside down ×4",
+                "no instance ×4"
               ]
             }
           }
@@ -4248,7 +5968,7 @@
     {
       "type": "stat",
       "title": "tpa-jobs-drains",
-      "description": "tpa-jobs-drains (Portal & API): its status (errors when it answered a 5xx in the last 15 minutes, `canary-5xx` paging above 0.1% and five; ✓ up with an instance running; idle with none, as a scale-to-zero service rests), its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "tpa-jobs-drains (Portal & API). Its status, worst first: ✕ down when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -4332,6 +6052,68 @@
             "preprocessor": "none"
           },
           "aliasBy": "instances"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "tpa-jobs-drains"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "tpa-jobs-drains"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory"
         }
       ],
       "interval": "1m",
@@ -4347,14 +6129,14 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
                 "value": null
               }
             ]
           },
           "mappings": [],
           "decimals": 0,
-          "noValue": "@@R,auth-db,tpa-db,@@idle@@",
+          "noValue": "@@R,auth-db,tpa-db,@@✕ down@@",
           "displayName": "@@R,auth-db,tpa-db,@@@@"
         },
         "overrides": [
@@ -4387,8 +6169,12 @@
                         "index": 2
                       },
                       "3": {
-                        "text": "✕ down",
+                        "text": "⚠ crashing",
                         "index": 3
+                      },
+                      "4": {
+                        "text": "✕ down",
+                        "index": 4
                       }
                     }
                   }
@@ -4412,8 +6198,32 @@
                       "value": 2
                     },
                     {
-                      "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
+                      "color": "@@F,auth-db,tpa-db,@@text@@#fab219@@",
                       "value": 3
+                    },
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "instances"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                      "value": null
                     }
                   ]
                 }
@@ -4486,6 +6296,20 @@
         {
           "id": "calculateField",
           "options": {
+            "mode": "reduceRow",
+            "alias": "instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
             "mode": "binary",
             "alias": "running +1",
             "replaceFields": false,
@@ -4493,7 +6317,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "+",
@@ -4513,7 +6337,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "/",
@@ -4617,6 +6441,136 @@
           "id": "calculateField",
           "options": {
             "mode": "reduceRow",
+            "alias": "exits",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "crashed",
+                "killed for memory"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "crashing",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "crashing /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing ×3",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "3"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
             "alias": "status",
             "replaceFields": false,
             "reduce": {
@@ -4624,7 +6578,9 @@
               "include": [
                 "running",
                 "errors ×2",
-                "down ×3"
+                "crashing ×3",
+                "inside down ×4",
+                "no instance ×4"
               ]
             }
           }
@@ -4650,7 +6606,7 @@
     {
       "type": "stat",
       "title": "auth",
-      "description": "auth (Sign-in): idle (0), ✓ up (1), errors (2), ✕ down (3). Its status: ✕ down when its private uptime check has no checker region passing, as `inside-down` decides (the balancer answers its own region alone, so the other two fail by design); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running; idle with none, as a scale-to-zero service rests. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "auth (Sign-in). Its status, worst first: ✕ down when its private check has no checker region passing, as `inside-down` decides (the balancer answers its own region alone, so the other two fail by design) or when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -4747,6 +6703,68 @@
             "filters": [
               "metric.type",
               "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "auth"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "auth"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
               "monitoring.googleapis.com/uptime_check/check_passed",
               "AND",
               "resource.type",
@@ -4782,14 +6800,14 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "@@F,auth-db,@@text@@text@@",
+                "color": "@@F,auth-db,@@text@@#d03b3b@@",
                 "value": null
               }
             ]
           },
           "mappings": [],
           "decimals": 0,
-          "noValue": "@@R,auth-db,@@idle@@",
+          "noValue": "@@R,auth-db,@@✕ down@@",
           "displayName": "@@R,auth-db,@@@@"
         },
         "overrides": [
@@ -4822,8 +6840,12 @@
                         "index": 2
                       },
                       "3": {
-                        "text": "✕ down",
+                        "text": "⚠ crashing",
                         "index": 3
+                      },
+                      "4": {
+                        "text": "✕ down",
+                        "index": 4
                       }
                     }
                   }
@@ -4847,8 +6869,32 @@
                       "value": 2
                     },
                     {
-                      "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                      "color": "@@F,auth-db,@@text@@#fab219@@",
                       "value": 3
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "instances"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,@@text@@text@@",
+                      "value": null
                     }
                   ]
                 }
@@ -4921,6 +6967,20 @@
         {
           "id": "calculateField",
           "options": {
+            "mode": "reduceRow",
+            "alias": "instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
             "mode": "binary",
             "alias": "running +1",
             "replaceFields": false,
@@ -4928,7 +6988,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "+",
@@ -4948,7 +7008,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "/",
@@ -5044,6 +7104,96 @@
               "operator": "*",
               "right": {
                 "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "exits",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "crashed",
+                "killed for memory"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "crashing",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "crashing /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing ×3",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "3"
               }
             }
           }
@@ -5127,7 +7277,7 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
-            "alias": "down ×3",
+            "alias": "inside down ×4",
             "replaceFields": false,
             "binary": {
               "left": {
@@ -5138,7 +7288,47 @@
               },
               "operator": "*",
               "right": {
-                "fixed": "3"
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
               }
             }
           }
@@ -5154,7 +7344,9 @@
               "include": [
                 "running",
                 "errors ×2",
-                "down ×3"
+                "crashing ×3",
+                "inside down ×4",
+                "no instance ×4"
               ]
             }
           }
@@ -5180,7 +7372,7 @@
     {
       "type": "stat",
       "title": "auth-outbox-publisher",
-      "description": "auth-outbox-publisher (Sign-in): its status (errors when it answered a 5xx in the last 15 minutes, `canary-5xx` paging above 0.1% and five; ✓ up with an instance running; idle with none, as a scale-to-zero service rests), its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "auth-outbox-publisher (Sign-in). Its status, worst first: ✕ down when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -5264,6 +7456,68 @@
             "preprocessor": "none"
           },
           "aliasBy": "instances"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "auth-outbox-publisher"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "auth-outbox-publisher"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory"
         }
       ],
       "interval": "1m",
@@ -5279,14 +7533,14 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "@@F,auth-db,@@text@@text@@",
+                "color": "@@F,auth-db,@@text@@#d03b3b@@",
                 "value": null
               }
             ]
           },
           "mappings": [],
           "decimals": 0,
-          "noValue": "@@R,auth-db,@@idle@@",
+          "noValue": "@@R,auth-db,@@✕ down@@",
           "displayName": "@@R,auth-db,@@@@"
         },
         "overrides": [
@@ -5319,8 +7573,12 @@
                         "index": 2
                       },
                       "3": {
-                        "text": "✕ down",
+                        "text": "⚠ crashing",
                         "index": 3
+                      },
+                      "4": {
+                        "text": "✕ down",
+                        "index": 4
                       }
                     }
                   }
@@ -5344,8 +7602,32 @@
                       "value": 2
                     },
                     {
-                      "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                      "color": "@@F,auth-db,@@text@@#fab219@@",
                       "value": 3
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "instances"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,@@text@@text@@",
+                      "value": null
                     }
                   ]
                 }
@@ -5418,6 +7700,20 @@
         {
           "id": "calculateField",
           "options": {
+            "mode": "reduceRow",
+            "alias": "instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
             "mode": "binary",
             "alias": "running +1",
             "replaceFields": false,
@@ -5425,7 +7721,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "+",
@@ -5445,7 +7741,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "/",
@@ -5549,6 +7845,136 @@
           "id": "calculateField",
           "options": {
             "mode": "reduceRow",
+            "alias": "exits",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "crashed",
+                "killed for memory"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "crashing",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "crashing /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing ×3",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "3"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
             "alias": "status",
             "replaceFields": false,
             "reduce": {
@@ -5556,7 +7982,9 @@
               "include": [
                 "running",
                 "errors ×2",
-                "down ×3"
+                "crashing ×3",
+                "inside down ×4",
+                "no instance ×4"
               ]
             }
           }
@@ -5582,7 +8010,7 @@
     {
       "type": "stat",
       "title": "records",
-      "description": "records (Member records): its status (errors when it answered a 5xx in the last 15 minutes, `canary-5xx` paging above 0.1% and five; ✓ up with an instance running; idle with none, as a scale-to-zero service rests), its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "records (Member records). Its status, worst first: ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running; idle with none, as a service Terraform lets scale to zero rests. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -5666,6 +8094,68 @@
             "preprocessor": "none"
           },
           "aliasBy": "instances"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "records"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "records"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory"
         }
       ],
       "interval": "1m",
@@ -5721,8 +8211,12 @@
                         "index": 2
                       },
                       "3": {
-                        "text": "✕ down",
+                        "text": "⚠ crashing",
                         "index": 3
+                      },
+                      "4": {
+                        "text": "✕ down",
+                        "index": 4
                       }
                     }
                   }
@@ -5746,8 +8240,32 @@
                       "value": 2
                     },
                     {
-                      "color": "@@F,tpa-db,@@text@@#d03b3b@@",
+                      "color": "@@F,tpa-db,@@text@@#fab219@@",
                       "value": 3
+                    },
+                    {
+                      "color": "@@F,tpa-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "instances"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,tpa-db,@@text@@text@@",
+                      "value": null
                     }
                   ]
                 }
@@ -5820,6 +8338,20 @@
         {
           "id": "calculateField",
           "options": {
+            "mode": "reduceRow",
+            "alias": "instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
             "mode": "binary",
             "alias": "running +1",
             "replaceFields": false,
@@ -5827,7 +8359,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "+",
@@ -5847,7 +8379,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "/",
@@ -5951,6 +8483,96 @@
           "id": "calculateField",
           "options": {
             "mode": "reduceRow",
+            "alias": "exits",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "crashed",
+                "killed for memory"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "crashing",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "crashing /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing ×3",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "3"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
             "alias": "status",
             "replaceFields": false,
             "reduce": {
@@ -5958,7 +8580,9 @@
               "include": [
                 "running",
                 "errors ×2",
-                "down ×3"
+                "crashing ×3",
+                "inside down ×4",
+                "no instance ×4"
               ]
             }
           }
@@ -5984,7 +8608,7 @@
     {
       "type": "stat",
       "title": "connectors",
-      "description": "connectors (Member records): its status (errors when it answered a 5xx in the last 15 minutes, `canary-5xx` paging above 0.1% and five; ✓ up with an instance running; idle with none, as a scale-to-zero service rests), its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "connectors (Member records). Its status, worst first: ✕ down when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -6068,6 +8692,68 @@
             "preprocessor": "none"
           },
           "aliasBy": "instances"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "connectors"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "connectors"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory"
         }
       ],
       "interval": "1m",
@@ -6083,14 +8769,14 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "@@F,tpa-db,@@text@@text@@",
+                "color": "@@F,tpa-db,@@text@@#d03b3b@@",
                 "value": null
               }
             ]
           },
           "mappings": [],
           "decimals": 0,
-          "noValue": "@@R,tpa-db,@@idle@@",
+          "noValue": "@@R,tpa-db,@@✕ down@@",
           "displayName": "@@R,tpa-db,@@@@"
         },
         "overrides": [
@@ -6123,8 +8809,12 @@
                         "index": 2
                       },
                       "3": {
-                        "text": "✕ down",
+                        "text": "⚠ crashing",
                         "index": 3
+                      },
+                      "4": {
+                        "text": "✕ down",
+                        "index": 4
                       }
                     }
                   }
@@ -6148,8 +8838,32 @@
                       "value": 2
                     },
                     {
-                      "color": "@@F,tpa-db,@@text@@#d03b3b@@",
+                      "color": "@@F,tpa-db,@@text@@#fab219@@",
                       "value": 3
+                    },
+                    {
+                      "color": "@@F,tpa-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "instances"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,tpa-db,@@text@@text@@",
+                      "value": null
                     }
                   ]
                 }
@@ -6222,6 +8936,20 @@
         {
           "id": "calculateField",
           "options": {
+            "mode": "reduceRow",
+            "alias": "instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
             "mode": "binary",
             "alias": "running +1",
             "replaceFields": false,
@@ -6229,7 +8957,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "+",
@@ -6249,7 +8977,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "instances"
+                  "options": "instances or none"
                 }
               },
               "operator": "/",
@@ -6353,6 +9081,136 @@
           "id": "calculateField",
           "options": {
             "mode": "reduceRow",
+            "alias": "exits",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "crashed",
+                "killed for memory"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "crashing",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "crashing /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing ×3",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "3"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
             "alias": "status",
             "replaceFields": false,
             "reduce": {
@@ -6360,7 +9218,9 @@
               "include": [
                 "running",
                 "errors ×2",
-                "down ×3"
+                "crashing ×3",
+                "inside down ×4",
+                "no instance ×4"
               ]
             }
           }
@@ -7932,6 +10792,165 @@
                 "filters": [
                   "metric.type",
                   "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_COUNT",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "instances reported"
+            },
+            {
+              "refId": "N",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "auth instances"
+            },
+            {
+              "refId": "O",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-outbox-publisher"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "auth-outbox-publisher instances"
+            },
+            {
+              "refId": "P",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "model-gateway"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "model-gateway instances"
+            },
+            {
+              "refId": "Q",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "tpa-jobs-drains"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "tpa-jobs-drains instances"
+            },
+            {
+              "refId": "R",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
                   "cloudsql.googleapis.com/database/up",
                   "AND",
                   "resource.type",
@@ -7945,8 +10964,8 @@
                 "groupBys": [
                   "resource.label.database_id"
                 ],
-                "crossSeriesReducer": "REDUCE_MIN",
-                "perSeriesAligner": "ALIGN_MIN",
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_MAX",
                 "alignmentPeriod": "+60s",
                 "view": "FULL",
                 "preprocessor": "none"
@@ -7954,7 +10973,7 @@
               "aliasBy": "auth-db up"
             },
             {
-              "refId": "N",
+              "refId": "S",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -7985,7 +11004,7 @@
               "aliasBy": "auth-db points"
             },
             {
-              "refId": "O",
+              "refId": "T",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -8200,6 +11219,429 @@
                     "matcher": {
                       "id": "byName",
                       "options": "auth-db up"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "project ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "instances reported"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "project ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "instances reported"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "project ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "project ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "auth instances or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "auth instances"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "auth ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth instances or none"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "auth ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth instances or none"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "auth ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "auth ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "✕ no instance · auth (minutes)",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth ran"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "auth-outbox-publisher instances or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "auth-outbox-publisher instances"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "auth-outbox-publisher ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth-outbox-publisher instances or none"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "auth-outbox-publisher ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth-outbox-publisher instances or none"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth-outbox-publisher ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "auth-outbox-publisher ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "auth-outbox-publisher ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "✕ no instance · auth-outbox-publisher (minutes)",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth-outbox-publisher ran"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "model-gateway instances or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "model-gateway instances"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "model-gateway ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "model-gateway instances or none"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "model-gateway ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "model-gateway instances or none"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "model-gateway ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "model-gateway ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "model-gateway ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "✕ no instance · model-gateway (minutes)",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "model-gateway ran"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "tpa-jobs-drains instances or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "tpa-jobs-drains instances"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "tpa-jobs-drains ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-jobs-drains instances or none"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "tpa-jobs-drains ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-jobs-drains instances or none"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-jobs-drains ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "tpa-jobs-drains ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "tpa-jobs-drains ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "✕ no instance · tpa-jobs-drains (minutes)",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-jobs-drains ran"
                     }
                   }
                 }
@@ -8501,6 +11943,30 @@
                   "auth-db wrote +1": true,
                   "auth-db wrote /": true,
                   "auth-db wrote": true,
+                  "instances reported": true,
+                  "project ran +1": true,
+                  "project ran /": true,
+                  "project ran": true,
+                  "auth instances": true,
+                  "auth instances or none": true,
+                  "auth ran +1": true,
+                  "auth ran /": true,
+                  "auth ran": true,
+                  "auth-outbox-publisher instances": true,
+                  "auth-outbox-publisher instances or none": true,
+                  "auth-outbox-publisher ran +1": true,
+                  "auth-outbox-publisher ran /": true,
+                  "auth-outbox-publisher ran": true,
+                  "model-gateway instances": true,
+                  "model-gateway instances or none": true,
+                  "model-gateway ran +1": true,
+                  "model-gateway ran /": true,
+                  "model-gateway ran": true,
+                  "tpa-jobs-drains instances": true,
+                  "tpa-jobs-drains instances or none": true,
+                  "tpa-jobs-drains ran +1": true,
+                  "tpa-jobs-drains ran /": true,
+                  "tpa-jobs-drains ran": true,
                   "inside passing · tpa-api": true,
                   "inside reporting · tpa-api": true,
                   "inside passed · tpa-api +1": true,
@@ -8781,6 +12247,66 @@
                 "filters": [
                   "metric.type",
                   "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_COUNT",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "instances reported"
+            },
+            {
+              "refId": "G",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-phi"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_PHI_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "connectors"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "connectors instances"
+            },
+            {
+              "refId": "H",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-phi"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_PHI_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
                   "cloudsql.googleapis.com/database/up",
                   "AND",
                   "resource.type",
@@ -8794,8 +12320,8 @@
                 "groupBys": [
                   "resource.label.database_id"
                 ],
-                "crossSeriesReducer": "REDUCE_MIN",
-                "perSeriesAligner": "ALIGN_MIN",
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_MAX",
                 "alignmentPeriod": "+60s",
                 "view": "FULL",
                 "preprocessor": "none"
@@ -8803,7 +12329,7 @@
               "aliasBy": "tpa-db up"
             },
             {
-              "refId": "G",
+              "refId": "I",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-phi"
@@ -8834,7 +12360,7 @@
               "aliasBy": "tpa-db points"
             },
             {
-              "refId": "H",
+              "refId": "J",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-phi"
@@ -9062,6 +12588,153 @@
               "id": "calculateField",
               "options": {
                 "mode": "binary",
+                "alias": "project ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "instances reported"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "project ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "instances reported"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "project ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "project ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "connectors instances or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "connectors instances"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "connectors ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "connectors instances or none"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "connectors ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "connectors instances or none"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "connectors ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "connectors ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "connectors ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "✕ no instance · connectors (minutes)",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "connectors ran"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
                 "alias": "✓ member records",
                 "replaceFields": false,
                 "binary": {
@@ -9087,7 +12760,16 @@
                   "seeing": true,
                   "tpa-db wrote +1": true,
                   "tpa-db wrote /": true,
-                  "tpa-db wrote": true
+                  "tpa-db wrote": true,
+                  "instances reported": true,
+                  "project ran +1": true,
+                  "project ran /": true,
+                  "project ran": true,
+                  "connectors instances": true,
+                  "connectors instances or none": true,
+                  "connectors ran +1": true,
+                  "connectors ran /": true,
+                  "connectors ran": true
                 }
               }
             },
@@ -9365,8 +13047,8 @@
                 "groupBys": [
                   "resource.label.database_id"
                 ],
-                "crossSeriesReducer": "REDUCE_MIN",
-                "perSeriesAligner": "ALIGN_MIN",
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_MAX",
                 "alignmentPeriod": "+60s",
                 "view": "FULL",
                 "preprocessor": "none"

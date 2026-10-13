@@ -28,6 +28,7 @@ ROOT = HERE.parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(HERE))
 
+import catalogue as cat  # noqa: E402
 import cloud_dashboards as gen  # noqa: E402
 import dashboard_lint as lint  # noqa: E402
 from test_resources import INFRA, INFRA_SOURCE, CHECKOUT_PRESENT, RENDERED, sections, shut  # noqa: E402
@@ -68,6 +69,30 @@ def inside_queries(dashboard: dict):
 
 
 INSIDE = INFRA.inside_policy() if INFRA else gen.INSIDE_POLICY
+UPTIME = gen.UPTIME_POLICY
+CATALOGUE = cat.Catalogue()
+DB_ROLE = {"auth-db": "app", "tpa-db": "phi", "crm-db": "crm", "cc-db": "cc"}
+
+
+def calcs(panel: dict) -> dict[str, dict]:
+    """A panel's calculated fields by name: their options."""
+    return {t["options"].get("alias"): t["options"] for t in panel.get("transformations", [])
+            if t["id"] == "calculateField"}
+
+
+def operands(options: dict) -> tuple:
+    """A binary calculation's two sides: a field's name, or ("fixed", value)."""
+    side = lambda v: ("fixed", v["fixed"]) if "fixed" in v else v["matcher"]["options"]
+    return side(options["binary"]["left"]), options["binary"]["operator"], side(options["binary"]["right"])
+
+
+def target_named(panel: dict, alias: str) -> dict | None:
+    return next((t for t in panel.get("targets") or [] if t["aliasBy"] == alias), None)
+
+
+def area_panels(overview: dict) -> list[dict]:
+    """The area tiles and the What's-wrong tables: the panels that count an area's problems."""
+    return [p for p in lint.panels(overview) if p["title"] in AREA_PAGES or p["title"].startswith("What's wrong · ")]
 
 
 # ---- The checks --------------------------------------------------------------------------------------------------
@@ -133,11 +158,20 @@ def check_inside(dashboard: dict, name: str) -> list[str]:
     return problems
 
 
+def linked(overview: dict) -> set[str]:
+    """The pages the overview links to by name: its panels' links and its own (never the Pages or Services menus,
+    which list every page by tag)."""
+    urls = [link.get("url", "") for p in lint.panels(overview) for link in p.get("links") or []]
+    urls += [link.get("url", "") for link in overview["links"] if link["type"] == "link"]
+    return {u.split("/d/tw-cloud-", 1)[1].split("?")[0] for u in urls if "/d/tw-cloud-" in u}
+
+
 def check_queries_kept(env: str, pages: dict[str, dict]) -> list[str]:
-    """Each query the overview made before is made by a page of this environment, unless replaced on purpose (and
-    then its replacement is there)."""
-    have = {key(t["datasource"]["uid"], t["timeSeriesList"]) for d in pages.values() for _p, t in queries(d)}
+    """Each query the overview made before is made by the overview itself or a page it links to by name, unless
+    replaced on purpose (and then its replacement is there)."""
     overview = pages["overview"]
+    near = {"overview", *linked(overview)} & set(pages)
+    have = {key(t["datasource"]["uid"], t["timeSeriesList"]) for name in near for _p, t in queries(pages[name])}
     tiles = {p["title"]: p for p in services_row(overview)}
     problems = []
     for q in BEFORE["queries"]:
@@ -159,7 +193,133 @@ def check_queries_kept(env: str, pages: dict[str, dict]) -> list[str]:
             continue   # a service this environment does not run gets no tile
         else:
             problems.append(f"{where} ({q['datasource']}): {tsl['filters'][2]} {tsl['filters'][4:]} "
-                            f"{tsl['perSeriesAligner']} {tsl['alignmentPeriod']} is on no page")
+                            f"{tsl['perSeriesAligner']} {tsl['alignmentPeriod']} is on no page the overview links")
+    return problems
+
+
+def check_service_status(overview: dict, env: str) -> list[str]:
+    """Each service tile: kept warm (KEPT_WARM), none running is ✕ down, red, and so is nothing arrived; otherwise
+    none running is idle. A crash or an out-of-memory kill of its own in 15 minutes is ⚠ crashing, never ✓ up or
+    idle, red only while those policies are urgent."""
+    problems = []
+    crash = gen.RED if any(CATALOGUE.policy(n).get("urgent") == "true" for n in ("run-crash-loop", "run-oom")) \
+        else gen.AMBER
+    for p in services_row(overview):
+        service, where = p["title"], f"{env} {p['title']}"
+        warm = service in gen.KEPT_WARM[env]
+        c = calcs(p)
+        defaults = p["fieldConfig"]["defaults"]
+        if defaults["noValue"] != ("✕ down" if warm else "idle") or \
+                defaults["thresholds"]["steps"][0]["color"] != (gen.RED if warm else gen.NEUTRAL):
+            problems.append(f"{where}: with nothing arrived it reads {defaults['noValue']!r} in "
+                            f"{defaults['thresholds']['steps'][0]['color']}")
+        none_running = c.get("no instance ×4")
+        if warm != bool(none_running) or (warm and operands(c["idle"]) != (("fixed", "1"), "-", "running")):
+            problems.append(f"{where}: none running is {'not ' if warm else ''}✕ down")
+        if c.get("instances or none", {}).get("reduce", {}).get("include") != ["instances"]:
+            problems.append(f"{where}: an instance count that did not arrive is not read as none")
+        exits = {t["aliasBy"]: t for t in p["targets"] if t["aliasBy"] in ("crashed", "killed for memory")}
+        metrics = {facts(t)["metric"].rsplit("/", 1)[1] for t in exits.values()}
+        if metrics != {"run_crash_exits", "run_oom_kills"} or any(
+                service_filter(t["timeSeriesList"]) != service or t["timeSeriesList"]["alignmentPeriod"] != "+900s"
+                for t in exits.values()):
+            problems.append(f"{where}: does not read its own crashes and kills over 15 minutes")
+        status = c.get("status", {}).get("reduce", {})
+        if status.get("reducer") != "max" or "crashing ×3" not in status.get("include", []):
+            problems.append(f"{where}: crashing does not outrank ✓ up and idle")
+        steps = next(x["value"]["steps"] for o in p["fieldConfig"]["overrides"] if o["matcher"]["options"] == "status"
+                     for x in o["properties"] if x["id"] == "thresholds")
+        if next((s_["color"] for s_ in steps if s_["value"] == 3), None) != crash:
+            problems.append(f"{where}: ⚠ crashing is not {crash}")
+    return problems
+
+
+def check_database_down(overview: dict) -> list[str]:
+    """Each area's database down minutes, read as `<db>-down` reads database/up (its aligner, window and reducer,
+    below one), and only where a point says so: that policy has no absence condition, so a minute with no point is not
+    down (the down minute is the minutes it wrote a point, less up; never 1 less up)."""
+    problems = []
+    for p in area_panels(overview):
+        up = next((t for t in p["targets"] if t["aliasBy"].endswith(" up") and "database/up" in facts(t)["metric"]), None)
+        if up is None:
+            problems.append(f"{p['title']}: reads no database")
+            continue
+        db = up["aliasBy"].removesuffix(" up")
+        policy = CATALOGUE.policy(f"{db}-down", DB_ROLE[db])
+        down = CATALOGUE.threshold(f"{db}-down", DB_ROLE[db])
+        if [k for c in policy["conditions"].values() for k in c if k != "name"] != ["threshold"] or \
+                (down["comparison"], down["threshold_value"]) != ("COMPARISON_LT", 1):
+            problems.append(f"{p['title']}: `{db}-down` is no longer one threshold below 1; read it again")
+        tsl = up["timeSeriesList"]
+        if (tsl["perSeriesAligner"], tsl["alignmentPeriod"], tsl["crossSeriesReducer"]) != (
+                down["per_series_aligner"], "+" + down["alignment_period"], down["cross_series_reducer"]):
+            problems.append(f"{p['title']}: {db} up is read {tsl['perSeriesAligner']}/{tsl['alignmentPeriod']}/"
+                            f"{tsl['crossSeriesReducer']}, not as `{db}-down` reads it")
+        points = target_named(p, f"{db} points")
+        if points is None or facts(points)["filters"] != facts(up)["filters"] or \
+                (points["timeSeriesList"]["perSeriesAligner"], points["timeSeriesList"]["alignmentPeriod"]) != (
+                    "ALIGN_COUNT", tsl["alignmentPeriod"]):
+            problems.append(f"{p['title']}: {db}'s points are not counted from the same series, minute by minute")
+        c = calcs(p)
+        minutes = c.get(f"✕ {db} down (minutes)")
+        if minutes is None or operands(minutes) != (f"{db} wrote", "-", f"{db} up") or \
+                operands(c.get(f"{db} wrote +1", {"binary": {"left": {"fixed": ""}, "operator": "",
+                                                              "right": {"fixed": ""}}}))[0] != f"{db} points":
+            problems.append(f"{p['title']}: {db}'s down minutes are not the minutes it wrote a point less up "
+                            f"({operands(minutes) if minutes else None})")
+    return problems
+
+
+def check_warm_in_areas(overview: dict, env: str) -> list[str]:
+    """Each area counts its kept-warm services' minutes with no instance, read as `<service> has no instance` reads
+    instance_count, in that policy's five-minute spells."""
+    problems = []
+    spell = int(gen.NO_INSTANCE_POLICY["duration"].removesuffix("s")) // 60
+    for p in area_panels(overview):
+        services = {service_filter(t["timeSeriesList"]) for t in p["targets"]} | {
+            s_ for t in p["targets"] for s_ in (service_filter(t["timeSeriesList"]) or "").split("|")}
+        for service in gen.KEPT_WARM[env]:
+            if service not in services:
+                continue
+            q_ = target_named(p, f"{service} instances")
+            tsl = (q_ or {}).get("timeSeriesList", {})
+            if (tsl.get("perSeriesAligner"), tsl.get("alignmentPeriod"), tsl.get("crossSeriesReducer")) != (
+                    gen.NO_INSTANCE_POLICY["aligner"], "+" + gen.NO_INSTANCE_POLICY["period"],
+                    gen.NO_INSTANCE_POLICY["reducer"]):
+                problems.append(f"{env} {p['title']}: {service}'s instances are not read as its no-instance policy "
+                                f"reads them")
+            c = calcs(p)
+            if p["title"] in AREA_PAGES:
+                spells = c.get(f"✕ no instance · {service} (spells)")
+                if spells is None or operands(spells)[1:] != ("/", ("fixed", str(spell))):
+                    problems.append(f"{env} {p['title']}: {service} is not counted in {spell}-minute spells")
+            elif f"✕ no instance · {service} (minutes)" not in c:
+                problems.append(f"{env} {p['title']}: {service}'s minutes with no instance are not listed")
+    return problems
+
+
+def check_uptime_now(overview: dict) -> list[str]:
+    """The Uptime tile's `now`: the hosts as their outage policy reads them, ✕ down in red past its threshold."""
+    tile = next(p for p in lint.panels(overview) if p["title"] == "Uptime")
+    now = target_named(tile, "now")
+    if now is None:
+        return ["Uptime: no `now`"]
+    tsl, problems = now["timeSeriesList"], []
+    policy = UPTIME
+    if (tsl["perSeriesAligner"], tsl["alignmentPeriod"], tsl["crossSeriesReducer"]) != (
+            policy["aligner"], "+" + policy["period"], policy["reducer"]) or \
+            (tsl.get("secondaryPerSeriesAligner"), tsl.get("secondaryCrossSeriesReducer")) != ("ALIGN_MAX", "REDUCE_MAX"):
+        problems.append(f"Uptime: now is read {tsl['perSeriesAligner']}/{tsl['alignmentPeriod']}/"
+                        f"{tsl['crossSeriesReducer']}, not as the outage policy reads it, worst host")
+    latest = [t for t in tile.get("transformations", []) if t.get("filter", {}).get("options") == now["refId"]]
+    if [(t["id"], t["options"].get("mode"), t["options"].get("reducers")) for t in latest] != [
+            ("reduce", "reduceFields", ["lastNotNull"])]:
+        problems.append("Uptime: now is not its latest point (the tile's range is the day's)")
+    props = next(o["properties"] for o in tile["fieldConfig"]["overrides"] if o["matcher"]["options"] == "now")
+    steps = next(x["value"]["steps"] for x in props if x["id"] == "thresholds")
+    red = [s_["value"] for s_ in steps if s_["color"] == gen.RED]
+    if red != [policy["above"] + 1]:
+        problems.append(f"Uptime: now reads red from {red}, not past the outage policy's {policy['above']}")
     return problems
 
 
@@ -184,6 +344,24 @@ class OverviewTest(unittest.TestCase):
     def test_every_query_the_overview_made_is_still_made(self):
         for env, pages in RENDERED.items():
             self.assertEqual(check_queries_kept(env, pages), [], env)
+
+    def test_each_service_tile_reads_warm_and_crashing_as_their_policies_do(self):
+        for env, pages in RENDERED.items():
+            self.assertEqual(check_service_status(pages["overview"], env), [], env)
+
+    def test_database_down_is_db_downs_rule(self):
+        for env, pages in RENDERED.items():
+            self.assertEqual(check_database_down(pages["overview"]), [], env)
+
+    def test_kept_warm_services_with_no_instance_are_area_problems(self):
+        for env, pages in RENDERED.items():
+            self.assertEqual(check_warm_in_areas(pages["overview"], env), [], env)
+        portal = next(p for p in area_panels(RENDERED["production"]["overview"]) if p["title"] == "Portal & sign-in")
+        self.assertIn("✕ no instance · auth (spells)", calcs(portal))
+
+    def test_a_public_outage_reads_red_now(self):
+        for env, pages in RENDERED.items():
+            self.assertEqual(check_uptime_now(pages["overview"]), [], env)
 
     def test_a_database_tile_each(self):
         for env, pages in RENDERED.items():
@@ -221,6 +399,33 @@ class RunsTest(unittest.TestCase):
     def test_the_inside_rule_is_the_modules(self):
         self.assertEqual(gen.INSIDE_POLICY, INFRA.inside_policy())
 
+    def test_kept_warm_is_what_terraform_keeps_warm(self):
+        for env in gen.RUNS:
+            minimum = INFRA.min_instances(env)
+            self.assertEqual(set(gen.KEPT_WARM[env]), {s for s in gen.RUNS[env] if minimum.get(s, 0) >= 1}, env)
+
+    def test_every_service_with_a_no_instance_policy_is_kept_warm(self):
+        for env in gen.RUNS:
+            self.assertLessEqual(INFRA.no_instance_policies(env) & set(gen.RUNS[env]), set(gen.KEPT_WARM[env]), env)
+
+    def test_every_service_the_root_builds_has_a_tile_or_a_reason(self):
+        for env in gen.RUNS:
+            built = set(INFRA.services(env))
+            self.assertLessEqual(built, set(gen.RUNS[env]) | set(gen.NOT_RUN[env]),
+                                 f"{env}: Terraform builds a Cloud Run service with no tile and no NOT_RUN reason")
+            self.assertFalse(set(gen.RUNS[env]) & set(gen.NOT_RUN[env]), env)
+            self.assertLessEqual(set(gen.NOT_RUN[env]), built, f"{env}: NOT_RUN names a service it does not build")
+
+    def test_the_no_instance_and_uptime_rules_are_the_modules(self):
+        warm = INFRA.module_policy("no_instance")
+        self.assertEqual({k: warm[k] for k in ("aligner", "period", "reducer", "duration")},
+                         {k: gen.NO_INSTANCE_POLICY[k] for k in ("aligner", "period", "reducer", "duration")})
+        self.assertEqual((warm["comparison"], warm["value"]), ("COMPARISON_LT", gen.NO_INSTANCE_POLICY["below"]))
+        uptime = INFRA.module_policy("uptime")
+        self.assertEqual({k: uptime[k] for k in ("aligner", "period", "reducer")},
+                         {k: gen.UPTIME_POLICY[k] for k in ("aligner", "period", "reducer")})
+        self.assertEqual((uptime["comparison"], uptime["value"]), ("COMPARISON_GT", gen.UPTIME_POLICY["above"]))
+
 
 class MutationTest(unittest.TestCase):
     def overview(self, env="beta"):
@@ -229,11 +434,12 @@ class MutationTest(unittest.TestCase):
     def test_a_share_of_regions_for_the_inside_check(self):
         page = self.overview()
         tile = next(p for p in services_row(page) if p["title"] == "auth")
-        inside = next(t for t in tile["targets"] if t["aliasBy"] == "inside")["timeSeriesList"]
-        inside.update(perSeriesAligner="ALIGN_FRACTION_TRUE", alignmentPeriod="+900s", crossSeriesReducer="REDUCE_MEAN")
+        target = next(t for t in tile["targets"] if t["aliasBy"] == "inside")
+        target["timeSeriesList"].update(perSeriesAligner="ALIGN_FRACTION_TRUE", alignmentPeriod="+900s",
+                                        crossSeriesReducer="REDUCE_MEAN")
         self.assertEqual(check_inside(page, "beta overview"),
-                         ["beta overview: auth (C) reads the inside check ALIGN_FRACTION_TRUE/+900s/REDUCE_MEAN, not "
-                          "inside-down's ALIGN_NEXT_OLDER/60s/REDUCE_COUNT_TRUE"])
+                         [f"beta overview: auth ({target['refId']}) reads the inside check ALIGN_FRACTION_TRUE/+900s/"
+                          "REDUCE_MEAN, not inside-down's ALIGN_NEXT_OLDER/60s/REDUCE_COUNT_TRUE"])
 
     def test_a_tile_for_a_service_beta_does_not_run(self):
         page = self.overview()
@@ -249,6 +455,30 @@ class MutationTest(unittest.TestCase):
                 if p.get("title") == "Uptime by host (15 m)":
                     p["targets"] = []
         self.assertTrue(any("is on no page" in p for p in check_queries_kept("beta", pages)))
+
+    def test_database_down_back_to_one_less_up(self):
+        page = self.overview()
+        tile = next(p for p in page["panels"] if p["title"] == "Member records")
+        step = next(t for t in tile["transformations"] if t["options"].get("alias") == "✕ tpa-db down (minutes)")
+        step["options"]["binary"]["left"] = {"fixed": "1"}
+        self.assertEqual(check_database_down(page),
+                         ["Member records: tpa-db's down minutes are not the minutes it wrote a point less up "
+                          "((('fixed', '1'), '-', 'tpa-db up'))"])
+
+    def test_a_kept_warm_service_reading_idle(self):
+        page = self.overview()
+        tile = next(p for p in services_row(page) if p["title"] == "auth-outbox-publisher")
+        tile["fieldConfig"]["defaults"]["noValue"] = "idle"
+        tile["transformations"] = [t for t in tile["transformations"]
+                                   if t["options"].get("alias") not in ("idle", "no instance ×4")]
+        self.assertEqual(len(check_service_status(page, "beta")), 2)
+
+    def test_crashes_not_read(self):
+        page = self.overview("production")
+        tile = next(p for p in services_row(page) if p["title"] == "records")
+        tile["targets"] = [t for t in tile["targets"] if t["aliasBy"] != "crashed"]
+        self.assertIn("production records: does not read its own crashes and kills over 15 minutes",
+                      check_service_status(page, "production"))
 
     def test_an_area_row_left_open(self):
         page = self.overview()

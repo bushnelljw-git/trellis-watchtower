@@ -159,10 +159,10 @@ class Re(str):
 
 def q(metric: str, resource: str | None = None, *, align: str = "ALIGN_DELTA", period: str = AUTO,
       reduce: str = "REDUCE_SUM", by: tuple[str, ...] = (), name: str | None = None, groups: bool = False,
-      **where) -> dict:
+      then: tuple[str, str] | None = None, **where) -> dict:
     """One filter-form query. `where` filters by label (a Re value matches a regular expression; a value holding
     `*` is Cloud Monitoring's starts_with/ends_with). `groups` adds a second aggregation that counts the series the
-    first one leaves, one per group."""
+    first one leaves, one per group; `then` (aligner, reducer) a second aggregation of one's own, across them all."""
     filters = ["metric.type", "=", metric]
     if resource:
         filters += ["AND", "resource.type", "=", resource]
@@ -172,6 +172,9 @@ def q(metric: str, resource: str | None = None, *, align: str = "ALIGN_DELTA", p
            "perSeriesAligner": align, "alignmentPeriod": period, "view": "FULL", "preprocessor": "none"}
     if groups:
         tsl.update({"secondaryCrossSeriesReducer": "REDUCE_COUNT", "secondaryPerSeriesAligner": "ALIGN_SUM",
+                    "secondaryAlignmentPeriod": period, "secondaryGroupBys": []})
+    if then:
+        tsl.update({"secondaryCrossSeriesReducer": then[1], "secondaryPerSeriesAligner": then[0],
                     "secondaryAlignmentPeriod": period, "secondaryGroupBys": []})
     return {"tsl": tsl, "alias": name if name is not None else alias(*by)}
 
@@ -600,8 +603,10 @@ def home_steps() -> dict:
 REPORTING = {"type": "range", "options": {"from": -1e15, "to": -0.5, "result": {"text": "reporting", "index": 0}}}
 
 
-def area_queries(ds: str, services: str, jobs: str | None, db: str, *, checks: bool = False) -> list[dict]:
-    """The problem counts of one project, and its "reporting" count (named `seeing`) last."""
+def area_queries(ds: str, services: str, jobs: str | None, db: str, *, checks: bool = False,
+                 warm: tuple[str, ...] = ()) -> list[dict]:
+    """The problem counts of one project, and its "reporting" count (named `seeing`) last. `warm`: the services of
+    the area the environment keeps warm, whose instances are read as `<service> has no instance` reads them."""
     out = [q(RUN_REQUESTS, REV, period=NOW, by=("service_name",), name=alias("service_name", prefix="✕ 5xx · "),
              service_name=Re(services), response_code_class="5xx")]
     if checks:
@@ -626,11 +631,21 @@ def area_queries(ds: str, services: str, jobs: str | None, db: str, *, checks: b
                   name=alias("job_name", prefix="✕ out of memory · "), job_name=Re(jobs)),
                 q(RUN_JOBS, JOB, period=NOW, by=("job_name",), name=alias("job_name", prefix="✕ run failed · "),
                   job_name=Re(jobs), result="failed")]
-    out += [q(SQL_UP, SQL, align="ALIGN_MIN", period=NOW, reduce="REDUCE_MIN", by=("database_id",),
-              name=f"{db} up", database_id=f"*:{db}"),
-            # A minute the database wrote a point at all: down is a point that says 0, never a minute with none.
-            q(SQL_UP, SQL, align="ALIGN_COUNT", period=NOW, reduce="REDUCE_SUM", name=f"{db} points",
-              database_id=f"*:{db}")]
+    if warm:
+        # Every instance count the project reported (the same metric, so its minutes line up), and each warm
+        # service's, as `<service> has no instance` reads it.
+        out += [q(RUN_INSTANCES, REV, align="ALIGN_COUNT", period="+" + NO_INSTANCE_POLICY["period"],
+                  reduce="REDUCE_SUM", name="instances reported"),
+                *[q(RUN_INSTANCES, REV, align=NO_INSTANCE_POLICY["aligner"], period="+" + NO_INSTANCE_POLICY["period"],
+                    reduce=NO_INSTANCE_POLICY["reducer"], by=("service_name",), name=f"{service} instances",
+                    service_name=service) for service in warm]]
+    # The database as `<db>-down` reads it (its aligner, window and reducer, below one), and the minutes it wrote a
+    # point at all: that policy has no absence condition, so a minute with no point is not down.
+    down = CATALOGUE.threshold(f"{db}-down", DB_ROLE[db])
+    out += [q(SQL_UP, SQL, align=down["per_series_aligner"], period="+" + down["alignment_period"],
+              reduce=down["cross_series_reducer"], by=("database_id",), name=f"{db} up", database_id=f"*:{db}"),
+            q(SQL_UP, SQL, align="ALIGN_COUNT", period="+" + down["alignment_period"], reduce="REDUCE_SUM",
+              name=f"{db} points", database_id=f"*:{db}")]
     if checks:
         # Every uptime check result, passed or not: they arrive every minute from three regions.
         out.append(q(UPTIME, URL, align="ALIGN_COUNT", period=NOW, reduce="REDUCE_SUM", name="seeing"))
@@ -655,10 +670,16 @@ def unary(alias_, op, field) -> dict:
 
 
 def at_least_one(field: str, name: str) -> list[dict]:
-    """`name` is 1 where the count `field` is 1 or more and 0 where it is 0 or empty: ceil(x / (x + 1)), an empty
-    value counting as 0 in Grafana's arithmetic."""
+    """`name` is 1 where the count `field` is 1 or more and 0 where it is 0: ceil(x / (x + 1)). Where `field` has no
+    value (a minute the join left empty) neither has `name`; reduce_row(..., "sum", ...) first reads that as 0."""
     return [calc(f"{name} +1", field, "+", 1), calc(f"{name} /", field, "/", f"{name} +1"),
             unary(name, "ceil", f"{name} /")]
+
+
+def reduce_row(alias_: str, reducer: str, fields: list[str]) -> dict:
+    """A calculated field: each row's `reducer` over the named fields that arrived (sum over none is 0)."""
+    return {"id": "calculateField", "options": {"mode": "reduceRow", "alias": alias_, "replaceFields": False,
+                                                "reduce": {"reducer": reducer, "include": fields}}}
 
 
 def at_least_names(name: str) -> list[str]:
@@ -666,15 +687,35 @@ def at_least_names(name: str) -> list[str]:
     return [f"{name} +1", f"{name} /", name]
 
 
-def area_rows(db: str, reporting: str, checks: bool = False) -> list[dict]:
-    """Join the minute points; turn the database's up into its down minutes, and each private check's regions into
-    the minutes none passed (`inside-down`'s rule); turn the reporting count negative; and sum each series over the
-    panel's 15 minutes: one row per problem (Field, Total), and the reporting row below 0. A minute is down only where
-    a point says so: the join leaves a minute a series has no point in empty, which counts as 0 here, never 1."""
+def area_rows(db: str, reporting: str, checks: bool = False, warm: tuple[str, ...] = (),
+              counting: bool = False) -> list[dict]:
+    """Join the minute points; turn the database's up into its down minutes, each private check's regions into the
+    minutes none passed (`inside-down`'s rule) and each warm service's instances into the minutes it had none
+    (`<service> has no instance`'s); turn the reporting count negative; and sum each series over the panel's 15
+    minutes: one row per problem (Field, Total), and the reporting row below 0. A minute is down only where a point
+    says so: a minute a series has no point in (the join leaves it empty, and arithmetic on it gives nothing) is left
+    out of the sum, never counted as down. A warm service's minutes are those the project reported instance counts in
+    and it reported none, or zero. `counting`
+    (area_count) gives a warm service's minutes in the policy's spells (five minutes each, cut to whole spells after
+    the sum), so a minute its count arrived late in is not a problem."""
     steps = [{"id": "joinByField", "options": {"byField": "Time", "mode": "outer"}},
              *at_least_one(f"{db} points", f"{db} wrote"),
              calc(f"✕ {db} down (minutes)", f"{db} wrote", "-", f"{db} up")]
     hidden = [f"{db} up", f"{db} points", "seeing", *at_least_names(f"{db} wrote")]
+    if warm:
+        steps += at_least_one("instances reported", "project ran")
+        hidden += ["instances reported", *at_least_names("project ran")]
+    spell = int(NO_INSTANCE_POLICY["duration"].removesuffix("s")) // 60
+    for service in warm:
+        minutes_ = f"✕ no instance · {service} (minutes)"
+        # In a minute the project reported, this service's count missing is none: summed over what arrived.
+        steps += [reduce_row(f"{service} instances or none", "sum", [f"{service} instances"]),
+                  *at_least_one(f"{service} instances or none", f"{service} ran"),
+                  calc(minutes_, "project ran", "-", f"{service} ran")]
+        hidden += [f"{service} instances", f"{service} instances or none", *at_least_names(f"{service} ran")]
+        if counting:
+            steps.append(calc(f"✕ no instance · {service} (spells)", minutes_, "/", spell))
+            hidden.append(minutes_)
     for service in INSIDE_CHECKED if checks else ():
         steps += [*at_least_one(f"inside passing · {service}", f"inside passed · {service}"),
                   *at_least_one(f"inside reporting · {service}", f"inside answered · {service}"),
@@ -690,9 +731,9 @@ def area_rows(db: str, reporting: str, checks: bool = False) -> list[dict]:
     ]
 
 
-def area_transformations(db: str, reporting: str, checks: bool = False) -> list[dict]:
+def area_transformations(db: str, reporting: str, checks: bool = False, warm: tuple[str, ...] = ()) -> list[dict]:
     """area_rows, keeping what is not 0, worst first."""
-    return area_rows(db, reporting, checks) + [
+    return area_rows(db, reporting, checks, warm) + [
         {"id": "filterByValue", "options": {"type": "include", "match": "any", "filters": [
             {"fieldName": "Total", "config": {"id": "greater", "options": {"value": 0}}},
             {"fieldName": "Total", "config": {"id": "lower", "options": {"value": 0}}}]}},
@@ -700,12 +741,14 @@ def area_transformations(db: str, reporting: str, checks: bool = False) -> list[
     ]
 
 
-def area_count(db: str, reporting: str, checks: bool = False) -> list[dict]:
-    """area_rows, then each row's `problem`: 1 where its Total is above 0 (a problem), 0 for the reporting row and
-    for a series that stayed 0. Summed, the number of problems; with nothing arrived there is no row, so no value."""
-    return area_rows(db, reporting, checks) + [
-        unary("|Total|", "abs", "Total"),
-        calc("Total + |Total|", "Total", "+", "|Total|"),
+def area_count(db: str, reporting: str, checks: bool = False, warm: tuple[str, ...] = ()) -> list[dict]:
+    """area_rows (counting), then each row's `problem`: 1 where its whole Total is above 0 (a problem), 0 for the
+    reporting row and for a series that stayed 0. Summed, the number of problems; with nothing arrived there is no
+    row, so no value."""
+    return area_rows(db, reporting, checks, warm, counting=True) + [
+        unary("whole", "floor", "Total"),
+        unary("|Total|", "abs", "whole"),
+        calc("Total + |Total|", "whole", "+", "|Total|"),
         calc("above 0", "Total + |Total|", "/", 2),
         *at_least_one("above 0", "problem"),
     ]
@@ -726,13 +769,20 @@ AREA_WORDS = ("5xx answers, uptime and inside checks failing (beta's checks pass
 
 
 
-def whats_wrong(key, title, ds, services, jobs, db, reporting, checks, w=6) -> dict:
-    p = panel("table", f"What's wrong · {AREA_STATUS[key][0]}", ds, area_queries(ds, services, jobs, db, checks=checks),
+def warm_in(services: str, env: str) -> tuple[str, ...]:
+    """The services of an area (its `|` list) the environment keeps warm."""
+    return tuple(s_ for s_ in KEPT_WARM[env] if s_ in services.split("|"))
+
+
+def whats_wrong(key, title, ds, services, jobs, db, reporting, checks, w=6, env="beta") -> dict:
+    warm = warm_in(services, env)
+    p = panel("table", f"What's wrong · {AREA_STATUS[key][0]}", ds,
+              area_queries(ds, services, jobs, db, checks=checks, warm=warm),
               "Each problem of the last 15 minutes with its count (answers, failures, runs or minutes), worst "
               "first; the teal row says the project's metrics are arriving. Empty reads '? Can't tell'.",
               w=w, h=6, time_from="15m", no_value=when_quiet((db,), "? Can't tell"),
               custom={"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False, "filterable": False},
-              transformations=area_transformations(db, reporting, checks) + [
+              transformations=area_transformations(db, reporting, checks, warm) + [
                   {"id": "organize", "options": {"renameByName": {"Field": "Problem", "Total": "15 min"}}}])
     p["options"] = {"showHeader": False, "cellHeight": "sm", "footer": {"show": False, "reducer": ["sum"],
                                                                          "fields": ""}}
@@ -788,6 +838,22 @@ RUNS = {
     "production": ("web", "tpa-api", "model-gateway", "tpa-jobs-drains", "auth", "auth-outbox-publisher", "records",
                    "connectors"),
 }
+
+
+# The services each environment's Terraform keeps warm (min_instances 1 or more: production-full's literals, beta's
+# service_min_instances defaults and literals, a switch on), of those it runs. With none running such a service is
+# down, not idle: the module's `<service> has no instance` pages (urgent) at none for five minutes, or none reported
+# for ten. Only the others may rest at none.
+KEPT_WARM = {"beta": ("auth-outbox-publisher", "svc-voice", "svc-twilio-rest"),
+             "production": ("auth", "auth-outbox-publisher", "model-gateway", "tpa-jobs-drains", "connectors")}
+# What each root builds that the environment does not run, and why: no tile for it, said here, so a service its
+# Terraform adds and nobody placed fails tests/cloud/test_overview.py.
+NOT_RUN = {"beta": {"connectors": "connectors_enabled off: beta has no destination for it (R120)",
+                    "tpa-jobs-drains": "tpa_jobs_drains_enabled off: its loops wait, idempotent, until it is on"},
+           "production": {}}
+# The module's `<service> has no instance` (its threshold condition; its absence one waits ten minutes): instance_count
+# the most in each minute, summed over revisions, below one for five minutes.
+NO_INSTANCE_POLICY = {"aligner": "ALIGN_MAX", "period": "60s", "reducer": "REDUCE_SUM", "below": 1, "duration": "300s"}
 
 
 def limit(kind: str, name: str) -> dict:
@@ -890,13 +956,16 @@ def page_links(pages) -> list[dict]:
             for title, uid in pages]
 
 
-def area_status(key, title, ds, services, jobs, db, reporting, checks, w=3) -> dict:
+def area_status(key, title, ds, services, jobs, db, reporting, checks, w=3, env="beta") -> dict:
     """One tile per area: "✓ All good", "1 problem" or "N problems" in the last 15 minutes, counted from the same
     queries and rows as "What's wrong now" (area_rows); "? Can't tell" when nothing arrived at all."""
     name, pages = AREA_STATUS[key]
-    p = stat(name, ds, area_queries(ds, services, jobs, db, checks=checks),
+    warm = warm_in(services, env)
+    p = stat(name, ds, area_queries(ds, services, jobs, db, checks=checks, warm=warm),
              f"The last 15 minutes in this project: how many problems, of "
-             f"{AREA_WORDS if checks else 'its 5xx answers, crashes, out-of-memory kills, failed job runs and the minutes ' + db + ' was down'}. "
+             f"{AREA_WORDS if checks else 'its 5xx answers, crashes, out-of-memory kills, failed job runs and the minutes ' + db + ' was down'}"
+             + (f", and five minutes or more with no instance for a service kept warm ({', '.join(warm)}: "
+                "`<service> has no instance` pages, urgent)" if warm else "") + ". "
              "Each one, named with its count, is in the shut row What's wrong now (details) below, and on "
              f"{' and '.join(t for t, _u in pages)}. Amber: something to look at; whether it paged is PagerDuty's "
              "(the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed.",
@@ -904,7 +973,7 @@ def area_status(key, title, ds, services, jobs, db, reporting, checks, w=3) -> d
              steps=thresholds(AMBER, (-0.5, TEAL), (0.5, AMBER)), deps=(db,), unit="suffix:problems", decimals=0,
              mappings=[{"type": "value", "options": {"0": {"text": "✓ All good", "index": 0},
                                                       "1": {"text": "1 problem", "index": 1}}}],
-             transformations=area_count(db, reporting, checks), links=page_links(pages),
+             transformations=area_count(db, reporting, checks, warm), links=page_links(pages),
              # The count's own name hidden; while the database is stopped on purpose the tile says so instead.
              overrides=[{"matcher": {"id": "byName", "options": "problem"},
                          "properties": [{"id": "displayName", "value": ""}]}])
@@ -913,19 +982,46 @@ def area_status(key, title, ds, services, jobs, db, reporting, checks, w=3) -> d
     return p
 
 
-def uptime_tile(w=3, h=5) -> dict:
-    """The worst host's share of uptime checks passed in 24 h (each host's is in the shut row below)."""
-    p = stat("Uptime (24 h)", APP,
-             q(UPTIME, URL, align="ALIGN_FRACTION_TRUE", period="+3600s", reduce="REDUCE_MEAN", by=("host",)),
-             "The worst host's share of uptime checks passed in the last 24 h: each host's is in the shut row "
-             "Right now (details), and over time on Portal & API. " + UPTIME_WORDING, w=w, h=h, unit="percentunit",
-             decimals=2, time_from="24h", no_value="no uptime checks", text_mode="value",
+# The module's uptime outage policy (`outage: <host><path>`, urgent for the public hosts): each checker region's latest
+# result over twenty minutes, the regions failing counted, an outage above one.
+UPTIME_POLICY = {"aligner": "ALIGN_NEXT_OLDER", "period": "1200s", "reducer": "REDUCE_COUNT_FALSE", "above": 1}
+
+
+def uptime_tile(w=4, h=5) -> dict:
+    """The hosts now, as their outage policy reads them (the most regions failing on any host: ✕ down above one,
+    red, for it pages: urgent for the public hosts), and the worst host's share of checks passed in 24 h."""
+    outage = UPTIME_POLICY["above"] + 1
+    p = stat("Uptime", APP,
+             [q(UPTIME, URL, align="ALIGN_FRACTION_TRUE", period="+3600s", reduce="REDUCE_MEAN", by=("host",)),
+              q(UPTIME, URL, align=UPTIME_POLICY["aligner"], period="+" + UPTIME_POLICY["period"],
+                reduce=UPTIME_POLICY["reducer"], by=("host",), then=("ALIGN_MAX", "REDUCE_MAX"), name="now")],
+             "now: the hosts as their outage policy reads them (each checker region's latest result over twenty "
+             f"minutes, the regions failing counted): ✕ down, red, when more than {UPTIME_POLICY['above']} region "
+             "fails on any host, as `outage: <host>` pages; one region failing alone does not page. 24 h: the "
+             "worst host's share of checks passed in the last 24 hours (each host's is in the shut row Right now "
+             "(details), and over time on Portal & API). " + UPTIME_WORDING, w=w, h=h, unit="percentunit", decimals=2,
+             time_from="24h", no_value="no uptime checks", text_mode="value_and_name",
              steps=thresholds(RED, (0.95, AMBER), (0.999, TEAL)),
-             transformations=[{"id": "reduce", "options": {"mode": "seriesToRows", "reducers": ["mean"],
-                                                           "labelsToFields": False, "includeTimeField": False}},
+             transformations=[{"id": "reduce", "filter": {"id": "byRefId", "options": "A"},
+                               "options": {"mode": "seriesToRows", "reducers": ["mean"], "labelsToFields": False,
+                                           "includeTimeField": False}},
+                              # now: its latest twenty minutes, the panel's range being the day's.
+                              {"id": "reduce", "filter": {"id": "byRefId", "options": "B"},
+                               "options": {"mode": "reduceFields", "reducers": ["lastNotNull"],
+                                           "includeTimeField": False}},
                               {"id": "sortBy", "options": {"sort": [{"field": "Mean", "desc": False}]}},
-                              {"id": "limit", "options": {"limitField": 1}}])
-    p["options"]["reduceOptions"] = {"values": True, "calcs": ["lastNotNull"], "fields": "/^Mean$/"}
+                              {"id": "limit", "options": {"limitField": 1}}],
+             overrides=[{"matcher": {"id": "byName", "options": "Mean"}, "properties": [
+                            {"id": "displayName", "value": "24 h"}]},
+                        {"matcher": {"id": "byName", "options": "now"}, "properties": [
+                            {"id": "unit", "value": "none"}, {"id": "decimals", "value": 0},
+                            {"id": "mappings", "value": [
+                                {"type": "value", "options": {"0": {"text": "✓ up", "index": 0},
+                                                              "1": {"text": "⚠ 1 region", "index": 1}}},
+                                {"type": "range", "options": {"from": outage, "to": 1e9,
+                                                              "result": {"text": "✕ down", "index": 2}}}]},
+                            {"id": "thresholds", "value": thresholds(TEAL, (1, AMBER), (outage, RED))}]}])
+    p["options"]["reduceOptions"] = {"values": True, "calcs": ["lastNotNull"], "fields": "/^(24 h|now)$/"}
     return p
 
 
@@ -981,49 +1077,63 @@ def incidents_tile(cc: bool, w=3, h=5) -> dict:
 # regions would read 33% while the service is up.
 INSIDE_POLICY = {"aligner": "ALIGN_NEXT_OLDER", "period": "60s", "reducer": "REDUCE_COUNT_TRUE", "below": 1}
 INSIDE_CHECKED = ("tpa-api", "auth")
-STATUS = {0: ("idle", NEUTRAL), 1: ("✓ up", TEAL), 2: ("errors", AMBER), 3: ("✕ down", RED)}
+# A crash or out-of-memory kill is red only while its policy is urgent (the catalogue's run-crash-loop and run-oom).
+CRASH_COLOUR = RED if any(CATALOGUE.policy(n).get("urgent") == "true" for n in ("run-crash-loop", "run-oom")) else AMBER
+STATUS = {0: ("idle", NEUTRAL), 1: ("✓ up", TEAL), 2: ("errors", AMBER), 3: ("⚠ crashing", CRASH_COLOUR),
+          4: ("✕ down", RED)}
 
 
-def service_status(service: str, deps=(), w=4, h=4) -> dict:
-    """One service's tile, the same shape for every service: a status word (✕ down: its inside check has no region
-    passing, as `inside-down` decides; errors: a 5xx in 15 minutes; ✓ up: an instance running; idle: none, as a
-    scale-to-zero service rests), its instances now and its 5xx in 15 minutes."""
+def service_status(service: str, deps=(), env: str = "beta", w=4, h=4) -> dict:
+    """One service's tile, the same shape for every service: its status, its instances now and its 5xx in 15
+    minutes. The status, worst first: ✕ down (its private check has no region passing, as `inside-down` decides; or,
+    kept warm, it has no instance, as `<service> has no instance` decides); ⚠ crashing (a container exited or was
+    killed for memory in 15 minutes); errors (a 5xx in 15 minutes); ✓ up (an instance running); idle (none, as a
+    service Terraform lets scale to zero rests)."""
     ds, page = SERVICES[service]
     inside = service in INSIDE_CHECKED
+    warm = service in KEPT_WARM[env]
     # A missing field's name is read as a number when it starts with digits ("5xx" as 5: Grafana's calculateField),
     # so the 5xx count is named in words and shown as "5xx (15 m)".
     queries = [q(RUN_REQUESTS, REV, period="+900s", by=(), name="answered 5xx", service_name=Re(service),
                  response_code_class="5xx"),
                q(RUN_INSTANCES, REV, align="ALIGN_MAX", period="+60s", by=(), name="instances",
-                 service_name=Re(service))]
+                 service_name=Re(service)),
+               q(log("run_crash_exits"), REV, period="+900s", by=(), name="crashed", service_name=service),
+               q(log("run_oom_kills"), REV, period="+900s", by=(), name="killed for memory", service_name=service)]
     if inside:
         queries.append(q(UPTIME, PRIVATE, align=INSIDE_POLICY["aligner"], period="+" + INSIDE_POLICY["period"],
                          reduce=INSIDE_POLICY["reducer"], by=("service_name",), name="inside", service_name=service))
     words = {code: word for code, (word, _c) in STATUS.items()}
+    down = [] + (["its private check has no checker region passing, as `inside-down` decides (the balancer answers "
+                  "its own region alone, so the other two fail by design)"] if inside else []) + (
+           ["it is kept warm and has no instance (or reports none), as `<service> has no instance` decides "
+            "(urgent)"] if warm else [])
+    rest = ("✓ up with an instance running" + ("" if warm else "; idle with none, as a service Terraform lets scale "
+                                                            "to zero rests"))
     p = stat(service, ds, queries,
-             f"{service} ({AREA_TITLES[page]}): " + ", ".join(f"{w_} ({code})" for code, w_ in words.items()) + ". "
-             "Its status: ✕ down when its private uptime check has no checker region passing, as `inside-down` "
-             "decides (the balancer answers its own region alone, so the other two fail by design); errors when it "
-             "answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an "
-             "instance running; idle with none, as a scale-to-zero service rests. Then its instances now and its "
-             "5xx in 15 minutes. The link by the title opens its own page." if inside else
-             f"{service} ({AREA_TITLES[page]}): its status (errors when it answered a 5xx in the last 15 minutes, "
-             "`canary-5xx` paging above 0.1% and five; ✓ up with an instance running; idle with none, as a "
-             "scale-to-zero service rests), its instances now and its 5xx in 15 minutes. The link by the title "
-             "opens its own page.",
-             w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from="15m", no_value="idle",
-             deps=deps, links=service_links(service), decimals=0,
+             f"{service} ({AREA_TITLES[page]}). Its status, worst first: " +
+             (f"✕ down when {' or when '.join(down)}; " if down else "") +
+             "⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, "
+             "`run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and "
+             f"five); {rest}. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own "
+             "page.", w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from="15m",
+             no_value="✕ down" if warm else "idle", deps=deps, links=service_links(service), decimals=0,
+             steps=thresholds(RED if warm else NEUTRAL),
              transformations=[
                  {"id": "reduce", "options": {"mode": "reduceFields", "reducers": ["lastNotNull"],
                                               "includeTimeField": False}},
                  {"id": "concatenate", "options": {"frameNameMode": "drop"}},
-                 *at_least_one("instances", "running"),
+                 # Summed over what arrived: a series that did not arrive counts as none (a sum of nothing is 0).
+                 reduce_row("instances or none", "sum", ["instances"]),
+                 *at_least_one("instances or none", "running"),
                  *at_least_one("answered 5xx", "erroring"), calc("errors ×2", "erroring", "*", 2),
-                 *([*at_least_one("inside", "passing"), calc("failing", 1, "-", "passing"),
-                    calc("down ×3", "failing", "*", 3)] if inside else []),
-                 {"id": "calculateField", "options": {"mode": "reduceRow", "alias": "status", "replaceFields": False,
-                                                      "reduce": {"reducer": "max",
-                                                                 "include": ["running", "errors ×2", "down ×3"]}}},
+                 reduce_row("exits", "sum", ["crashed", "killed for memory"]),
+                 *at_least_one("exits", "crashing"), calc("crashing ×3", "crashing", "*", 3),
+                 *([*at_least_one("inside", "passing"), calc("failing", INSIDE_POLICY["below"], "-", "passing"),
+                    calc("inside down ×4", "failing", "*", 4)] if inside else []),
+                 *([calc("idle", 1, "-", "running"), calc("no instance ×4", "idle", "*", 4)] if warm else []),
+                 reduce_row("status", "max", ["running", "errors ×2", "crashing ×3", "inside down ×4",
+                                               "no instance ×4"]),
                  {"id": "organize", "options": {"includeByName": {"status": True, "instances": True,
                                                                   "answered 5xx": True},
                                                 "indexByName": {"status": 0, "instances": 1, "answered 5xx": 2}}}],
@@ -1033,6 +1143,8 @@ def service_status(service: str, deps=(), w=4, h=4) -> dict:
                                 str(code): {"text": word, "index": code} for code, word in words.items()}}]},
                             {"id": "thresholds", "value": thresholds(STATUS[0][1], *[
                                 (code, colour) for code, (_w, colour) in STATUS.items() if code])}]},
+                        {"matcher": {"id": "byName", "options": "instances"}, "properties": [
+                            {"id": "thresholds", "value": thresholds(NEUTRAL)}]},
                         {"matcher": {"id": "byName", "options": "answered 5xx"}, "properties": [
                             {"id": "displayName", "value": "5xx (15 m)"},
                             {"id": "thresholds", "value": thresholds(NEUTRAL, (1, AMBER))}]}])
@@ -1531,15 +1643,15 @@ def overview(cc: bool = True, env: str = "beta") -> dict:
     running = [s_ for s_ in SERVICES if s_ in RUNS[env] and (cc or SERVICES[s_][0] != CC)]
     items = [
         row("Right now: each area, uptime, the sign-in journeys, incidents"),
-        *[area_status(*a, w=12 // len(areas)) for a in areas],
-        uptime_tile(), journeys_table(), incidents_tile(cc),
+        *[area_status(*a, w=12 // len(areas), env=env) for a in areas],
+        uptime_tile(), journeys_table(w=5), incidents_tile(cc),
         row("Services: " + ", ".join(dict.fromkeys(AREA_SHORT[SERVICES[s_][1]] for s_ in running)) +
             " (status, instances now, 5xx in 15 minutes)"),
-        *[service_status(s_, deps[SERVICES[s_][1]] if s_ != "watchtower" else ()) for s_ in running],
+        *[service_status(s_, deps[SERVICES[s_][1]] if s_ != "watchtower" else (), env) for s_ in running],
         row("Databases: up, CPU, memory, disk"),
         *[db_status(db, ds, w=span) for db, ds in dbs],
         *collapsed([row("What's wrong now (details): each problem of the last 15 minutes, named, by project"),
-                    *[whats_wrong(*a, w=span) for a in areas]]),
+                    *[whats_wrong(*a, w=span, env=env) for a in areas]]),
         *collapsed([row("Right now (details): uptime by host"),
                     stat("Uptime by host (24 h)", APP,
                          q(UPTIME, URL, align="ALIGN_FRACTION_TRUE", period="+3600s", reduce="REDUCE_MEAN",

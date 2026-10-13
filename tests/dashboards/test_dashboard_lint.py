@@ -217,11 +217,11 @@ class CloudMutationTest(unittest.TestCase):
         self.assertCaught(mutate, "names the label `metric.label.nat_ip`, which is not on the allowlist")
 
     def test_a_title_too_long_for_its_panel(self):
-        # Rule 10: at 1440 px a 3-column panel shows 18 characters of title (less with its links icon).
+        # Rule 10: at 1440 px a 4-column panel shows 26 characters of title (less with its links icon).
         def mutate(d):
-            self.panel(d, "Uptime (24 h)")["title"] = "Uptime checks passing (24 h)"
-        self.assertCaught(mutate, 'panel "Uptime checks passing (24 h)": the title is 28 characters; a panel 3 '
-                                  "columns wide shows 18 at 1440 px")
+            self.panel(d, "Uptime")["title"] = "Uptime checks passing (24 hours)"
+        self.assertCaught(mutate, 'panel "Uptime checks passing (24 hours)": the title is 32 characters; a panel 4 '
+                                  "columns wide shows 26 at 1440 px")
 
     def test_a_drop_reason_off_the_nat_drop_counter_is_refused(self):
         # `reason` is Cloud NAT's word for a dropped packet; on any other metric it is refused.
