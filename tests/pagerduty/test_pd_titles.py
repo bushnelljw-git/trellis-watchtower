@@ -76,6 +76,11 @@ def monitoring(subject=MONITORING_SUBJECT, **fields) -> dict:
             "details": {"incident": incident, "version": "1.2"}}
 
 
+def orchestration_puts(state, since=0) -> list[dict]:
+    return [r for r in state.writes()[since:]
+            if r["path"].startswith("/pd/event_orchestrations/services/") and not r["path"].endswith("/active")]
+
+
 def today(sid: str) -> dict:
     return {"type": "service", "parent": {"id": sid, "type": "service_reference"},
             "sets": [{"id": "start", "rules": copy.deepcopy(TODAY)}], "catch_all": {"actions": {}}}
@@ -100,31 +105,40 @@ class ThePlanAgainstToday(Base):
         lines = result.stdout.splitlines()
         for name in SERVICES:
             at = lines.index(next(x for x in lines if x.startswith(f'update      event orchestration on "{name}"')))
-            self.assertIn("[title: the policy's subject, else policy · condition; Critical -> critical P1;",
-                          lines[at])
-            self.assertEqual(lines[at + 1:at + 7], [
-                '              + start: "Title: the policy\'s own subject"',
-                '              + start: "Title: policy · condition (the policy has no subject of its own)"',
-                '              + start: "Title: as Monitoring wrote it (no policy or condition name)"',
-                '              ~ severity: "Monitoring Critical: severity critical, P1" (moved from set "start", '
-                'unchanged)',
-                '              ~ severity: "Monitoring Error: severity error, P2" (moved from set "start", unchanged)',
-                '              ~ severity: "Monitoring Warning: severity warning, P3" (moved from set "start", '
-                'unchanged)',
+            self.assertIn("[Critical -> critical P1; Error -> error P2; Warning -> warning P3 (any letter case); "
+                          "anything else keeps the default (critical); title: the policy's subject, else policy · "
+                          "condition]", lines[at])
+            got = lines[at + 1:at + 8]
+            if name == SERVICES[0]:
+                note, = [x for x in lines if "Advanced Event Orchestration" in x]
+                self.assertEqual(note, "          (the titles need Advanced Event Orchestration, which no PagerDuty "
+                                       "API shows before an update; --apply reads each update's warnings and, if "
+                                       "there are any, puts the previous orchestration back and refuses)")
+                self.assertEqual(lines[at + 8], note, "printed once, after the first update")
+            self.assertEqual(got, [
+                '              ~ start: "Monitoring Critical: severity critical, P1" (route_to added)',
+                '              ~ start: "Monitoring Error: severity error, P2" (route_to added)',
+                '              ~ start: "Monitoring Warning: severity warning, P3" (route_to added)',
+                '              + start: "Any other severity: keeps the default (critical), on to the titles"',
+                '              + titles: "Title: the policy\'s own subject"',
+                '              + titles: "Title: policy · condition (the policy has no subject of its own)"',
+                '              + titles: "Title: as Monitoring wrote it (no policy or condition name)"',
             ])
-            self.assertTrue(lines[at + 7].startswith("ok          event orchestration active"), lines[at + 7])
 
     def test_apply_keeps_the_severity_rules_exactly_then_is_steady(self):
+        before = len(self.state.writes())
         first = self.pd("--apply")
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         self.assertRegex(self.summary(first), r"^summary: created 0, updated 3, ")
+        self.assertEqual(len(orchestration_puts(self.state, before)), 3, "no warnings, so nothing is put back")
         for name in SERVICES:
             sid = self.service_id(name)
-            self.assertEqual([s["id"] for s in self.state.orchestrations[sid]["sets"]], ["start", "severity"])
+            self.assertEqual([s["id"] for s in self.state.orchestrations[sid]["sets"]], ["start", "titles"])
             kept = [(r["label"], r["conditions"], pd_setup._set_actions(r["actions"]), r["disabled"])
-                    for r in self.rules(sid)]
-            self.assertEqual(kept, [(t["label"], t["conditions"], t["actions"], False) for t in TODAY],
-                             "the severity rules must be today's, unchanged")
+                    for r in self.rules(sid)[:3]]
+            self.assertEqual(kept, [(t["label"], t["conditions"], {**t["actions"], "route_to": "titles"}, False)
+                                    for t in TODAY],
+                             "the severity rules must be today's, with only the route on to the titles added")
             self.assertEqual(pd_setup._set_actions(self.state.orchestrations[sid]["catch_all"]["actions"]), {})
         writes = len(self.state.writes())
         self.assertRegex(self.summary(self.pd()), SUMMARY_STEADY_DRY)
@@ -135,20 +149,22 @@ class ThePlanAgainstToday(Base):
     def test_a_changed_title_rule_and_a_rule_a_person_added_are_named(self):
         self.pd("--apply")
         sid = self.service_id("TPA beta · Call centre")
-        self.rules(sid, "start")[0]["actions"]["extractions"][0]["template"] = "{{variables.subject}}!"
-        self.rules(sid, "start").insert(0, {"id": "rX", "label": "Someone's rule", "conditions": [],
-                                            "actions": {"annotate": "x"}, "disabled": False})
+        self.rules(sid, "titles")[0]["actions"]["extractions"][0]["template"] = "{{variables.subject}}!"
+        self.rules(sid, "titles").insert(0, {"id": "rX", "label": "Someone's rule", "conditions": [],
+                                             "actions": {"annotate": "x"}, "disabled": False})
         result = self.pd()
-        self.assertIn('              ~ start: "Title: the policy\'s own subject" (actions changed)', result.stdout)
-        self.assertIn('              - start: "Someone\'s rule"', result.stdout)
+        self.assertIn('              ~ titles: "Title: the policy\'s own subject" (extractions changed)', result.stdout)
+        self.assertIn('              - titles: "Someone\'s rule"', result.stdout)
         self.assertRegex(self.summary(result), r"^summary: 0 to create, 1 to update, ")
 
     def test_a_rule_that_moved_and_changed_says_both(self):
         sid = self.service_id("TPA beta · Portal & API")
-        self.rules(sid, "start")[0]["actions"]["priority"] = "PRI4"
+        path = self.state.orchestrations[sid]
+        path["sets"].append({"id": "old", "rules": [path["sets"][0]["rules"].pop(0)]})
+        path["sets"][1]["rules"][0]["actions"]["priority"] = "PRI4"
         result = self.pd()
-        self.assertIn('              ~ severity: "Monitoring Critical: severity critical, P1" (moved from set "start", '
-                      "actions changed)", result.stdout)
+        self.assertIn('              ~ start: "Monitoring Critical: severity critical, P1" (moved from set "old", '
+                      "priority changed, route_to added)", result.stdout)
 
 
 class TheTitleRules(Base):
@@ -163,8 +179,8 @@ class TheTitleRules(Base):
         """The event after the orchestration ({summary, custom_details}) and the severity and priority it set."""
         return self.state.orchestrate(self.sid, body)
 
-    def test_the_start_set_exactly(self):
-        (subject, names, kept) = self.rules(self.sid, "start")
+    def test_the_titles_set_exactly(self):
+        (subject, names, kept) = self.rules(self.sid, "titles")
         incident = "event.custom_details.incident"
         self.assertEqual(subject["conditions"], [{"expression": (
             f"{incident}.documentation.subject matches regex '[^[:space:]]' and not "
@@ -196,7 +212,7 @@ class TheTitleRules(Base):
     def test_only_the_title_and_details_change_never_the_dedup_key(self):
         for rule in pd_setup.title_rules():
             a = rule["actions"]
-            self.assertEqual(set(a) - {"variables", "extractions", "route_to"}, set(), rule["label"])
+            self.assertEqual(set(a) - {"variables", "extractions"}, set(), rule["label"])
             for x in a["extractions"]:
                 self.assertRegex(x["target"], r"^event\.(summary|custom_details\.[a-z_]+)$")
 
@@ -257,9 +273,89 @@ class TheTitleRules(Base):
         with self.assertRaises(fakes.Fail):
             self.state.store_orchestration(bad)
         bad = pd_setup.desired_orchestration(self.sid, {"P1": "PRI1", "P2": "PRI2", "P3": "PRI3"})
-        bad["sets"][0]["rules"][1]["actions"]["extractions"][0]["template"] = "{{variables.subject}}"
+        bad["sets"][1]["rules"][1]["actions"]["extractions"][0]["template"] = "{{variables.subject}}"
         with self.assertRaises(fakes.Fail):
             self.state.store_orchestration(bad)
+
+
+class WithoutAdvancedOrchestration(Base):
+    """An account without Advanced Event Orchestration: PagerDuty takes the update, answers with warnings and runs
+    "start" alone. The script puts the previous orchestration back, refuses, and the severity rules keep running."""
+
+    state_options = {"advanced_orchestration": False}
+
+    def setUp(self):
+        super().setUp()
+        self.first = self.pd("--apply", "--add-rules")
+
+    def outcome(self, name, **fields):
+        return self.state.orchestrate(self.service_id(name), monitoring(subject=SUBJECT, **fields))
+
+    def test_new_services_get_the_severity_rules_alone_and_the_run_fails(self):
+        self.assertEqual(self.first.returncode, 1, self.first.stdout + self.first.stderr)
+        self.assertRegex(self.summary(self.first), r"^summary: created 23, updated 0, ok \d+, kept 0, refused 3, ")
+        for name in SERVICES:
+            self.assertIn(f'refused     event orchestration on "{name}"  [this PagerDuty plan lacks Advanced Event '
+                          "Orchestration; titles left out, the severity rules alone put in (PagerDuty: "
+                          "forbidden_feature: Advanced Event Orchestration is not on this account: only rules in the "
+                          "'start' set will be evaluated;", self.first.stdout)
+            sid = self.service_id(name)
+            self.assertEqual(pd_setup.orchestration_shape(self.state.orchestrations[sid]),
+                             pd_setup.orchestration_shape(pd_setup.severity_only(sid, {"P1": "PRI1", "P2": "PRI2",
+                                                                                        "P3": "PRI3"})))
+            self.assertTrue(self.state.active[sid])
+            event, outcome = self.outcome(name)
+            self.assertEqual((event["summary"], outcome), (DESCRIPTION, {"severity": "warning", "priority": "PRI3"}))
+
+    def test_an_update_is_put_back_and_refused_and_severity_still_runs(self):
+        for name in SERVICES:
+            sid = self.service_id(name)
+            self.state.orchestrations[sid] = self.state.store_orchestration(today(sid))
+        before = len(self.state.writes())
+        result = self.pd("--apply")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertRegex(self.summary(result), r"^summary: created 0, updated 0, ok \d+, kept 0, refused 3, ")
+        self.assertIn('refused     event orchestration on "TPA beta · Member records"  [this PagerDuty plan lacks '
+                      "Advanced Event Orchestration; titles unchanged, the previous orchestration restored "
+                      "(PagerDuty: forbidden_feature:", result.stdout)
+        puts = orchestration_puts(self.state, before)
+        self.assertEqual(len(puts), 6, "each service: the update, then the previous orchestration put back")
+        for name in SERVICES:
+            sid = self.service_id(name)
+            self.assertEqual([s["id"] for s in self.state.orchestrations[sid]["sets"]], ["start"])
+            kept = [(r["label"], r["conditions"], pd_setup._set_actions(r["actions"]), r["disabled"])
+                    for r in self.rules(sid)]
+            self.assertEqual(kept, [(t["label"], t["conditions"], t["actions"], False) for t in TODAY],
+                             "today's severity rules, exactly")
+            for severity, want in (("Warning", "PRI3"), ("critical", "PRI1"), ("ERROR", "PRI2")):
+                self.assertEqual(self.outcome(name, severity=severity)[1]["priority"], want, (name, severity))
+            self.assertEqual(self.outcome(name, severity="No severity")[1], {}, "the default, critical")
+
+    def test_the_plan_still_plans_it_and_writes_nothing(self):
+        before = len(self.state.writes())
+        result = self.pd()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(self.state.writes()), before)
+        self.assertIn("(the titles need Advanced Event Orchestration", result.stdout)
+
+
+class RestoreFails(Base):
+    """The update is taken with warnings and putting the previous orchestration back fails: the run says so, and the
+    severity rules, which are in "start", still run."""
+
+    state_options = {"advanced_orchestration": False, "fail_orchestration_put": 2}
+
+    def test_the_severity_rules_still_run(self):
+        result = self.pd("--apply", "--add-rules")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('refused     event orchestration on "TPA beta · Portal & API"  [this PagerDuty plan lacks '
+                      "Advanced Event Orchestration (PagerDuty: forbidden_feature:", result.stdout)
+        self.assertIn("putting the previous orchestration back FAILED (HTTP 500:", result.stdout)
+        sid = self.service_id("TPA beta · Portal & API")
+        self.assertEqual([s["id"] for s in self.state.orchestrations[sid]["sets"]], ["start", "titles"])
+        event, outcome = self.state.orchestrate(sid, monitoring(subject=SUBJECT, severity="warning"))
+        self.assertEqual((event["summary"], outcome), (DESCRIPTION, {"severity": "warning", "priority": "PRI3"}),
+                         "only start runs: no title, the severity as designed")
 
 
 if __name__ == "__main__":

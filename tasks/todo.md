@@ -53,15 +53,20 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   - docs/PAGERDUTY.md's Google Cloud half rewritten for Terraform. Tests: `tests/pagerduty/test_tf_with_keys.py`.
 - [x] PD titles (2026-10-13, the owner: "Arent all of these messages supposed to be formatted better?"), branch
   `pd-titles` (docs/PAGERDUTY.md, "Incident titles"):
-  - Each service orchestration's `start` set titles the incident with the policy's `documentation.subject` (not
-    Monitoring's `[ALERT - …]` default), else "policy · condition", else Monitoring's summary. It copies
-    `what_to_check`, `console`, `observed` and `threshold` from the payload into the details, then routes to the
-    `severity` set: the three severity rules, unchanged. The dedup key is untouched.
+  - Each service orchestration's `start` set keeps the three severity rules, each now routing to a `titles` set, plus
+    a fourth rule with no conditions that only routes. `titles` sets the title to the policy's `documentation.subject`
+    (not Monitoring's `[ALERT - …]` default), else "policy · condition", else Monitoring's summary. It copies
+    `what_to_check`, `console`, `observed` and `threshold` from the payload into the details. The dedup key is
+    untouched.
+  - Review (HOLD on 21c377f): the titles need Advanced Event Orchestration. Without it PagerDuty runs `start` alone,
+    so the severity rules stay there. `--apply` reads the update's `warnings`, puts the previous orchestration back,
+    refuses and exits 1. No API shows the add-on beforehand, so the plan says so.
   - The plan lists an orchestration update rule by rule. `pd_test_event.py` checks the title (`--monitoring-subject`
-    for the fallback). The fake models nested sets, variables and extractions. 70 tests; 6 mutants killed.
+    for the fallback). The fake models nested sets, variables, extractions and an account without the add-on. 74
+    tests; 11 mutants killed.
   - `make pagerduty-plan` (live, read only): 3 to update, the orchestrations only.
-- [ ] PD titles, by the orchestrator: `pd_setup.py --apply`, then the two live test events (docs/PAGERDUTY.md,
-  "Verified live").
+- [ ] PD titles, by the orchestrator: `pd_setup.py --apply`, then `make pagerduty-plan` (0 to update), then the two
+  live test events (docs/PAGERDUTY.md, "Incident titles", "Applying it").
 - [x] CD (2026-10-11, the owner: hosted dashboard "Yes, everything") the cloud dashboards, branch `cloud-dashboards`:
   - [x] Vendored tpa-platform's `infra/monitoring.yml` (beta-alert-gaps `d88305db`, blob `3e19a7d0`, D-141 included) into
     `cloud/catalogue/`; `scripts/vendor_catalogue.sh` re-vendors from committed objects only and checks drift.

@@ -103,11 +103,16 @@ def not_found():
 
 class FakeState:
     def __init__(self, refuse_intelligent=False, rich_contacts=False, refuse_team_create=False, grouping_error=None,
-                 redirect_pd=False):
+                 redirect_pd=False, advanced_orchestration=True, fail_orchestration_put=None):
         self.lock = threading.Lock()
         self.seq = itertools.count(1)
         self.requests: list[dict] = []
         self.page = 2  # small pages, so every listing paginates
+        # Without Advanced Event Orchestration, PagerDuty takes an orchestration that routes between sets or uses
+        # variables or extractions, answers with warnings, and evaluates the "start" set alone, without those actions.
+        self.advanced_orchestration = advanced_orchestration
+        self.fail_orchestration_put = fail_orchestration_put  # the n-th orchestration PUT of the run answers 500
+        self.orchestration_puts = 0
         self.refuse_intelligent = refuse_intelligent
         self.refuse_team_create = refuse_team_create
         self.grouping_error = grouping_error  # (status, text) for any grouping-setting write
@@ -318,11 +323,16 @@ class FakeState:
 
         if p[:2] == ["event_orchestrations", "services"] and len(p) == 3:
             sid = p[2]
+            warnings = None
             if method == "PUT":
+                self.orchestration_puts += 1
+                if self.orchestration_puts == self.fail_orchestration_put:
+                    raise Fail(500, {"error": {"message": "Internal Server Error"}})
                 self.orchestrations[sid] = self.store_orchestration(body["orchestration_path"])
+                warnings = self.orchestration_warnings(self.orchestrations[sid]) or None
             path = self.orchestrations.get(sid) or {"type": "service", "parent": {"id": sid}, "sets": [
                 {"id": "start", "rules": []}], "catch_all": {"actions": {}}}
-            return 200, {"orchestration_path": path}
+            return 200, {"orchestration_path": path, **({"warnings": warnings} if method == "PUT" else {})}
         if p[:2] == ["event_orchestrations", "services"] and len(p) == 4 and p[3] == "active":
             if method == "PUT":
                 self.active[p[2]] = bool(body["active"])
@@ -435,6 +445,21 @@ class FakeState:
         return {"type": "service", "parent": path["parent"], "sets": sets,
                 "catch_all": {"actions": self.stored_actions(path.get("catch_all", {}).get("actions", {}))}}
 
+    def orchestration_warnings(self, path) -> list[dict]:
+        """What an account without Advanced Event Orchestration answers: one warning a rule using its features."""
+        if self.advanced_orchestration:
+            return []
+        found = []
+        for s in path["sets"]:
+            for r in s["rules"]:
+                used = [k for k in ("route_to", "variables", "extractions") if r["actions"].get(k)]
+                if s["id"] != "start" or used:
+                    found.append({"feature": used[0] if used else "sets", "feature_type": "actions",
+                                  "message": "Advanced Event Orchestration is not on this account: only rules in "
+                                             "the 'start' set will be evaluated", "rule_id": r["id"],
+                                  "warning_type": "forbidden_feature"})
+        return found
+
     @staticmethod
     def stored_actions(actions):
         """As the API returns them: every action field, and every extraction field, null or not."""
@@ -446,7 +471,8 @@ class FakeState:
     def orchestrate(self, sid, body) -> tuple[dict, dict]:
         """The event ({summary, custom_details}) after the service's orchestration, and the severity and priority it
         set. From "start", each set's first matching rule applies its actions and its route_to moves the event on; a
-        set where nothing matches applies the catch-all and ends."""
+        set where nothing matches applies the catch-all and ends. Without Advanced Event Orchestration, "start" alone,
+        and none of its rules' routes, variables or extractions."""
         event = {"summary": body.get("description"), "custom_details": copy.deepcopy(body.get("details") or {})}
         outcome: dict = {}
         path = self.orchestrations.get(sid)
@@ -458,6 +484,8 @@ class FakeState:
             visited.add(current)
             rule = next((r for r in sets[current] if not r.get("disabled") and self.matches(r, event)), None)
             actions = rule["actions"] if rule else path["catch_all"]["actions"]
+            if not self.advanced_orchestration:
+                actions = {k: v for k, v in actions.items() if k not in ("route_to", "variables", "extractions")}
             self.apply_actions(actions, event, outcome)
             current = actions.get("route_to") if rule else None
         return event, outcome

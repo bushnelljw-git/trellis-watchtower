@@ -8,8 +8,8 @@ What it makes (each found by its exact name, created when absent and corrected w
   - one service per Google Cloud project ("TPA beta · Portal & API", "· Member records", "· Call centre"), each with
     urgency from severity, a 30-minute acknowledgement timeout, no auto-resolve, the Google Cloud Monitoring
     integration, an alert grouping setting (intelligent, or time-based where the account refuses it) and a service
-    event orchestration that titles the incident with the alert policy's own subject (else "policy · condition") and
-    turns Monitoring's severity, in any letter case, into the alert's severity and the incident's priority;
+    event orchestration that turns Monitoring's severity, in any letter case, into the alert's severity and the
+    incident's priority, then titles the incident with the alert policy's own subject (else "policy · condition");
   - business service "Trellis TPA (beta)", supported by the three services;
   - with --add-rules only, each person's designed notification rules that are missing (never adding or changing a
     contact method).
@@ -19,10 +19,11 @@ service to #tpa-beta-alerts with every urgency, every priority and the five inci
 
 What it will not do: delete anything; touch "Default Service" or the "Default" escalation policy; create a
 notification rule without --add-rules (so a rule a person removed stays removed); change a schedule that has more
-than one active layer; or create a missing service while a service carrying our integration exists under a name the
-design doesn't use (it may be ours, renamed). Those print as "kept" or "refused". When a parent object (team,
-schedule, policy, service, business service) is refused by PagerDuty, the run stops before anything that depends on
-it.
+than one active layer; create a missing service while a service carrying our integration exists under a name the
+design doesn't use (it may be ours, renamed); or keep an event orchestration PagerDuty answered with warnings (the
+titles need Advanced Event Orchestration: without it, the previous orchestration is put back). Those print as "kept"
+or "refused". When a parent object (team, schedule, policy, service, business service) is refused by PagerDuty, the
+run stops before anything that depends on it.
 
 Usage:
   scripts/pagerduty/pd_setup.py                    dry run: print the plan, change nothing
@@ -57,6 +58,10 @@ class Stop(Exception):
     """A parent object was refused: nothing that depends on it is attempted."""
 
 
+class Declined(Exception):
+    """PagerDuty took a change but warned it would not run all of it, and the script put back what was there."""
+
+
 class Plan:
     """Prints each object's state and, with --apply, runs the change."""
 
@@ -66,6 +71,7 @@ class Plan:
     def __init__(self, apply: bool):
         self.apply = apply
         self.counts = {k: 0 for k in self.WORDS}
+        self.notes: set[str] = set()
 
     def _say(self, verb: str, what: str, detail: str = "") -> None:
         self.counts[verb] += 1
@@ -82,6 +88,12 @@ class Plan:
         """The account differs from the design in a way the script must not change by itself."""
         self._say("refused", what, detail)
 
+    def note_once(self, text: str) -> None:
+        """A remark for the person running the script, printed once a run; never counted."""
+        if text not in self.notes:
+            self.notes.add(text)
+            out(f"{'':10}({text})")
+
     def person(self, what: str, detail: str) -> None:
         """A step only a person can take; reported, never counted as a change."""
         self._say("person", what, detail)
@@ -91,8 +103,8 @@ class Plan:
         if self.apply and action is not None:
             try:
                 result = action()
-            except ApiError as e:
-                self._say("refused", what, f"PagerDuty said {e}")
+            except (ApiError, Declined) as e:
+                self._say("refused", what, f"PagerDuty said {e}" if isinstance(e, ApiError) else str(e))
                 if parent:
                     raise Stop(what) from None
                 return placeholder
@@ -337,8 +349,8 @@ def service_fields(cfg: dict, policy_id: str) -> dict:
 
 
 def title_rules() -> list[dict]:
-    """The "start" set: retitle the event, copy four payload fields into its details, then go on to the severity set.
-    The first rule that matches wins (pdlib.py, "The incident's title")."""
+    """The "titles" set: retitle the event and copy four payload fields into its details. The first rule that matches
+    wins (pdlib.py, "The incident's title")."""
     details = [{"target": f"event.custom_details.{key}", "source": source, "regex": regex}
                for key, source, regex in d.TITLE_DETAILS]
 
@@ -352,27 +364,57 @@ def title_rules() -> list[dict]:
         {"label": "Title: the policy's own subject",
          "conditions": [{"expression": d.SUBJECT_EXPRESSION}],
          "actions": {"variables": [variable("subject", d.SUBJECT_FIELD)],
-                     "extractions": title("{{variables.subject}}") + details, "route_to": d.SEVERITY_SET}},
+                     "extractions": title("{{variables.subject}}") + details}},
         {"label": "Title: policy · condition (the policy has no subject of its own)",
          "conditions": [{"expression": d.NAMES_EXPRESSION}],
          "actions": {"variables": [variable("policy", d.POLICY_FIELD), variable("condition", d.CONDITION_FIELD)],
                      "extractions": title("{{variables.policy}}" + d.TITLE_SEPARATOR + "{{variables.condition}}")
-                     + details, "route_to": d.SEVERITY_SET}},
+                     + details}},
         {"label": "Title: as Monitoring wrote it (no policy or condition name)",
          "conditions": [],
-         "actions": {"extractions": details, "route_to": d.SEVERITY_SET}},
+         "actions": {"extractions": details}},
     ]
 
 
-def desired_orchestration(service_id: str, priorities: dict[str, str]) -> dict:
-    rules = [{
+def severity_rules(priorities: dict[str, str], route_to: str | None) -> list[dict]:
+    return [{
         "label": d.rule_label(r),
         "conditions": [{"expression": d.rule_expression(r["monitoring"])}],
-        "actions": {"severity": r["severity"], "priority": priorities[r["priority"]]},
+        "actions": {"severity": r["severity"], "priority": priorities[r["priority"]],
+                    **({"route_to": route_to} if route_to else {})},
     } for r in d.SEVERITY_RULES]
+
+
+def desired_orchestration(service_id: str, priorities: dict[str, str]) -> dict:
+    """"start": the severity rules, each going on to "titles", then a rule for every other event that only goes on.
+    Without Advanced Event Orchestration PagerDuty runs "start" alone: the severity still applies (pdlib.py)."""
+    start = severity_rules(priorities, d.TITLES_SET) + [{
+        "label": "Any other severity: keeps the default (critical), on to the titles",
+        "conditions": [], "actions": {"route_to": d.TITLES_SET}}]
     return {"type": "service", "parent": ref("service", service_id),
-            "sets": [{"id": "start", "rules": title_rules()}, {"id": d.SEVERITY_SET, "rules": rules}],
+            "sets": [{"id": "start", "rules": start}, {"id": d.TITLES_SET, "rules": title_rules()}],
             "catch_all": {"actions": {}}}
+
+
+def severity_only(service_id: str, priorities: dict[str, str]) -> dict:
+    """The design before the titles: what a new service is given when PagerDuty declines the titles."""
+    return {"type": "service", "parent": ref("service", service_id),
+            "sets": [{"id": "start", "rules": severity_rules(priorities, None)}], "catch_all": {"actions": {}}}
+
+
+def restorable(service_id: str, path: dict) -> dict:
+    """An orchestration as read, as a body to put back: its sets, rules (without their ids) and catch-all."""
+    return {"type": "service", "parent": ref("service", service_id),
+            "sets": [{"id": s.get("id"), "rules": [{"label": r.get("label"), "conditions": r.get("conditions") or [],
+                                                   "actions": _set_actions(r.get("actions") or {}),
+                                                   "disabled": bool(r.get("disabled"))}
+                                                  for r in s.get("rules") or []]}
+                     for s in path.get("sets") or []],
+            "catch_all": {"actions": _set_actions((path.get("catch_all") or {}).get("actions") or {})}}
+
+
+def warning_words(warnings: list[dict]) -> str:
+    return "; ".join(f"{w.get('warning_type') or 'warning'}: {w.get('message') or ''}".strip() for w in warnings)
 
 
 def _set_actions(actions):
@@ -413,9 +455,12 @@ def orchestration_changes(have: dict, want: dict) -> list[str]:
             lines.append(f'~ {set_id}: "{label}" (moved from set "{moved[0]}", unchanged)')
         elif same_label:
             was_in, was = same_label[0]
-            what = [p for i, p in enumerate(("conditions", "actions", "disabled")) if was[i] != shape[i]]
+            what = ["conditions changed"] if was[0] != shape[0] else []
+            what += [f"{k} {'added' if k not in was[1] else 'removed' if k not in shape[1] else 'changed'}"
+                     for k in sorted(set(was[1]) | set(shape[1])) if was[1].get(k) != shape[1].get(k)]
+            what += ["disabled changed"] if was[2] != shape[2] else []
             where = f'moved from set "{was_in}", ' if was_in != set_id else ""
-            lines.append(f'~ {set_id}: "{label}" ({where}{", ".join(what)} changed)')
+            lines.append(f'~ {set_id}: "{label}" ({where}{", ".join(what)})')
         else:
             lines.append(f'+ {set_id}: "{label}"')
     for set_id, label, _ in old:
@@ -499,13 +544,33 @@ def ensure_services(pd: PagerDuty, plan: Plan, policy_id: str, priorities: dict[
 
 def ensure_orchestration(pd: PagerDuty, plan: Plan, name: str, sid: str, new: bool, priorities: dict[str, str]):
     what = f'  event orchestration on "{name}"'
-    detail = f"title: the policy's subject, else policy{d.TITLE_SEPARATOR}condition; "
-    detail += "; ".join(f"{r['monitoring']} -> {r['severity']} {r['priority']}" for r in d.SEVERITY_RULES)
-    detail += " (any letter case); anything else keeps the default (critical)"
+    detail = "; ".join(f"{r['monitoring']} -> {r['severity']} {r['priority']}" for r in d.SEVERITY_RULES)
+    detail += " (any letter case); anything else keeps the default (critical); "
+    detail += f"title: the policy's subject, else policy{d.TITLE_SEPARATOR}condition"
+    url = f"/event_orchestrations/services/{sid}"
     want = desired_orchestration(sid, priorities)
+    path = None if new else pd.get(url)["orchestration_path"]
 
     def put():
-        return pd.write("PUT", f"/event_orchestrations/services/{sid}", {"orchestration_path": want})
+        """The update. PagerDuty answers an orchestration it will not run in full (no Advanced Event Orchestration)
+        with warnings: the previous orchestration, or for a new service the severity rules alone, goes back."""
+        warnings = (pd.write("PUT", url, {"orchestration_path": want}) or {}).get("warnings") or []
+        if not warnings:
+            return None
+        lead = ("this PagerDuty plan lacks Advanced Event Orchestration"
+                if any(w.get("warning_type") == "forbidden_feature" for w in warnings) else "PagerDuty warned")
+        said = f"(PagerDuty: {warning_words(warnings)})"
+        back = severity_only(sid, priorities) if path is None else restorable(sid, path)
+        try:
+            again = (pd.write("PUT", url, {"orchestration_path": back}) or {}).get("warnings") or []
+        except ApiError as e:
+            raise Declined(f"{lead} {said}; putting the previous orchestration back FAILED ({e}). The severity rules "
+                           "are in start, so they still run; re-run --apply") from None
+        restored = ("titles left out, the severity rules alone put in" if path is None else
+                    "titles unchanged, the previous orchestration restored")
+        if again:
+            restored += f", which PagerDuty also warned about ({warning_words(again)})"
+        raise Declined(f"{lead}; {restored} {said}")
 
     def activate():
         return pd.write("PUT", f"/event_orchestrations/services/{sid}/active", {"active": True})
@@ -514,13 +579,16 @@ def ensure_orchestration(pd: PagerDuty, plan: Plan, name: str, sid: str, new: bo
         plan.change("create", what, detail, put)
         plan.change("create", f'  event orchestration active on "{name}"', "", activate)
         return
-    path = pd.get(f"/event_orchestrations/services/{sid}")["orchestration_path"]
     if orchestration_shape(path) == orchestration_shape(want):
         plan.ok(what, detail)
     else:
         plan.change("update", what, detail, put)
         for line in orchestration_changes(path, want):
             out(f"{'':14}{line}")
+        if not plan.apply:
+            plan.note_once("the titles need Advanced Event Orchestration, which no PagerDuty API shows before an "
+                           "update; --apply reads each update's warnings and, if there are any, puts the previous "
+                           "orchestration back and refuses")
     active = (pd.get(f"/event_orchestrations/services/{sid}/active") or {}).get("active")
     if active:
         plan.ok(f'  event orchestration active on "{name}"')

@@ -138,16 +138,24 @@ EXPECTED_URGENCY = {"critical": "high", "error": "high", "warning": "low", "info
 # The incident's title (docs/PAGERDUTY.md, "Incident titles"). Monitoring titles each event with its generated summary
 # ("tpa_jobs_alerts for trellistpa-beta-tpa-app Cloud Run Job labels {…} with metric labels {…} is above the threshold
 # of 0.000 with a value of 2.000. | Violation started: … | Policy: … | View incident: <url>"), and PagerDuty and Slack
-# show it as the incident's title. Each service orchestration's "start" set retitles the event, then sends it on to the
-# "severity" set (the rules above, unchanged). The first title rule that matches wins:
+# show it as the incident's title.
+#
+# Each service orchestration's "start" set holds the severity rules above, each of which then goes on (route_to) to the
+# "titles" set, and a last rule with no conditions that only goes on, so an event with no severity rule is titled too.
+# In "titles" the first rule that matches wins:
 #   1. the policy's own subject, documentation.subject. tpa-platform gives every policy a short plain one, such as
 #      "beta · engine p95 above 2 s". A policy without one gets Monitoring's, "[ALERT - Warning] <condition> on
 #      <resource>", which is not used;
 #   2. else "<policy name> · <condition name>";
 #   3. else (an event without them) the title as Monitoring wrote it.
 # Every title rule also copies four fields of the same payload to the top of the alert's details, where the PagerDuty
-# app and web show them first. Nothing is fetched, and nothing outside the payload is added. No rule touches the dedup
-# key, so a resolve event still finds its incident.
+# app and web show each on its own line. Nothing is fetched, and nothing outside the payload is added. No rule touches
+# the dedup key, so a resolve event still finds its incident.
+#
+# Routing to a second set, variables and extractions are Advanced Event Orchestration, a paid add-on. Without it,
+# PagerDuty still takes the update, answers with `warnings` and evaluates only "start". The severity rules live in
+# "start" for that reason: such an account loses the titles, never the severity. pd_setup.py also reads the warnings,
+# puts the previous orchestration back and refuses (exit 1).
 #
 # PagerDuty's condition language refuses a backslash inside a quoted string, so the "[" of "[ALERT - " is the class
 # [[]. A field is present when it holds a character other than a space.
@@ -156,9 +164,10 @@ SUBJECT_FIELD = f"{INCIDENT_FIELD}.documentation.subject"
 POLICY_FIELD = f"{INCIDENT_FIELD}.policy_name"
 CONDITION_FIELD = f"{INCIDENT_FIELD}.condition_name"
 MONITORING_SUBJECT = "^[[]ALERT - "
-SEVERITY_SET = "severity"
+TITLES_SET = "titles"
 TITLE_SEPARATOR = " · "
-# The first line that is not blank (RE2's . never matches a newline), and the incident's own Google Cloud console link.
+# The first line that is not blank (RE2's . never matches a newline, unless PagerDuty were to compile with the s flag:
+# then it takes the rest of the field, which is harmless), and the incident's own Google Cloud console link.
 FIRST_LINE = "^[[:space:]]*(.+)"
 CONSOLE_LINK = "^https://console[.]cloud[.]google[.]com/[^[:space:]]+"
 # (key in the alert's details, the payload field it is copied from, the regex that picks it out)

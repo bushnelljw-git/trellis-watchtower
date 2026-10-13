@@ -186,6 +186,6 @@ pages one PagerDuty service: "TPA beta · Portal & API" for the app project, "·
 Slack). A WARNING policy becomes a low-urgency P3 (app, email, Slack). A policy with no severity still pages at high
 urgency (the rules ignore letter case). The on-call person is on the "TPA primary on-call" schedule. A high-urgency
 page goes to level 2 after 15 minutes without an acknowledgement; low urgency never escalates. Slack
-messages come from PagerDuty in #tpa-beta-alerts. The page's title is the policy's `documentation.subject`, so every
-policy needs a short, plain one; without it, the title is "policy · condition" (2026-10-13). How it works, how to
-silence it, and how to test it are in [PAGERDUTY.md](PAGERDUTY.md).
+messages come from PagerDuty in #tpa-beta-alerts. Once PagerDuty's titles are applied (2026-10-13), the page's title
+is the policy's `documentation.subject`, so every policy needs a short, plain one; without it, the title is
+"policy · condition". How it works, how to silence it, and how to test it are in [PAGERDUTY.md](PAGERDUTY.md).

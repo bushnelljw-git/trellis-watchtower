@@ -70,7 +70,9 @@ class TestEvents(Base):
         """Before pd_setup.py --apply adds the title rules, the live check must say so."""
         sid = self.service_id("TPA beta · Portal & API")
         path = self.state.orchestrations[sid]
-        path["sets"] = [{"id": "start", "rules": next(s for s in path["sets"] if s["id"] == "severity")["rules"]}]
+        path["sets"] = [{"id": "start", "rules": self.severity_rules(sid)}]
+        for rule in path["sets"][0]["rules"]:
+            rule["actions"]["route_to"] = None
         result = self.event("--role", "app", "--severity", "warning", "--send", "--wait", "5")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("urgency low, alert severity warning, priority P3", result.stdout)
