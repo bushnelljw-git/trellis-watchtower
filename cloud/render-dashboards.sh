@@ -10,6 +10,7 @@
 #                                           (datasource.ts filterQuery). Empty CC (production-full has no call-centre
 #                                           project): the no-cc/ variants replace the pages with a call-centre part,
 #                                           and the pages that read the call centre alone (CC_ONLY_PAGES) are left out.
+#                                           A page in production/ replaces its page in production whatever this is.
 #   TPA_ENVIRONMENT     required, `beta` or `production` (tpa-platform's local.env): the uptime tiles' wording, and
 #                       the limits each environment's Terraform sets (a service's max_instances and ceiling policy, a
 #                       database's max_connections): a line drawn in beta and not in production, or at another value.
@@ -133,6 +134,8 @@ for f in "$src"/*.json; do
     case " $CC_ONLY_PAGES " in *" $name "*) continue ;; esac
     [ -e "$src/no-cc/$name" ] && f="$src/no-cc/$name"
   fi
+  # A page written for this environment (production/: the services production-full runs) wins over both.
+  [ -e "$src/$environment/$name" ] && f="$src/$environment/$name"
   sed -f "$program" "$f" > "$work/out/$name"
 done
 [ "$found" = 1 ] || refuse "no dashboards in $src"

@@ -155,11 +155,12 @@ class CloudMutationTest(unittest.TestCase):
 
     def panel(self, dashboard, title, row=None):
         current = None
-        for p in dashboard["panels"]:
-            if p["type"] == "row":
-                current = p["title"]
-            elif p["title"] == title and (row is None or current.startswith(row)):
-                return p
+        for top in dashboard["panels"]:
+            for p in [top, *(top.get("panels") or [])] if top["type"] == "row" else [top]:
+                if p["type"] == "row":
+                    current = p["title"]
+                elif p["title"] == title and (row is None or current.startswith(row)):
+                    return p
         raise KeyError(title)
 
     def first_query(self, dashboard, title, row=None):
@@ -192,18 +193,18 @@ class CloudMutationTest(unittest.TestCase):
             "secondaryCrossSeriesReducer"), "has no secondaryCrossSeriesReducer")
 
     def test_bare_field_labels_in_a_display_name(self):
-        self.assertCaught(lambda d: self.panel(d, "Uptime checks passing (24 h)")["fieldConfig"]["defaults"].update(
+        self.assertCaught(lambda d: self.panel(d, "Uptime by host (24 h)")["fieldConfig"]["defaults"].update(
             displayName="${__field.labels}"), "a legend names `__field.labels` without a key")
 
     def test_bare_field_labels_in_an_override(self):
         def mutate(d):
-            self.panel(d, "Uptime checks passing (24 h)")["fieldConfig"]["overrides"].append(
+            self.panel(d, "Uptime by host (24 h)")["fieldConfig"]["overrides"].append(
                 {"matcher": {"id": "byFrameRefID", "options": "A"},
                  "properties": [{"id": "displayName", "value": "host ${__field.labels}"}]})
         self.assertCaught(mutate, "a legend names `__field.labels` without a key")
 
     def test_a_field_label_off_the_allowlist(self):
-        self.assertCaught(lambda d: self.panel(d, "Uptime checks passing (24 h)")["fieldConfig"]["defaults"].update(
+        self.assertCaught(lambda d: self.panel(d, "Uptime by host (24 h)")["fieldConfig"]["defaults"].update(
             displayName="${__field.labels.revision_name}"), "a legend names the label `revision_name`")
 
     def test_cloud_nat_by_its_address_is_refused(self):
@@ -215,6 +216,13 @@ class CloudMutationTest(unittest.TestCase):
             tsl["groupBys"] = ["resource.label.gateway_name", "metric.label.nat_ip"]
         self.assertCaught(mutate, "names the label `metric.label.nat_ip`, which is not on the allowlist")
 
+    def test_a_title_too_long_for_its_panel(self):
+        # Rule 10: at 1440 px a 3-column panel shows 18 characters of title (less with its links icon).
+        def mutate(d):
+            self.panel(d, "Uptime (24 h)")["title"] = "Uptime checks passing (24 h)"
+        self.assertCaught(mutate, 'panel "Uptime checks passing (24 h)": the title is 28 characters; a panel 3 '
+                                  "columns wide shows 18 at 1440 px")
+
     def test_a_drop_reason_off_the_nat_drop_counter_is_refused(self):
         # `reason` is Cloud NAT's word for a dropped packet; on any other metric it is refused.
         def mutate(d):
@@ -224,7 +232,7 @@ class CloudMutationTest(unittest.TestCase):
                                   "router.googleapis.com/nat/dropped_sent_packets_count")
 
     def test_a_field_label_on_the_allowlist_passes(self):
-        code, out = self.lint_mutated(lambda d: self.panel(d, "Uptime checks passing (24 h)")[
+        code, out = self.lint_mutated(lambda d: self.panel(d, "Uptime by host (24 h)")[
             "fieldConfig"]["defaults"].update(displayName="${__field.labels.resource.label.host}"))
         self.assertEqual(code, 0, out)
 

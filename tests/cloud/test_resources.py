@@ -206,6 +206,16 @@ class Infra:
                 "share": float(share.group(1)), "period": get("alignment_period").strip('"'),
                 "aligner": get("per_series_aligner").strip('"'), "reducer": get("cross_series_reducer").strip('"')}
 
+    def inside_policy(self) -> dict:
+        """`inside-down` (the module's private checks' policy): its aligner, window, reducer and the count it opens
+        below."""
+        body = self.block(self.show("infra/modules/monitoring/main.tf"),
+                          'resource "google_monitoring_alert_policy" "inside_down"')
+        get = lambda key: re.search(rf'^\s*{key}\s*=\s*"?([^"\n]+?)"?\s*$', body, re.M).group(1)
+        assert get("comparison") == "COMPARISON_LT", get("comparison")
+        return {"aligner": get("per_series_aligner"), "period": get("alignment_period"),
+                "reducer": get("cross_series_reducer"), "below": int(float(get("threshold_value")))}
+
     def latency_left_out(self, env: str) -> set[str]:
         """The services the root's monitoring calls leave out of `canary-latency` (latency_excluded_services)."""
         return {name for line in re.findall(r"\blatency_excluded_services\s*=\s*(.+)$", self.root_text(env), re.M)
@@ -382,7 +392,7 @@ def check_project(page: str, dashboard: dict) -> list[str]:
     """The project's instances against the quota line, and its Cloud NAT with `nat-port-exhaustion`'s lines."""
     problems = []
     quota = CATALOGUE.threshold("run-instances-near-quota")
-    panels = [p for p in lint.panels(dashboard) if p["title"] == "Cloud Run instances, every service"]
+    panels = [p for p in lint.panels(dashboard) if p["title"] == "Instances, every service"]
     if len(panels) != 1:
         problems.append(f"{page}: {len(panels)} project instance panels")
     for panel in panels:
@@ -465,17 +475,18 @@ def check_database(name: str, page: str, dashboard: dict, env: str) -> list[str]
 
 
 def check_overview_databases(overview: dict, env: str) -> list[str]:
-    """The overview's "Databases now" tiles colour CPU, memory and connections at the module's lines."""
+    """The overview's Databases tiles, one per instance the environment has, colour CPU and memory at the module's
+    lines (connections are on Databases)."""
     problems = []
+    tiles = sections(overview).get("Databases: up, CPU, memory, disk", [])
+    want_names = [db for db in gen.DATABASES if db in LIMITS[env]["max_connections"] or db == "cc-db" and env == "beta"]
+    if sorted(p["title"] for p in tiles) != sorted(want_names):
+        problems.append(f"{env} overview: database tiles {sorted(p['title'] for p in tiles)}, not {sorted(want_names)}")
     for name, steps in ((p["title"], {o["matcher"]["options"]: next(
             (x["value"]["steps"] for x in o["properties"] if x["id"] == "thresholds"), None)
-            for o in p["fieldConfig"]["overrides"]})
-            for p in sections(overview).get("Databases now: up, CPU, memory, disk, connections", [])):
-        cap = LIMITS[env]["max_connections"].get(name)
+            for o in p["fieldConfig"]["overrides"]}) for p in tiles):
         want = {"B": [SQL_POLICIES["cpu-high"]["value"], SQL_POLICIES["cpu-saturated"]["value"]],
-                "C": [SQL_POLICIES["memory-high"]["value"]],
-                "E": [math.floor(SQL_POLICIES[n]["share"] * cap) for n in ("connections-high", "connections-saturated")]
-                if cap else []}
+                "C": [SQL_POLICIES["memory-high"]["value"]]}
         for ref, values in want.items():
             got = [s["value"] for s in steps[ref] if s["value"] is not None and s["color"] != "transparent"]
             if got != values:
@@ -711,7 +722,8 @@ class ResourcesTest(unittest.TestCase):
             overview = json.dumps([p.get("links", []) for p in lint.panels(pages["overview"])])
             for page, service in service_pages(env):
                 url = f"/d/tw-cloud-service-{service}?"
-                self.assertIn(url, overview, f"{env}: the overview does not link {service}'s page")
+                # The overview tiles the services the environment runs, each linking its own page.
+                self.assertEqual(url in overview, service in gen.RUNS[env], f"{env}: {service}'s page and the overview")
                 self.assertIn(url, json.dumps(resource_rows(pages[page])[service][0].get("links")), (env, service))
             for name, dashboard in pages.items():
                 menus = [link for link in dashboard["links"] if link["title"] == "Services"]
@@ -824,14 +836,14 @@ class MutationTest(unittest.TestCase):
 
     def test_the_engines_own_line_off_the_catalogue(self):
         page = self.page("crm")
-        panel = next(p for p in page["panels"] if p["title"] == "engine p50 and p95 (its own request line)")
+        panel = next(p for p in page["panels"] if p["title"] == "engine p50, p95 (own request line)")
         self.steps(panel)[1]["value"] = 4000
         self.assertEqual(check_own_latency("crm", page, "engine"),
                          ["crm: engine's own latency draws red at [4000], not `engine-latency`'s 2000.0"])
 
     def test_the_engines_own_p95_on_grafanas_window(self):
         page = self.page("service-engine", "production")
-        panel = next(p for p in page["panels"] if p["title"] == "engine p50 and p95 (its own request line)")
+        panel = next(p for p in page["panels"] if p["title"] == "engine p50, p95 (own request line)")
         next(t for t in panel["targets"] if t["aliasBy"] == "p95")["timeSeriesList"]["alignmentPeriod"] = "grafana-auto"
         self.assertEqual(check_own_latency("service-engine", page, "engine"),
                          ["service-engine: engine's own p95: alignmentPeriod grafana-auto is not the policy's +300s"])

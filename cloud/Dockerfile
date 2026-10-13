@@ -106,6 +106,7 @@ COPY iap_keys.json /etc/grafana/iap_keys.json
 COPY provisioning/ /etc/grafana/provisioning/
 COPY dashboards/*.json /etc/grafana/dashboards/
 COPY dashboards/no-cc/*.json /etc/grafana/dashboards/no-cc/
+COPY dashboards/production/*.json /etc/grafana/dashboards/production/
 COPY render-dashboards.sh /usr/local/bin/render-dashboards
 RUN chown -R root:root /etc/grafana /usr/local/bin/render-dashboards /var/log/grafana /usr/share/grafana/.aws \
  && chmod -R a-w,a+rX /etc/grafana \

@@ -32,13 +32,16 @@ RESTING = {"TPA_PAUSED_JOBS": "nightly-anomalies,accumulator-reconcile",
 
 
 def stat(dashboard: dict, row: str | None, title: str) -> dict:
-    """The panel titled `title`, under the row whose title starts with `row` (any row when None)."""
+    """The panel titled `title`, under the row whose title starts with `row` (any row when None), a shut row's
+    panels included."""
     current = None
     for panel in dashboard["panels"]:
-        if panel["type"] == "row":
-            current = panel["title"]
-        elif panel["title"] == title and (row is None or (current or "").startswith(row)):
-            return panel
+        inside = [panel, *(panel.get("panels") or [])] if panel["type"] == "row" else [panel]
+        for p in inside:
+            if p["type"] == "row":
+                current = p["title"]
+            elif p["title"] == title and (row is None or (current or "").startswith(row)):
+                return p
     raise KeyError((row, title))
 
 
@@ -99,14 +102,14 @@ class RenderTest(unittest.TestCase):
         overview = pages["overview.json"]
         self.assertNotIn("Call centre", [p["title"].split(" (")[0] for p in overview["panels"] if p["type"] == "row"])
         self.assertNotIn("call centre](", json.dumps(overview))
-        uptime = stat(overview, "Now", "Uptime checks passing (24 h)")["description"]
+        uptime = stat(overview, "Right now", "Uptime (24 h)")["description"]
         self.assertIn("public host", uptime)
         self.assertNotIn("IAP", uptime)
         self.assertNotIn("cc-db", [p["title"].split(" ")[0] for p in pages["databases.json"]["panels"]
                                    if p["type"] == "row"])
 
     def test_beta_words_uptime_for_iap(self):
-        uptime = stat(self.rendered(BETA)["overview.json"], "Now", "Uptime checks passing (24 h)")["description"]
+        uptime = stat(self.rendered(BETA)["overview.json"], "Right now", "Uptime (24 h)")["description"]
         self.assertIn("behind IAP", uptime)
         self.assertNotIn("public host", uptime)
 

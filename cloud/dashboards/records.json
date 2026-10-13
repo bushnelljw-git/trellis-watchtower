@@ -1926,7 +1926,7 @@
         },
         {
           "type": "timeseries",
-          "title": "Concurrent requests, busiest instance (p99, p50)",
+          "title": "Busiest instance's requests (p99, p50)",
           "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.",
           "gridPos": {
             "h": 7,
@@ -2954,7 +2954,7 @@
         },
         {
           "type": "timeseries",
-          "title": "Concurrent requests, busiest instance (p99, p50)",
+          "title": "Busiest instance's requests (p99, p50)",
           "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.",
           "gridPos": {
             "h": 7,
@@ -4649,7 +4649,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Cloud Run instances, every service",
+      "title": "Instances, every service",
       "description": "Every Cloud Run instance in the PHI project, summed. The red line is `run-instances-near-quota`'s: above 68 for 10 minutes pages. The grey line is the regional quota, 85: at it no service can start another instance, whatever its own ceiling.",
       "gridPos": {
         "h": 7,
@@ -4754,7 +4754,7 @@
     },
     {
       "type": "timeseries",
-      "title": "NAT ports: allocated, and the most in use",
+      "title": "NAT ports: allocated, in use",
       "description": "Cloud NAT's ports for connectors' messages: the ports allocated to every instance behind the gateway (`nat/allocated_ports`), and the most connections one instance held to one destination (`nat/port_usage`). In use close to an instance's share of the allocated ports, new connections wait or drop. A cold gateway allocates ports as instances arrive, so the first calls after a quiet spell can wait.",
       "gridPos": {
         "h": 7,

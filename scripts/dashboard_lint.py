@@ -10,7 +10,8 @@ Every dashboard fails when:
   2. it uses a datasource uid outside its set: a local dashboard (grafana/dashboards) `prometheus` or `loki`;
      a cloud dashboard (cloud/dashboards, and its no-cc/ variants) exactly the uids declared under
      cloud/provisioning/datasources/;
-  3. it has no uid, or a uid another dashboard already uses (a no-cc/ variant has its page's uid, and nothing else);
+  3. it has no uid, or a uid another dashboard already uses (a no-cc/ or production/ variant has its page's uid, and
+     nothing else);
   4. it is not valid JSON;
   4b. a panel is a library panel (`libraryPanel`): its queries live in Grafana's database, not in this file, so no
      rule here could read them.
@@ -57,7 +58,10 @@ A cloud dashboard (the production image, read by grp-platform through IAP) also 
      variable appears in a query, so no dashboard query takes the viewer's input;
   8. a panel mixes datasources (so a PHI-project panel is `cloud-phi` and nothing else), or uses a panel type
      outside the allowlist;
-  9. it declares any template variable (so no panel offers a viewer a filter or a project to change).
+  9. it declares any template variable (so no panel offers a viewer a filter or a project to change);
+  10. a panel's title does not fit its width on a 1440 px wide screen (TITLE_PX_PER_CHAR a character, the panel's
+     share of the screen less TITLE_PADDING_PX, and TITLE_LINK_PX more for the link icon of a panel with links): a
+     title cut short ("tpa…", "con…") says nothing.
 
 These rules bound what the dashboards ask, not what a viewer can ask. Any signed-in viewer can post a query of their
 own to /api/ds/query (any filter, any reducer, another project), and Grafana 12.4 has no setting that limits a
@@ -84,6 +88,8 @@ LOCAL_DIR = ROOT / "grafana" / "dashboards"
 LOKI_RULES_DIR = ROOT / "loki" / "rules"
 CLOUD_DIR = ROOT / "cloud" / "dashboards"
 CLOUD_DATASOURCES = ROOT / "cloud" / "provisioning" / "datasources"
+# A page written again for a setting (render-dashboards.sh picks it): no call centre; production.
+CLOUD_VARIANTS = ("no-cc", "production")
 
 LOCAL_UIDS = {"prometheus", "loki"}
 # Grafana's own pseudo-datasources: the built-in annotation query and mixed/dashboard panels.
@@ -126,6 +132,15 @@ ALIAS_RE = re.compile(r"\{\{\s*([^}\s]+)\s*\}\}")
 FIELD_LABELS_RE = re.compile(r"__field\.labels(?:\.([A-Za-z0-9_.]+))?")
 # A LogQL log query starts with its stream selector; a metric query starts with a function, a number or `(`.
 LOG_QUERY_RE = re.compile(r"^\s*\{")
+# Rule 10: Grafana's panel title (14 px) is about 8 px a character; a 1440 px screen gives each of the 24 grid columns
+# 60 px; the header keeps some 32 px for its padding and the description's (i), and 16 px more for the links icon.
+TITLE_VIEWPORT_PX, TITLE_PX_PER_CHAR, TITLE_PADDING_PX, TITLE_LINK_PX = 1440, 8, 32, 16
+
+
+def title_room(panel: dict) -> int:
+    """The characters a panel's title can show at TITLE_VIEWPORT_PX."""
+    width = panel.get("gridPos", {}).get("w", 24) * TITLE_VIEWPORT_PX // 24
+    return (width - TITLE_PADDING_PX - (TITLE_LINK_PX if panel.get("links") else 0)) // TITLE_PX_PER_CHAR
 
 # ---- Local: the labels a panel may show (docs/SPEC.md "Naming rules"; docs/SIGNALS.md) -----------------------------
 # Prometheus: the probe contract, the postgres db, an alert's name, a value turned into a label by count_values
@@ -704,6 +719,10 @@ def lint_cloud(path: Path, dashboard: dict, datasources: dict[str, str]) -> list
         kind = panel.get("type")
         if kind not in CLOUD_PANEL_TYPES:
             fail(where, f"panel type `{kind}` is not one a cloud dashboard uses ({', '.join(sorted(CLOUD_PANEL_TYPES))})")
+        # 10. A title that fits its panel.
+        if kind != "row" and len(panel.get("title", "")) > title_room(panel):
+            fail(where, f"the title is {len(panel['title'])} characters; a panel {panel['gridPos']['w']} columns wide "
+                        f"shows {title_room(panel)} at {TITLE_VIEWPORT_PX} px")
 
         # 7. Legends and display names name one allowed label each, never the bare label map.
         for text in strings([panel.get("fieldConfig") or {}, panel.get("options") or {},
@@ -845,7 +864,8 @@ def main(argv: list[str]) -> int:
         else:
             into.append(Path(arg))
     if not argv:
-        local_targets, cloud_targets = [LOCAL_DIR, *sorted(LOKI_RULES_DIR.glob("*"))], [CLOUD_DIR, CLOUD_DIR / "no-cc"]
+        local_targets, cloud_targets = [LOCAL_DIR, *sorted(LOKI_RULES_DIR.glob("*"))], [
+            CLOUD_DIR, *(CLOUD_DIR / d for d in CLOUD_VARIANTS)]
     missing = [str(t) for t in local_targets + cloud_targets if argv and not t.exists()]
     if missing:
         print("dashboard_lint: no such path: " + ", ".join(missing), file=sys.stderr)
@@ -865,15 +885,16 @@ def main(argv: list[str]) -> int:
             if not isinstance(dashboard, dict):
                 errors.append(f"{path}: not a dashboard object")
                 continue
-            # 3. uid present and unique; a no-cc/ variant has its page's uid.
+            # 3. uid present and unique; a variant has its page's uid.
             uid = dashboard.get("uid")
             if not isinstance(uid, str) or not uid.strip():
                 errors.append(f"{path}: dashboard has no uid")
-            elif cloud and path.parent.name == "no-cc":
+            elif cloud and path.parent.name in CLOUD_VARIANTS:
                 page = path.parent.parent / path.name
                 page_uid = json.loads(page.read_text()).get("uid") if page.exists() else None
                 if uid != page_uid:
-                    errors.append(f"{path}: a no-cc variant needs the uid of {page} (`{page_uid}`), not `{uid}`")
+                    errors.append(f"{path}: a {path.parent.name} variant needs the uid of {page} (`{page_uid}`), "
+                                  f"not `{uid}`")
             elif uid in seen_uids:
                 errors.append(f"{path}: uid `{uid}` is already used by {seen_uids[uid]}")
             else:

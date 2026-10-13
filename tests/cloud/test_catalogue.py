@@ -25,9 +25,9 @@ import catalogue as cat  # noqa: E402
 import cloud_dashboards as gen  # noqa: E402
 import dashboard_lint as lint  # noqa: E402
 
-# Every page, and the no-cc/ variants production-full renders (scripts/cloud_dashboards.py NO_CC).
+# Every page, and the variants: no-cc/ (scripts/cloud_dashboards.py NO_CC) and production/ (PRODUCTION).
 PAGES = sorted((ROOT / "cloud" / "dashboards").glob("*.json"))
-DASHBOARDS = PAGES + sorted((ROOT / "cloud" / "dashboards" / "no-cc").glob("*.json"))
+DASHBOARDS = PAGES + sorted(p for d in ("no-cc", "production") for p in (ROOT / "cloud" / "dashboards" / d).glob("*.json"))
 ROLE = {"cloud-app": "app", "cloud-phi": "phi", "cloud-crm": "crm", "cloud-cc": "cc"}
 LOG_PREFIX = "logging.googleapis.com/user/"
 
@@ -107,7 +107,8 @@ COUNTER_ALIGNERS = {"ALIGN_DELTA", "ALIGN_RATE", "ALIGN_SUM", "ALIGN_COUNT"}
 ALIGNERS = {"counter": COUNTER_ALIGNERS, "distribution": DISTRIBUTION_ALIGNERS,
             # ALIGN_COUNT: how many points arrived, whatever they said (the home's "reporting" rows).
             "gauge": {"ALIGN_MAX", "ALIGN_MIN", "ALIGN_MEAN", "ALIGN_COUNT"},
-            "bool": {"ALIGN_FRACTION_TRUE", "ALIGN_COUNT_TRUE", "ALIGN_COUNT_FALSE", "ALIGN_COUNT"}}
+            # ALIGN_NEXT_OLDER: each checker region's latest result, as `inside-down` reads the private checks.
+            "bool": {"ALIGN_FRACTION_TRUE", "ALIGN_COUNT_TRUE", "ALIGN_COUNT_FALSE", "ALIGN_COUNT", "ALIGN_NEXT_OLDER"}}
 
 
 def promql_name(metric_type: str) -> str:
@@ -339,7 +340,9 @@ class CatalogueTest(unittest.TestCase):
     def test_no_cc_variants_read_no_call_centre_project(self):
         variants = [p for p in DASHBOARDS if p.parent.name == "no-cc"]
         self.assertEqual(sorted(p.stem for p in variants), sorted(gen.NO_CC))
-        for path in variants:
+        production = [p for p in DASHBOARDS if p.parent.name == "production"]
+        self.assertEqual(sorted(p.stem for p in production), sorted(gen.PRODUCTION))
+        for path in variants + production:
             text = path.read_text()
             self.assertNotIn("cloud-cc", text, path)
             self.assertNotIn("__TPA_CC_PROJECT_ID__", text, path)
