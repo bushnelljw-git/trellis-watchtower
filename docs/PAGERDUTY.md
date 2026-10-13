@@ -94,20 +94,27 @@ section above. Each of them, and a fourth rule with no conditions for any other 
 
 | Rule in `titles` | Matches when | Title |
 |---|---|---|
-| Title: the policy's own subject | `documentation.subject` has a character other than a space, and doesn't start with `[ALERT - ` | the subject, e.g. "beta · tpa-jobs workload_audit raised workload_orphan" |
+| Title: the policy's own subject | `documentation.subject`, after at most one leading `[…] ` tag, starts with a word and ` · ` (tpa-platform's "<environment> · <what happened>") | the subject without the tag, e.g. "beta · PagerDuty test (turn alert_pagerduty_test_enabled off)" |
 | Title: policy · condition | `policy_name` and `condition_name` both have one | "beta: a job raised an alert · from a scheduled run" |
 | Title: as Monitoring wrote it | always (no conditions) | unchanged |
 
-- **The subject is tpa-platform's.** Each alert policy's `documentation.subject` is a short, plain line that names
-  the environment and what happened. GCP fills in variables before it sends the subject. A policy without a subject
-  gets Monitoring's default, `[ALERT - Warning] <condition> on <resource>` (incident #31). The first rule skips it,
-  and the title becomes "policy · condition".
-- **The conditions.** `event.custom_details.incident.documentation.subject matches regex '[^[:space:]]' and not
-  (… matches regex '^[[]ALERT - ')`. `[[]` is a literal `[`, because the condition language refuses a backslash
-  inside a quoted string.
-- **How the title is made.** Each rule reads its fields into `variables` (regex `^[[:space:]]*(.+)`: the first line
-  that isn't blank) and writes the title with a template `extraction` into `event.summary`
-  (`{{variables.subject}}`, or `{{variables.policy}} · {{variables.condition}}`). RE2's `.` never matches a newline
+- **The subject is tpa-platform's.** Each alert policy's `documentation.subject` is a short, plain line,
+  "<environment> · <what happened>". GCP fills in variables, then sends the subject with its own tag in front:
+  incident #33's was `[ALERT - Warning] beta · PagerDuty test (turn alert_pagerduty_test_enabled off)`, and #32's
+  `[ALERT - Warning] beta · alert policy or channel changed: google.monitoring.v3.AlertPolicyService.UpdateAlertPolicy`
+  (2026-10-13; both still titled with Monitoring's summary, before the apply). The first rule drops one leading tag
+  of any kind (`[ALERT - Warning] `, `[RESOLVED] `). A policy without a subject gets Monitoring's default,
+  `[ALERT - Warning] <condition> on <resource>` (incident #31). After its tag that isn't "word · ", so the title
+  becomes "policy · condition". So does any other subject not in tpa-platform's shape.
+- **The conditions.** `event.custom_details.incident.documentation.subject matches regex
+  '^(?:[[][^]]*[]] )?[a-z][a-z-]* · '`. The condition language refuses a backslash inside a quoted string, so `[[]`
+  is a literal `[`, `[]]` a literal `]` (a `]` first in a class is literal in RE2), and `[^]]` anything but `]`. There
+  is no lookaround, because RE2 has none. The matching ignores letter case unless written `exactly`, so "Beta · " also
+  matches.
+- **How the title is made.** Each rule reads its fields into `variables` and writes the title with a template
+  `extraction` into `event.summary` (`{{variables.subject}}`, or `{{variables.policy}} · {{variables.condition}}`).
+  The subject's regex is `^(?:[[][^]]*[]] )?(.+)`: the subject without its tag. The names' regex is
+  `^[[:space:]]*(.+)`: the first line that isn't blank. A variable takes its capture group. RE2's `.` never matches a newline
   unless the `s` flag is on. If PagerDuty compiled with it, "the first line" would take the rest of the field, which
   is harmless.
 - **Details.** Every rule in `titles` also copies four fields of the same event to the top level of the alert's
@@ -142,8 +149,10 @@ the titles, never the severity.
   enablement is only an on/off switch for each service. So the dry run prints a note that `--apply` checks the warnings.
 
 `pd_setup.py`'s dry run lists an orchestration update rule by rule: `+` added, `~` moved or changed (naming each
-action that changed, such as "route_to added"), `-` removed. `pd_test_event.py` gives its event a subject and checks
-the title: the subject, or, with `--monitoring-subject` (Monitoring's own `[ALERT - …]` subject), "policy · condition".
+action that changed, such as "route_to added"), `-` removed. `pd_test_event.py` gives its event a subject in
+tpa-platform's shape with Monitoring's tag in front (`[ALERT - warning] test · PagerDuty setup check, please ignore
+(…)`) and checks the title: the subject without the tag, or, with `--monitoring-subject` (Monitoring's own default
+subject), "policy · condition".
 
 **Applying it.**
 1. `make pagerduty-plan`, and read the three updates.
@@ -409,7 +418,7 @@ A new alert policy's documentation must keep to the same rule. Each service's de
   Each lists the three severity rules "route_to added", the fourth `start` rule added, and the three `titles` rules
   added. After the apply, `make pagerduty-plan` must print "0 to create, 0 to update". Then check it live with one
   test event per path, each resolved by the test:
-  `pd_test_event.py --role app --severity warning --send` (the title is the event's subject) and
+  `pd_test_event.py --role app --severity warning --send` (the title is the event's subject without its tag) and
   `pd_test_event.py --role app --severity warning --monitoring-subject --send` (the title is "policy · condition").
   Before the apply, both say "NOT as designed" because of the title only.
 

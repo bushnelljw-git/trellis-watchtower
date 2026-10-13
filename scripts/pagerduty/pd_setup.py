@@ -354,8 +354,8 @@ def title_rules() -> list[dict]:
     details = [{"target": f"event.custom_details.{key}", "source": source, "regex": regex}
                for key, source, regex in d.TITLE_DETAILS]
 
-    def variable(name: str, path: str) -> dict:
-        return {"name": name, "path": path, "type": "regex", "value": d.FIRST_LINE}
+    def variable(name: str, path: str, value: str = d.FIRST_LINE) -> dict:
+        return {"name": name, "path": path, "type": "regex", "value": value}
 
     def title(template: str) -> list[dict]:
         return [{"target": "event.summary", "template": template}]
@@ -363,7 +363,7 @@ def title_rules() -> list[dict]:
     return [
         {"label": "Title: the policy's own subject",
          "conditions": [{"expression": d.SUBJECT_EXPRESSION}],
-         "actions": {"variables": [variable("subject", d.SUBJECT_FIELD)],
+         "actions": {"variables": [variable("subject", d.SUBJECT_FIELD, d.SUBJECT_WITHOUT_TAG)],
                      "extractions": title("{{variables.subject}}") + details}},
         {"label": "Title: policy · condition (the policy has no subject of its own)",
          "conditions": [{"expression": d.NAMES_EXPRESSION}],

@@ -143,9 +143,12 @@ EXPECTED_URGENCY = {"critical": "high", "error": "high", "warning": "low", "info
 # Each service orchestration's "start" set holds the severity rules above, each of which then goes on (route_to) to the
 # "titles" set, and a last rule with no conditions that only goes on, so an event with no severity rule is titled too.
 # In "titles" the first rule that matches wins:
-#   1. the policy's own subject, documentation.subject. tpa-platform gives every policy a short plain one, such as
-#      "beta · engine p95 above 2 s". A policy without one gets Monitoring's, "[ALERT - Warning] <condition> on
-#      <resource>", which is not used;
+#   1. the policy's own subject, documentation.subject, without Monitoring's tag. tpa-platform gives every policy a
+#      short plain one, "<environment> · <what happened>", such as "beta · engine p95 above 2 s", and Monitoring sends
+#      it with a tag in front: "[ALERT - Warning] beta · engine p95 above 2 s" (incidents #32 and #33, 2026-10-13).
+#      The rule matches a subject that, after at most one leading "[…] " tag, starts with a word and " · ", and the
+#      title is the subject without the tag. A policy without a subject gets Monitoring's own, "[ALERT - Warning]
+#      <condition> on <resource>", which has no such shape and is not used;
 #   2. else "<policy name> · <condition name>";
 #   3. else (an event without them) the title as Monitoring wrote it.
 # Every title rule also copies four fields of the same payload to the top of the alert's details, where the PagerDuty
@@ -157,13 +160,17 @@ EXPECTED_URGENCY = {"critical": "high", "error": "high", "warning": "low", "info
 # "start" for that reason: such an account loses the titles, never the severity. pd_setup.py also reads the warnings,
 # puts the previous orchestration back and refuses (exit 1).
 #
-# PagerDuty's condition language refuses a backslash inside a quoted string, so the "[" of "[ALERT - " is the class
-# [[]. A field is present when it holds a character other than a space.
+# PagerDuty's condition language refuses a backslash inside a quoted string, so the tag's "[" is the class [[] and its
+# "]" the class []] (a "]" first in a class is literal in RE2), and [^]] is anything but "]". No lookaround: RE2 has
+# none. A field is present when it holds a character other than a space.
 INCIDENT_FIELD = "event.custom_details.incident"
 SUBJECT_FIELD = f"{INCIDENT_FIELD}.documentation.subject"
 POLICY_FIELD = f"{INCIDENT_FIELD}.policy_name"
 CONDITION_FIELD = f"{INCIDENT_FIELD}.condition_name"
-MONITORING_SUBJECT = "^[[]ALERT - "
+MONITORING_TAG = "(?:[[][^]]*[]] )?"
+# Our subject's shape after the tag, and the subject without it (the regex variable takes the capture group).
+OUR_SUBJECT = f"^{MONITORING_TAG}[a-z][a-z-]* · "
+SUBJECT_WITHOUT_TAG = f"^{MONITORING_TAG}(.+)"
 TITLES_SET = "titles"
 TITLE_SEPARATOR = " · "
 # The first line that is not blank (RE2's . never matches a newline, unless PagerDuty were to compile with the s flag:
@@ -183,7 +190,7 @@ def present(field: str) -> str:
     return f"{field} matches regex '[^[:space:]]'"
 
 
-SUBJECT_EXPRESSION = f"{present(SUBJECT_FIELD)} and not ({SUBJECT_FIELD} matches regex '{MONITORING_SUBJECT}')"
+SUBJECT_EXPRESSION = f"{SUBJECT_FIELD} matches regex '{OUR_SUBJECT}'"
 NAMES_EXPRESSION = f"{present(POLICY_FIELD)} and {present(CONDITION_FIELD)}"
 
 # Each person's notification rules, built only from contact methods they already have: minutes after an incident is

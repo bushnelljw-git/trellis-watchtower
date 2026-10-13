@@ -6,8 +6,8 @@ The event goes through the service's own "Google Cloud Monitoring" integration o
 Monitoring `pagerduty` channel sends it, with `details.incident.severity` set as a Monitoring alert policy sets it and
 a subject of its own in `details.incident.documentation.subject`. The script then finds the incident, prints its
 urgency, the alert's severity, the priority and the title, compares them with the design (docs/PAGERDUTY.md), and
-resolves it through the same integration, so the escalation's second level never fires. Every title starts "TEST —
-PagerDuty setup check, please ignore". The test pages whoever is on call, the way a real alert would: that is the
+resolves it through the same integration, so the escalation's second level never fires. Every title says
+"PagerDuty setup check, please ignore". The test pages whoever is on call, the way a real alert would: that is the
 point.
 
 Usage:
@@ -38,6 +38,7 @@ import pdlib as d  # noqa: E402
 from pdlib import PagerDuty, Refused, out  # noqa: E402
 
 SUMMARY = "TEST — PagerDuty setup check, please ignore"
+TITLE = f"test{d.TITLE_SEPARATOR}PagerDuty setup check, please ignore"
 CONDITION = "test condition"
 
 
@@ -50,17 +51,19 @@ def expected(severity: str) -> tuple[str, str, str | None]:
 
 
 def subject(severity: str, service_name: str, monitoring_subject: bool) -> str:
-    """The policy's documentation.subject: the test's own, or one shaped like Monitoring's default."""
+    """The policy's documentation.subject as Monitoring sends it, its tag in front: the test's own, in tpa-platform's
+    "<environment> · <what happened>" shape, or one shaped like Monitoring's default."""
     if monitoring_subject:
         return f"[ALERT - {severity}] {CONDITION} on trellis-watchtower test"
-    return f"{SUMMARY} ({severity}, {service_name})"
+    return f"[ALERT - {severity}] {TITLE} ({severity}, {service_name})"
 
 
 def expected_title(severity: str, service_name: str, monitoring_subject: bool) -> str:
-    """The incident title the design gives (pdlib.py, "The incident's title")."""
+    """The incident title the design gives (pdlib.py, "The incident's title"): the subject without its tag, or else
+    "policy · condition"."""
     if monitoring_subject:
         return f"{SUMMARY}{d.TITLE_SEPARATOR}{CONDITION}"
-    return subject(severity, service_name, False)
+    return f"{TITLE} ({severity}, {service_name})"
 
 
 def monitoring_event(key: str, incident_key: str, severity: str, service_name: str,

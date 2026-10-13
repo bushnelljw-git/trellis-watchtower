@@ -183,15 +183,14 @@ class TheTitleRules(Base):
         (subject, names, kept) = self.rules(self.sid, "titles")
         incident = "event.custom_details.incident"
         self.assertEqual(subject["conditions"], [{"expression": (
-            f"{incident}.documentation.subject matches regex '[^[:space:]]' and not "
-            f"({incident}.documentation.subject matches regex '^[[]ALERT - ')")}])
+            f"{incident}.documentation.subject matches regex '^(?:[[][^]]*[]] )?[a-z][a-z-]* · '")}])
         self.assertEqual(names["conditions"], [{"expression": (
             f"{incident}.policy_name matches regex '[^[:space:]]' and "
             f"{incident}.condition_name matches regex '[^[:space:]]'")}])
         self.assertEqual(kept["conditions"], [], "the last title rule matches every event")
         variables = [(v["name"], v["path"], v["value"]) for r in (subject, names) for v in r["actions"]["variables"]]
         self.assertEqual(variables,
-                         [("subject", f"{incident}.documentation.subject", "^[[:space:]]*(.+)"),
+                         [("subject", f"{incident}.documentation.subject", "^(?:[[][^]]*[]] )?(.+)"),
                           ("policy", f"{incident}.policy_name", "^[[:space:]]*(.+)"),
                           ("condition", f"{incident}.condition_name", "^[[:space:]]*(.+)")])
         self.assertEqual([x["template"] for r in (subject, names) for x in r["actions"]["extractions"]
@@ -235,6 +234,27 @@ class TheTitleRules(Base):
         for subject in (UNSET, "", "   ", "\n"):
             event, _ = self.through(monitoring(subject=subject))
             self.assertEqual(event["summary"], NAMES, repr(subject))
+
+    def test_the_live_subjects_lose_monitorings_tag(self):
+        """Incidents #33 and #32 (2026-10-13): tpa-platform's subjects, as Monitoring sent them, tag in front."""
+        for sent, title in (
+            ("[ALERT - Warning] beta · PagerDuty test (turn alert_pagerduty_test_enabled off)",
+             "beta · PagerDuty test (turn alert_pagerduty_test_enabled off)"),
+            ("[ALERT - Warning] beta · alert policy or channel changed: "
+             "google.monitoring.v3.AlertPolicyService.UpdateAlertPolicy",
+             "beta · alert policy or channel changed: google.monitoring.v3.AlertPolicyService.UpdateAlertPolicy"),
+            ("[RESOLVED] beta · engine p95 above 2 s", "beta · engine p95 above 2 s"),
+            ("[ALERT - Critical] production · tpa-db down", "production · tpa-db down"),
+            ("beta · no tag at all", "beta · no tag at all"),
+        ):
+            event, outcome = self.through(monitoring(subject=sent))
+            self.assertEqual(event["summary"], title, sent)
+            self.assertEqual(outcome, {"severity": "warning", "priority": "PRI3"}, sent)
+
+    def test_a_subject_not_in_our_shape_gives_policy_and_condition(self):
+        for sent in ("Engine is slow", "[ALERT - Warning] engine is slow", "[a] [b] beta · two tags",
+                     "[ALERT - Warning]beta · no space after the tag", "beta: a colon, not the dot"):
+            self.assertEqual(self.through(monitoring(subject=sent))[0]["summary"], NAMES, sent)
 
     def test_a_subject_that_only_mentions_alert_later_is_kept(self):
         text = "beta · the [ALERT - x] word inside is not Monitoring's"

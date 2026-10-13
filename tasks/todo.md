@@ -55,15 +55,16 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   `pd-titles` (docs/PAGERDUTY.md, "Incident titles"):
   - Each service orchestration's `start` set keeps the three severity rules, each now routing to a `titles` set, plus
     a fourth rule with no conditions that only routes. `titles` sets the title to the policy's `documentation.subject`
-    (not Monitoring's `[ALERT - …]` default), else "policy · condition", else Monitoring's summary. It copies
+    without Monitoring's leading `[…] ` tag, when it is in tpa-platform's "<env> · …" shape (live #32 and #33 arrive as
+    `[ALERT - Warning] beta · …`), else "policy · condition", else Monitoring's summary. It copies
     `what_to_check`, `console`, `observed` and `threshold` from the payload into the details. The dedup key is
     untouched.
   - Review (HOLD on 21c377f): the titles need Advanced Event Orchestration. Without it PagerDuty runs `start` alone,
     so the severity rules stay there. `--apply` reads the update's `warnings`, puts the previous orchestration back,
     refuses and exits 1. No API shows the add-on beforehand, so the plan says so.
   - The plan lists an orchestration update rule by rule. `pd_test_event.py` checks the title (`--monitoring-subject`
-    for the fallback). The fake models nested sets, variables, extractions and an account without the add-on. 74
-    tests; 11 mutants killed.
+    for the fallback). The fake models nested sets, variables, extractions and an account without the add-on. 76
+    tests; 15 mutants killed.
   - `make pagerduty-plan` (live, read only): 3 to update, the orchestrations only.
 - [ ] PD titles, by the orchestrator: `pd_setup.py --apply`, then `make pagerduty-plan` (0 to update), then the two
   live test events (docs/PAGERDUTY.md, "Incident titles", "Applying it").
