@@ -167,8 +167,11 @@ case "$search" in *" 401 "*) echo "   /api/search without an IAP assertion: 401"
   *) fail "/api/search answered '$search', not 401" ;; esac
 logs="$(docker logs "$name" 2>&1)"
 grep 'render-dashboards: rendered' <<<"$logs" | sed 's/^/   /'
-grep -q 'rendered 8 dashboard(s).*environment production.*call centre: no' <<<"$logs" ||
-  fail "production-full should render 8 pages, without the call centre"
+# Every page but those that read the call centre alone (render-dashboards.sh's CC_ONLY_PAGES).
+cc_only="$(sed -n 's/^CC_ONLY_PAGES="\(.*\)"$/\1/p' "$here/cloud/render-dashboards.sh" | wc -w | tr -d ' ')"
+production_pages=$(( $(ls "$here"/cloud/dashboards/*.json | wc -l) - cc_only ))
+grep -q "rendered ${production_pages} dashboard(s).*environment production.*call centre: no" <<<"$logs" ||
+  fail "production-full should render ${production_pages} pages, without the call centre's"
 inserted="$(grep -c '"msg":"inserting datasource from configuration"' <<<"$logs" || true)"
 echo "   datasources inserted: $inserted"
 [ "$inserted" = 4 ] || fail "expected 4 datasources"

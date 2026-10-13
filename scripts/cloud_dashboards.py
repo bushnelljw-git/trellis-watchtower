@@ -28,6 +28,8 @@ Usage:
 from __future__ import annotations
 
 import json
+import math
+import re
 import sys
 from pathlib import Path
 
@@ -98,8 +100,31 @@ SQL_CPU = "cloudsql.googleapis.com/database/cpu/utilization"
 SQL_MEMORY = "cloudsql.googleapis.com/database/memory/utilization"
 SQL_BACKENDS = "cloudsql.googleapis.com/database/postgresql/num_backends"
 UPTIME = "monitoring.googleapis.com/uptime_check/check_passed"
+# Each Cloud Run service's and job's resource primitives (Google's own, per container; "Resources" below).
+RUN_CPU = "run.googleapis.com/container/cpu/utilizations"
+RUN_MEMORY = "run.googleapis.com/container/memory/utilizations"
+RUN_CONCURRENCY = "run.googleapis.com/container/max_request_concurrencies"
+RUN_STARTUP = "run.googleapis.com/container/startup_latencies"
+RUN_BILLABLE = "run.googleapis.com/container/billable_instance_time"
+RUN_TASKS = "run.googleapis.com/job/completed_task_attempt_count"
+RUN_TASKS_RUNNING = "run.googleapis.com/job/running_task_attempts"
+SQL_DISK_BYTES = "cloudsql.googleapis.com/database/disk/bytes_used"
+SQL_DISK_SIZE = "cloudsql.googleapis.com/database/disk/quota"
+SQL_READ_OPS = "cloudsql.googleapis.com/database/disk/read_ops_count"
+SQL_WRITE_OPS = "cloudsql.googleapis.com/database/disk/write_ops_count"
+SQL_READ_BYTES = "cloudsql.googleapis.com/database/disk/read_bytes_count"
+SQL_WRITE_BYTES = "cloudsql.googleapis.com/database/disk/write_bytes_count"
+NAT_PORTS = "router.googleapis.com/nat/allocated_ports"
+NAT_PORTS_USED = "router.googleapis.com/nat/port_usage"
+NAT_CONNECTIONS = "router.googleapis.com/nat/new_connections_count"
+NAT_DROPPED_SENT = "router.googleapis.com/nat/dropped_sent_packets_count"
+NAT_DROPPED_RECEIVED = "router.googleapis.com/nat/dropped_received_packets_count"
+NAT_FAILED = "router.googleapis.com/nat/nat_allocation_failed"
+GCS_BYTES = "storage.googleapis.com/storage/total_bytes"
+GCS_OBJECTS = "storage.googleapis.com/storage/object_count"
 REV, JOB, SQL, URL, SCHED, AUDITED = ("cloud_run_revision", "cloud_run_job", "cloudsql_database", "uptime_url",
                                       "cloud_scheduler_job", "audited_resource")
+NAT, BUCKET = "nat_gateway", "gcs_bucket"
 PRIVATE = "servicedirectory_service"   # a private uptime check (D-149: auth's and tpa-api's /ready, from inside)
 # The home's status colours, as on the local home page: up is teal, not green (green and red sit 4.1 apart for a
 # deuteranope, teal and red 13+); red for a failure, amber for "look", and the base text colour for no answer.
@@ -297,9 +322,12 @@ UP_MAPPING = [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"
 
 def panel(kind: str, title: str, ds: str | None, queries, description: str, *, w: int, h: int, unit: str = "short",
           steps=None, decimals=None, no_value=None, mappings=None, overrides=None, options=None, custom=None,
-          transformations=None, time_from=None) -> dict:
+          transformations=None, time_from=None, links=None) -> dict:
     queries = [queries] if isinstance(queries, dict) else list(queries)
     p = {"type": kind, "title": title, "description": description, "gridPos": {"h": h, "w": w, "x": 0, "y": 0}}
+    if links:
+        # The panel title's link icon (Grafana's panel links): a service's own page.
+        p["links"] = links
     if ds:
         p["datasource"] = {"type": "stackdriver", "uid": ds}
         p["targets"] = [target(ds, query, chr(ord("A") + i)) for i, query in enumerate(queries)]
@@ -333,13 +361,23 @@ def stat(title, ds, queries, description, *, w=4, h=5, calc="sum", text_mode="au
     return quieten(p, deps) if deps else p
 
 
-def series(title, ds, queries, description, *, w=12, h=8, bars=False, line=None, **kw):
-    custom = {"drawStyle": "bars" if bars else "line", "lineWidth": 1, "fillOpacity": 60 if bars else 10,
-              "showPoints": "never", "spanNulls": False,
+def series(title, ds, queries, description, *, w=12, h=8, bars=False, points=False, line=None, lines=(),
+           soft_max=None, **kw):
+    """A time series. `line` draws the pager's threshold in red; `lines` draws several, each (value, colour): red
+    for a line the pager uses, GREY for a limit the service is set to. `soft_max` keeps the y axis
+    up to a limit, so the lines show while the readings sit far below them. `points` draws each reading as a dot,
+    for a metric that writes only now and then (a start-up)."""
+    lines = [(line, "red")] if line is not None else sorted(lines)
+    custom = {"drawStyle": "points" if points else "bars" if bars else "line", "lineWidth": 1,
+              "fillOpacity": 60 if bars else 10, "showPoints": "always" if points else "never", "spanNulls": False,
               "stacking": {"mode": "normal" if bars else "none", "group": "A"},
-              "axisSoftMin": 0, "thresholdsStyle": {"mode": "line" if line is not None else "off"}}
-    if line is not None:
-        kw["steps"] = thresholds("transparent", (line, "red"))
+              "axisSoftMin": 0, "thresholdsStyle": {"mode": "line" if lines else "off"}}
+    if points:
+        custom["pointSize"] = 6
+    if soft_max is not None:
+        custom["axisSoftMax"] = soft_max
+    if lines:
+        kw["steps"] = thresholds("transparent", *lines)
     return panel("timeseries", title, ds, queries, description, w=w, h=h, custom=custom, options={
         "legend": {"displayMode": "table", "placement": "right", "showLegend": True, "calcs": ["max", "lastNotNull"]},
         "tooltip": {"mode": "multi", "sort": "desc"}}, **kw)
@@ -398,11 +436,15 @@ def layout(items: list[dict]) -> list[dict]:
 
 
 PAGERDUTY = "https://app.pagerduty.com/incidents"
+SERVICE_TAG = "cloud-service"   # a service's own page; the Services menu on every page lists them
 
 
-def dashboard(uid: str, title: str, description: str, tags: list[str], items: list[dict], time: str = "now-6h") -> dict:
+def dashboard(uid: str, title: str, description: str, tags: list[str], items: list[dict], time: str = "now-6h",
+              kind: str = "cloud", links: tuple[dict, ...] = ()) -> dict:
+    """A page. `kind` is its tag: "cloud" for the pages the Pages menu lists, SERVICE_TAG for a service's own page,
+    which the Services menu lists. `links` go after the menus (a service page's way back to its area's page)."""
     return {
-        "uid": uid, "title": title, "description": description, "tags": ["trellis-watchtower", "cloud", *tags],
+        "uid": uid, "title": title, "description": description, "tags": ["trellis-watchtower", kind, *tags],
         "editable": False, "graphTooltip": 1, "refresh": "5m", "schemaVersion": 41, "version": 1,
         "timezone": "browser", "fiscalYearStartMonth": 0, "liveNow": False, "weekStart": "",
         "time": {"from": time, "to": "now"}, "timepicker": {"refresh_intervals": ["1m", "5m", "15m", "30m"]},
@@ -414,9 +456,13 @@ def dashboard(uid: str, title: str, description: str, tags: list[str], items: li
              "includeVars": False, "targetBlank": False, "tags": [], "asDropdown": False, "tooltip": ""},
             {"title": "Pages", "type": "dashboards", "tags": ["cloud"], "asDropdown": True, "keepTime": True,
              "includeVars": False, "targetBlank": False, "icon": "external link", "url": "", "tooltip": ""},
+            {"title": "Services", "type": "dashboards", "tags": [SERVICE_TAG], "asDropdown": True, "keepTime": True,
+             "includeVars": False, "targetBlank": False, "icon": "external link", "url": "",
+             "tooltip": "Each Cloud Run service's own page: its CPU, memory, instances, concurrency and start-up"},
             {"title": "PagerDuty incidents", "type": "link", "url": PAGERDUTY, "icon": "bolt", "keepTime": False,
              "includeVars": False, "targetBlank": True, "tags": [], "asDropdown": False,
-             "tooltip": "Open incidents page through PagerDuty; this site cannot list them"}],
+             "tooltip": "Open incidents page through PagerDuty; this site cannot list them"},
+            *links],
         "templating": {"list": []},
         "panels": layout(items),
     }
@@ -605,8 +651,9 @@ def service_tile(title, ds, services, deps=()) -> dict:
                               service_name=Re(services))],
                 f"{title}: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx "
                 "series means none was answered; no instance series, none is running (a scale-to-zero service "
-                "idles at none).", w=3, h=4, calc="lastNotNull", text_mode="value_and_name", time_from="15m",
-                no_value="no data", deps=deps,
+                "idles at none). The link by the title opens the service's own page: its CPU, memory, instances, "
+                "concurrency and start-up.", w=3, h=4, calc="lastNotNull", text_mode="value_and_name",
+                time_from="15m", no_value="no data", deps=deps, links=service_links(*services.split("|")),
                 overrides=[by_ref("A", thresholds=thresholds(NEUTRAL, (1, RED)), decimals=0),
                            by_ref("B", decimals=0)])
 
@@ -664,6 +711,380 @@ def journeys_stat() -> dict:
                          "properties": [{"id": "thresholds", "value": thresholds(NEUTRAL, (1, colour))}]}
                         for word, colour in (("pass", TEAL), ("fail", RED), ("error", AMBER))])
     return p
+
+
+# ---- Resources: every Cloud Run service's primitives ---------------------------------------------------------------
+# The owner (2026-10-13): "Where are all the primitives for each service?" Each Cloud Run service's CPU, memory,
+# instances, concurrency and start-up, the signals its saturation policies page on, drawn with the line each policy
+# compares: a Resources row per service on its area's page, and a page of its own (the Services menu on every page,
+# and the link by each service's title on the overview). There is no `$service` page: a cloud page takes no viewer
+# input (dashboard_lint's rules 7 and 9), so each service's page is written out here, one per service.
+#
+# Each service: its datasource, and the page whose Resources rows hold it.
+SERVICES = {
+    "web": (APP, "portal-api"), "tpa-api": (APP, "portal-api"), "model-gateway": (APP, "portal-api"),
+    "tpa-jobs-drains": (APP, "portal-api"),
+    "auth": (APP, "sign-in"), "auth-outbox-publisher": (APP, "sign-in"),
+    "records": (PHI, "records"), "connectors": (PHI, "records"),
+    "svc-voice": (CC, "callcentre"), "svc-ops": (CC, "callcentre"), "svc-twilio-rest": (CC, "callcentre"),
+    "crm-web": (CRM, "crm"), "engine": (CRM, "crm"),
+}
+AREA_TITLES = {"portal-api": "Portal & API", "sign-in": "Sign-in", "records": "Member records",
+               "callcentre": "Call centre", "crm": "CRM"}
+# Each service's max_instances and concurrency on beta (tpa-platform infra/envs/beta main.tf, crm.tf, callcentre.tf;
+# the run-service module's defaults are 100 and 80). The module writes a `ceiling-<service>` policy for beta's
+# instance_ceilings (max_instances of three or more, below the default), opening at 80% of it rounded up for ten
+# minutes; web, tpa-api and model-gateway keep the default, so the project's regional quota binds them first.
+DEFAULT_MAX_INSTANCES, DEFAULT_CONCURRENCY = 100, 80
+MAX_INSTANCES = {"tpa-jobs-drains": 1, "auth": 20, "auth-outbox-publisher": 3, "records": 20, "connectors": 4,
+                 "svc-voice": 1, "svc-ops": 1, "svc-twilio-rest": 1, "crm-web": 2, "engine": 1}
+CONCURRENCY = {"svc-voice": 20}   # one call each
+CEILING_POLICIES = ("auth", "auth-outbox-publisher", "records", "connectors")
+# The services whose Cloud Run latency beta's `canary-latency` leaves out: they hold a stream or a call open.
+LATENCY_LEFT_OUT = ("web", "tpa-api", "svc-voice", "svc-ops")
+# The pager's lines, read from the vendored catalogue. Each panel aggregates as the policy's condition does (its
+# aligner, window and reducer), so its red line is the very threshold that condition compares.
+CPU_POLICY, MEMORY_POLICY, CONCURRENCY_POLICY, QUOTA_POLICY = (
+    CATALOGUE.threshold(name) for name in ("run-cpu-high", "run-memory-high", "run-concurrency-high",
+                                           "run-instances-near-quota"))
+REGIONAL_QUOTA = int(re.search(r"\((\d+)\)", CATALOGUE.policy("run-instances-near-quota")["display_name"]).group(1))
+NAT_FAILED_POLICY, NAT_DROPPED_POLICY = (CATALOGUE.threshold("nat-port-exhaustion", condition=n) for n in (0, 1))
+NAT_OUT_OF_PORTS = "OUT_OF_RESOURCES"   # the dropped-packets condition's reason (its filter, a block the reader skips)
+# Each Cloud SQL instance's role, whose project holds it and its `<instance>-disk` policy.
+DB_ROLE = {"auth-db": "app", "tpa-db": "phi", "crm-db": "crm", "cc-db": "cc"}
+GREY = "#8c8c8c"   # a limit the service is set to; red is a line a policy pages at
+NO_DISK = ("**Cloud Run services have no disk.** A file a container writes is held in its memory, so a service's "
+           "\"disk space\" is its **Memory** chart: files that grow show as memory climbing to the red line, then as a "
+           "container killed for memory. Real disk is on the databases (each one's disk space is on its area's page "
+           "and on Databases) and in the buckets. A **red line** is the line the pager uses (tpa-platform's alert "
+           "policies); a **grey line** is a limit the service is set to.")
+
+
+def window(policy: dict) -> str:
+    """A policy's alignment period as a fixed panel period (Grafana's `+300s`)."""
+    return "+" + policy["alignment_period"]
+
+
+def minutes(policy: dict, key: str = "alignment_period") -> int:
+    return int(policy[key].removesuffix("s")) // 60
+
+
+def pct(value: float) -> str:
+    return f"{value * 100:g}%"
+
+
+def service_uid(service: str) -> str:
+    return f"tw-cloud-service-{service}"
+
+
+def service_links(*services: str) -> list[dict]:
+    """Panel links to services' own pages, keeping the time range."""
+    return [{"title": f"{s}: CPU, memory, instances, concurrency, start-up",
+             "url": f"/d/{service_uid(s)}?${{__url_time_range}}", "targetBlank": False} for s in services]
+
+
+def percentiles(metric: str, resource: str, policy: dict, **where) -> list[dict]:
+    """The 99th, 95th and 50th percentile of a distribution over the policy's window, reduced as the policy reduces:
+    the p99 is the series the policy compares with its threshold."""
+    assert policy["per_series_aligner"] == "ALIGN_PERCENTILE_99", policy
+    return [q(metric, resource, align=f"ALIGN_PERCENTILE_{n}", period=window(policy),
+              reduce=policy["cross_series_reducer"], name=f"p{n}", **where) for n in (99, 95, 50)]
+
+
+def resources(service: str, *, own_page: bool = False) -> list[dict]:
+    """One Cloud Run service's Resources row: CPU, memory, instances, concurrency, start-up, instances billed, and
+    containers killed for memory, crashed or failing to start. The same row on its area's page and on its own."""
+    ds, _page = SERVICES[service]
+    me = {"service_name": service}
+    cap = MAX_INSTANCES.get(service, DEFAULT_MAX_INSTANCES)
+    slots = CONCURRENCY.get(service, DEFAULT_CONCURRENCY)
+    cpu, memory, busy = (p["threshold_value"] for p in (CPU_POLICY, MEMORY_POLICY, CONCURRENCY_POLICY))
+    if service in CEILING_POLICIES:
+        ceiling = math.ceil(0.8 * cap)
+        instance_lines = [(ceiling, "red")] + ([(cap, GREY)] if cap > ceiling else [])
+        instance_words = (f"The red line is `ceiling-{service}`'s, {ceiling} instances (80% of max_instances, "
+                          "rounded up) for ten minutes" +
+                          (f"; the grey line is max_instances, {cap}" if cap > ceiling else
+                           ", which is max_instances itself") + ": at the ceiling new requests wait or fail with 429.")
+    elif cap < DEFAULT_MAX_INSTANCES:
+        instance_lines = [(cap, GREY)]
+        instance_words = (f"The grey line is max_instances, {cap} on beta (too few for a `ceiling-` policy): at it "
+                          "new requests wait or fail with 429.")
+    else:
+        instance_lines = []
+        instance_words = (f"max_instances is Cloud Run's default, {cap}, so the project's regional quota of "
+                          f"{REGIONAL_QUOTA} binds first (`run-instances-near-quota`: the project's instances, on "
+                          "its area's page).")
+    if busy < slots:
+        busy_lines = [(busy, "red"), (slots, GREY)]
+        busy_words = (f"The red line is `run-concurrency-high`'s: the p99 above {busy:g} (90% of {slots}) for "
+                      f"{minutes(CONCURRENCY_POLICY, 'duration')} minutes pages. The grey line is the concurrency "
+                      f"setting, {slots}: past it a request waits for a slot or a new instance.")
+    else:
+        busy_lines = [(slots, GREY)]
+        busy_words = (f"The grey line is its concurrency setting, {slots} (one call each): past it a call waits for a "
+                      f"new instance. `run-concurrency-high` opens above {busy:g}, beyond that setting, so it never "
+                      f"opens for {service}.")
+    if own_page:
+        link = [{"title": f"{AREA_TITLES[_page]}: the page {service} is on", "url": f"/d/tw-cloud-{_page}"
+                 "?${__url_time_range}", "targetBlank": False}]
+    else:
+        link = service_links(service)
+    return [
+        row(f"Resources · {service}: CPU, memory, instances, concurrency, start-up"),
+        series("CPU (p99, p95, p50)", ds, percentiles(RUN_CPU, REV, CPU_POLICY, **me),
+               f"{service}'s container CPU, the share of its CPU limit in use (`container/cpu/utilizations`): the "
+               f"99th, 95th and 50th percentile across its instances in each {minutes(CPU_POLICY)}-minute window. The "
+               f"red line is `run-cpu-high`'s: the p99 above {pct(cpu)} for {minutes(CPU_POLICY, 'duration')} "
+               "minutes pages (instances saturated: requests queue and slow).", w=6, h=7, unit="percentunit",
+               line=cpu, soft_max=1, links=link),
+        series("Memory (p99, p95, p50)", ds, percentiles(RUN_MEMORY, REV, MEMORY_POLICY, **me),
+               f"{service}'s container memory, the share of its memory limit in use (`container/memory/utilizations`), "
+               f"percentiles across its instances in each {minutes(MEMORY_POLICY)}-minute window. Cloud Run has no "
+               "disk: files the container writes are held in memory and count here. The red line is "
+               f"`run-memory-high`'s: the p99 above {pct(memory)} for {minutes(MEMORY_POLICY, 'duration')} minutes "
+               "pages; at the limit the container is killed (`run-oom`, the last panel of this row).", w=6, h=7,
+               unit="percentunit", line=memory, soft_max=1),
+        series("Instances (active, idle)", ds, q(RUN_INSTANCES, REV, align="ALIGN_MAX", by=("state",), **me),
+               f"{service}'s Cloud Run instances, the most in each interval: active (serving or starting) and idle "
+               "(kept warm, or waiting to be shut down). " + instance_words, w=6, h=7, decimals=0,
+               lines=instance_lines, soft_max=max((v for v, _ in instance_lines), default=None)),
+        series("Concurrent requests, busiest instance (p99, p50)", ds,
+               [q(RUN_CONCURRENCY, REV, align=f"ALIGN_PERCENTILE_{n}", period=window(CONCURRENCY_POLICY),
+                  reduce=CONCURRENCY_POLICY["cross_series_reducer"], name=f"p{n}", **me) for n in (99, 50)],
+               "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and "
+               f"50th percentile in each {minutes(CONCURRENCY_POLICY)}-minute window. " + busy_words, w=6, h=7,
+               lines=busy_lines, soft_max=slots),
+        series("Start-up time (p99, p50)", ds,
+               [q(RUN_STARTUP, REV, align=f"ALIGN_PERCENTILE_{n}", reduce="REDUCE_MAX", name=f"p{n}", **me)
+                for n in (99, 50)],
+               "How long a new instance took to start, until it was ready to serve (`container/startup_latencies`): a "
+               "dot for each interval in which one started. Nothing drawn: no instance started. No policy reads it; a "
+               "start-up that failed is the last panel.", w=8, h=7, unit="ms", points=True),
+        series("Instances billed", ds, q(RUN_BILLABLE, REV, align="ALIGN_RATE", name="billed", **me),
+               "Billable instance time per second (`container/billable_instance_time`): how many instances were billed "
+               "on average. An instance kept warm with CPU always on bills all the time; one that scales to zero, "
+               "only while it serves.", w=8, h=7, decimals=1),
+        series("Killed for memory, crashed, failed to start", ds,
+               [q(log("run_oom_kills"), REV, name="killed for memory", **me),
+                q(log("run_crash_exits"), REV, name="crashed", **me),
+                q(log("run_system_errors"), REV, name="failed probe or exit", **me)],
+               "From Cloud Run's own system log: a container killed for exceeding its memory limit (`run_oom_kills`; "
+               "`run-oom` pages on one), a container that exited with an error or a signal (`run_crash_exits`; "
+               "`run-crash-loop` at three in fifteen minutes), and a failed start-up or liveness probe "
+               "(`run_system_errors`; `canary-startup`).", w=8, h=7, bars=True),
+    ]
+
+
+def area_resources(page: str) -> list[dict]:
+    """An area page's Resources: the note, then a row for each service SERVICES puts on the page."""
+    return [row("Resources: each Cloud Run service's CPU, memory, instances, concurrency and start-up"),
+            text("No disk on a Cloud Run service", NO_DISK, w=24, h=3),
+            *[p for service, (_ds, on) in SERVICES.items() if on == page for p in resources(service)]]
+
+
+def project_section(ds: str, where: str, gateway: str | None = None, through: str = "",
+                    note: str = "") -> list[dict]:
+    """A project's Cloud Run instances against its regional quota, and, where the project has one, its egress
+    through Cloud NAT (`gateway`, the vpc module's `<network>-nat`; `through` names what leaves by it)."""
+    quota = QUOTA_POLICY["threshold_value"]
+    items = [row(f"The {where}: instances against the regional quota" +
+                 (f", and egress through Cloud NAT ({gateway})" if gateway else "")),
+             series("Cloud Run instances, every service", ds,
+                    q(RUN_INSTANCES, REV, align=QUOTA_POLICY["per_series_aligner"], period=window(QUOTA_POLICY),
+                      reduce=QUOTA_POLICY["cross_series_reducer"], name="every service"),
+                    f"Every Cloud Run instance in the {where}, summed. The red line is `run-instances-near-quota`'s: "
+                    f"above {quota:g} for {minutes(QUOTA_POLICY, 'duration')} minutes pages. The grey line is the "
+                    f"regional quota, {REGIONAL_QUOTA}: at it no service can start another instance, whatever its "
+                    "own ceiling." + note, w=4 if gateway else 24, h=7, decimals=0,
+                    lines=[(quota, "red"), (REGIONAL_QUOTA, GREY)], soft_max=REGIONAL_QUOTA)]
+    if not gateway:
+        return items
+    dropped, failed = NAT_DROPPED_POLICY, NAT_FAILED_POLICY
+    by = ("gateway_name",)
+    return items + [
+        series("NAT ports: allocated, and the most in use", ds,
+               [q(NAT_PORTS, NAT, align="ALIGN_MAX", by=by, name=alias("gateway_name", prefix="allocated · ")),
+                q(NAT_PORTS_USED, NAT, align="ALIGN_MAX", reduce="REDUCE_MAX", by=by,
+                  name=alias("gateway_name", prefix="most in use · "))],
+               f"Cloud NAT's ports for {through}: the ports allocated to every instance behind the gateway "
+               "(`nat/allocated_ports`), and the most connections one instance held to one destination "
+               "(`nat/port_usage`). In use close to an instance's share of the allocated ports, new connections wait "
+               "or drop. A cold gateway allocates ports as instances arrive, so the first calls after a quiet spell can "
+               "wait.", w=5, h=7, decimals=0),
+        series("NAT new connections", ds, q(NAT_CONNECTIONS, NAT, by=by, name=alias("gateway_name")),
+               f"New connections Cloud NAT opened for {through} (`nat/new_connections_count`), per interval.", w=5,
+               h=7, bars=True),
+        series("NAT dropped packets", ds,
+               [q(NAT_DROPPED_SENT, NAT, align=dropped["per_series_aligner"], period=window(dropped),
+                  reduce=dropped["cross_series_reducer"], by=by, reason=NAT_OUT_OF_PORTS,
+                  name=alias("gateway_name", prefix="sent, out of ports · ")),
+                q(NAT_DROPPED_SENT, NAT, align=dropped["per_series_aligner"], period=window(dropped),
+                  reduce=dropped["cross_series_reducer"], by=by, reason="ENDPOINT_INDEPENDENCE_CONFLICT",
+                  name=alias("gateway_name", prefix="sent, endpoint conflict · ")),
+                q(NAT_DROPPED_RECEIVED, NAT, align=dropped["per_series_aligner"], period=window(dropped),
+                  reduce=dropped["cross_series_reducer"], by=by, name=alias("gateway_name", prefix="received · "))],
+               f"Packets Cloud NAT dropped in each {minutes(dropped)} minutes. Sent, out of ports: an outgoing packet "
+               f"with no port to leave by; the red line is `nat-port-exhaustion`'s, above {dropped['threshold_value']:g} "
+               f"for {minutes(dropped, 'duration')} minutes. Sent, endpoint conflict: two instances reaching one "
+               "destination from the same port. Received: replies with no open mapping (a connection already closed); "
+               "a few are normal.", w=5, h=7, line=dropped["threshold_value"]),
+        series("NAT could not allocate", ds,
+               q(NAT_FAILED, NAT, align=failed["per_series_aligner"], period=window(failed),
+                 reduce=failed["cross_series_reducer"], by=by, name=alias("gateway_name")),
+               f"Minutes in each {minutes(failed)} in which Cloud NAT could not allocate an address or ports "
+               f"(`nat/nat_allocation_failed`). The red line is `nat-port-exhaustion`'s: above "
+               f"{failed['threshold_value']:g} pages.", w=5, h=7, decimals=0, line=failed["threshold_value"],
+               soft_max=minutes(failed)),
+    ]
+
+
+def storage(ds: str, where: str) -> list[dict]:
+    """A project's buckets: their size and how many objects they hold, never what the objects are."""
+    return [
+        row(f"Storage: the {where}'s buckets (size and object count)"),
+        series("Bucket size", ds, q(GCS_BYTES, BUCKET, align="ALIGN_MEAN", period="+3600s", by=("bucket_name",)),
+               f"Bytes stored in each of the {where}'s buckets, every storage class together "
+               "(`storage/total_bytes`, measured every few minutes and reported up to twelve minutes late). Real disk, "
+               "unlike a Cloud Run service's. No series: no bucket here holds anything yet.", w=12, h=7, unit="bytes"),
+        series("Objects in each bucket", ds,
+               q(GCS_OBJECTS, BUCKET, align="ALIGN_MEAN", period="+3600s", by=("bucket_name",)),
+               "How many objects each bucket holds (`storage/object_count`). The bucket's name is the only label read: "
+               "never an object's name.", w=12, h=7, decimals=0),
+    ]
+
+
+def database_rows(name: str, ds: str, who: str, *, now: bool = True) -> list[dict]:
+    """One Cloud SQL instance's primitives: disk space (in use, and used against its size, with the `<name>-disk`
+    line), up, CPU, memory, connections, disk operations and throughput, restarts and failed backups. On the Databases
+    page (with the "Now" tile) and on the page of the area that owns it."""
+    disk = CATALOGUE.threshold(f"{name}-disk", DB_ROLE[name])
+    full, cap = disk["threshold_value"], MAX_CONNECTIONS[name]
+    alert = f"alert line ({pct(full)} of size)"
+    where = {"database_id": f"*:{name}"}
+    wide = 10 if now else 12
+    return [
+        row(f"{name} ({who}): disk space, CPU, memory, connections, disk I/O"),
+        *([db_stat("Now", ds, name, w=4, h=6)] if now else []),
+        series("Disk space used (%)", ds,
+               q(SQL_DISK, SQL, align=disk["per_series_aligner"], period=window(disk),
+                 reduce=disk["cross_series_reducer"], by=("database_id",), name=f"{name} disk", **where),
+               f"How full {name}'s disk is (`database/disk/utilization`), the mean of each {minutes(disk)} minutes. "
+               f"The red line is `{name}-disk`'s: above {pct(full)} for {minutes(disk, 'duration')} minutes pages. "
+               "Automatic storage increase grows the disk before it fills, up to the instance's "
+               "disk_autoresize_limit; at that limit a full disk stops the database taking writes. " + STOPPED_DB,
+               w=wide, h=6, unit="percentunit", line=full, soft_max=1),
+        series("Disk space: used and size (bytes)", ds,
+               [db_resource(SQL_DISK_BYTES, name, "used", align="ALIGN_MAX"),
+                db_resource(SQL_DISK_SIZE, name, "size", align="ALIGN_MAX")],
+               f"{name}'s disk in bytes: used (`database/disk/bytes_used`) and its size (`database/disk/quota`). When "
+               "the size steps up, Cloud SQL's automatic storage increase grew the disk; it grows only up to "
+               f"disk_autoresize_limit. The dashed red line is {pct(full)} of the size, where `{name}-disk` opens.",
+               w=wide, h=6, unit="bytes",
+               transformations=[{"id": "joinByField", "options": {"byField": "Time", "mode": "outer"}},
+                                {"id": "calculateField", "options": {
+                                    "mode": "binary", "alias": alert, "replaceFields": False,
+                                    "binary": {"left": {"matcher": {"id": "byName", "options": f"{name} size"}},
+                                               "operator": "*", "right": {"fixed": f"{full:g}"}}}}],
+               overrides=[{"matcher": {"id": "byName", "options": alert}, "properties": [
+                   {"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}},
+                   {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 10]}},
+                   {"id": "custom.fillOpacity", "value": 0}]}]),
+        timeline("Up", ds, db_up(name), f"Cloud SQL's `database/up` for {name}, the lowest in each interval. "
+                 f"`{name}-down` (urgent) pages below 1 for five minutes. " + STOPPED_DB, w=8, h=6,
+                 mappings=UP_MAPPING, steps=thresholds("red", (1, "green"))),
+        series("CPU", ds, db_resource(SQL_CPU, name, "CPU"),
+               f"Cloud SQL's CPU utilisation for {name} (`database/cpu/utilization`). The red lines are the monitoring "
+               f"module's: `{name}` CPU above 80% for thirty minutes, and above 95% for fifteen (urgent).", w=8, h=6,
+               unit="percentunit", lines=[(0.8, "red"), (0.95, "red")], soft_max=1),
+        series("Memory", ds, db_resource(SQL_MEMORY, name, "memory"),
+               f"Cloud SQL's memory utilisation for {name} (`database/memory/utilization`). The red line is the "
+               "monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer "
+               "restarts the server.", w=8, h=6, unit="percentunit", line=0.9, soft_max=1),
+        series("Connections", ds, db_resource(SQL_BACKENDS, name, "connections", reduce="REDUCE_SUM"),
+               f"Backends connected (num_backends, every database of the instance). The red lines are the monitoring "
+               f"module's: 80% of max_connections for ten minutes, and 95% for five (urgent); max_connections is "
+               f"{cap} on beta, the grey line, where new connections are refused.", w=6, h=6, decimals=0,
+               lines=[(math.floor(cap * 0.8), "red"), (math.floor(cap * 0.95), "red"), (cap, GREY)], soft_max=cap),
+        series("Disk operations per second", ds,
+               [q(SQL_READ_OPS, SQL, align="ALIGN_RATE", by=(), name="read", **where),
+                q(SQL_WRITE_OPS, SQL, align="ALIGN_RATE", by=(), name="write", **where)],
+               f"{name}'s disk reads and writes per second (`database/disk/read_ops_count`, `write_ops_count`). Reads "
+               "near none are normal: the working set is in memory.", w=6, h=6),
+        series("Disk throughput", ds,
+               [q(SQL_READ_BYTES, SQL, align="ALIGN_RATE", by=(), name="read", **where),
+                q(SQL_WRITE_BYTES, SQL, align="ALIGN_RATE", by=(), name="write", **where)],
+               f"Bytes {name} read from and wrote to its disk per second (`database/disk/read_bytes_count`, "
+               "`write_bytes_count`).", w=6, h=6, unit="Bps"),
+        series("Restarts and failed backups", ds,
+               [q(log("sql_restarts"), SQL, by=(), name="restarts", **where),
+                q(log("sql_backup_failures"), SQL, by=(), name="backup failed", **where)],
+               "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated "
+               "backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
+               w=6, h=6, bars=True),
+    ]
+
+
+def job_resources(ds: str, where: str, jobs: str | None = None) -> list[dict]:
+    """A project's Cloud Run jobs (or those `jobs` matches): task attempts, how long each run's task ran, CPU,
+    memory, and tasks killed for memory or failing to start."""
+    mine = {"job_name": Re(jobs)} if jobs else {}
+    return [
+        row(f"Job resources: {where} (attempts, run length, CPU, memory)"),
+        series("Task attempts, by job and result", ds, q(RUN_TASKS, JOB, by=("job_name", "result"), **mine),
+               "Each task attempt that finished (`job/completed_task_attempt_count`), by job and result. A job here "
+               "runs one task and no retry, so an attempt is a run.", w=8, h=7, bars=True),
+        series("Tasks running, by job (each run's length)", ds,
+               q(RUN_TASKS_RUNNING, JOB, align="ALIGN_MAX", by=("job_name",), **mine),
+               "Task attempts running (`job/running_task_attempts`), the most in each interval: a run's bar lasts as "
+               "long as its task ran. The module's `job-timeout-<job>` opens at 80% of a job's timeout.", w=8, h=7,
+               bars=True, decimals=0),
+        series("Killed for memory, or failed to start, by job", ds,
+               [q(log("run_oom_kills"), JOB, by=("job_name",), name=alias("job_name", prefix="killed for memory · "),
+                  **mine),
+                q(log("run_system_errors"), JOB, by=("job_name",),
+                  name=alias("job_name", prefix="failed probe or exit · "), **mine)],
+               "A job's container killed for exceeding its memory limit (`run_oom_kills`; `run-oom` pages on one), or "
+               "Cloud Run's system log at ERROR for it (`run_system_errors`; `canary-startup`).", w=8, h=7, bars=True),
+        series("CPU, by job (p99)", ds,
+               q(RUN_CPU, JOB, align="ALIGN_PERCENTILE_99", reduce="REDUCE_MAX", by=("job_name",), **mine),
+               "Each job's container CPU, the share of its limit in use (`container/cpu/utilizations`), the 99th "
+               "percentile in each interval while it runs. No policy reads a job's CPU: a slow job shows as a long "
+               "bar above.", w=12, h=7, unit="percentunit", soft_max=1),
+        series("Memory, by job (p99)", ds,
+               q(RUN_MEMORY, JOB, align="ALIGN_PERCENTILE_99", reduce="REDUCE_MAX", by=("job_name",), **mine),
+               "Each job's container memory, the share of its limit in use (`container/memory/utilizations`), the 99th "
+               "percentile in each interval while it runs. At the limit the task is killed (`run-oom`).", w=12, h=7,
+               unit="percentunit", soft_max=1),
+    ]
+
+
+def service_page(service: str) -> dict:
+    """A service's own page: its requests, then its Resources row."""
+    ds, page = SERVICES[service]
+    left_out = service in LATENCY_LEFT_OUT
+    items = [
+        row(f"{service}: requests"),
+        series("Requests, by status class", ds, requests(service, by=("response_code_class",)),
+               f"Requests Cloud Run answered for {service} per interval. None: it serves no requests (a worker) or "
+               "none came.", w=8, h=7, bars=True),
+        series("5xx", ds, five_xx(service), f"{service}'s 5xx answers per interval. `canary-5xx` opens above 0.1% of "
+               "its requests over five minutes (and five).", w=8, h=7, bars=True),
+        series("p95 latency (Cloud Run)", ds, p95(service),
+               f"{service}'s p95 request latency from Cloud Run. " +
+               ("Beta's `canary-latency` leaves it out: it holds streams or calls open by design, so its p95 climbs "
+                "while one is open." if left_out else "`canary-latency` opens above 2 s for ten minutes."),
+               w=8, h=7, unit="ms", **({} if left_out else {"line": 2000})),
+        text("No disk on a Cloud Run service", NO_DISK, w=24, h=3),
+        *resources(service, own_page=True),
+    ]
+    return dashboard(service_uid(service), f"{service} (cloud service)",
+                     f"{service}, on the {AREA_TITLES[page]} page, on its own: its requests, then its CPU, memory, "
+                     "instances, concurrency and start-up, with the lines the pager uses. " + NOTHING_BUT_METRICS,
+                     [page], items, kind=SERVICE_TAG,
+                     links=({"title": AREA_TITLES[page], "type": "link", "url": f"/d/tw-cloud-{page}", "icon": "dashboard",
+                             "keepTime": True, "includeVars": False, "targetBlank": False, "tags": [],
+                             "asDropdown": False, "tooltip": f"The page {service} is on"},))
 
 
 # ---- The pages -----------------------------------------------------------------------------------------------------
@@ -751,7 +1172,8 @@ def overview(cc: bool = True) -> dict:
                           "errors", SWEEP_DBS),
               stat("Instances now", APP, instances(APP_SERVICES, "+60s"), "Cloud Run instances per service. Zero "
                    "is how a scale-to-zero service idles; a service kept warm with none is the urgent `no instance` "
-                   "policy.", calc="lastNotNull", time_from="15m", no_value="0"),
+                   "policy. The link by the title opens each service's own page.", calc="lastNotNull",
+                   time_from="15m", no_value="0", links=service_links(*APP_SERVICES.split("|"))),
               jobs_stat("tpa-jobs (24 h)", APP, TPA_JOBS, TPA_SCHEDULES, SWEEP_DBS)),
         *area("Sign-in (auth, its messenger and jobs)", APP, AUTH_SERVICES, ("auth-db",), p95("auth", "+3600s"),
               "auth's p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
@@ -829,6 +1251,9 @@ def portal_api() -> dict:
                q(log("model_gateway_calls"), REV, by=("code",)),
                "model-gateway's calls to the model vendor that came back as an error, busy, unavailable or rejected "
                "(`model_gateway_calls`; `model-vendor-errors`). Silent while model-gateway is not built.", bars=True),
+        *area_resources("portal-api"),
+        *project_section(APP, "app project", "app-net-nat",
+                         "auth's messenger, the model gateway and the synthetic journeys"),
         row("Instances and start-up"),
         series("Instances, by service", APP, instances(APP_SERVICES),
                "Cloud Run instances per service (the most in each interval). A warm service with none pages as "
@@ -881,6 +1306,8 @@ def sign_in() -> dict:
         series("5xx, by service", APP, five_xx(AUTH_SERVICES),
                "5xx answers per interval. `backend-down` (urgent) opens when everything auth answered for ten "
                "minutes was a 5xx.", bars=True, w=8),
+        *area_resources("sign-in"),
+        *database_rows("auth-db", APP, "auth and its jobs; app project", now=False),
         row("Sign-in messages"),
         series("Oldest unsent message (p99, seconds)", APP,
                q(log("auth_messages_outbox_lag"), REV, align="ALIGN_PERCENTILE_99", reduce="REDUCE_MAX", name="p99"),
@@ -965,6 +1392,10 @@ def records() -> dict:
         series("5xx", PHI, five_xx("records"),
                "records' 5xx answers per interval. `records-down` (urgent) opens when everything it answered for ten "
                "minutes was a 5xx.", bars=True, w=8),
+        *area_resources("records"),
+        *database_rows("tpa-db", PHI, "records and its jobs; PHI project", now=False),
+        *project_section(PHI, "PHI project", "phi-net-nat", "connectors' messages"),
+        *storage(PHI, "PHI project"),
         row("Audit chain"),
         series("records-chain-head: executions and schedule", PHI,
                [executions("records-chain-head", by=("result",)),
@@ -1036,6 +1467,10 @@ def call_centre() -> dict:
                [q(log("run_system_errors"), name="system log errors"),
                 q(log("sql_proxy_errors"), name="sql proxy refusals")],
                "`canary-startup` and `canary-sql` in the call-centre project.", bars=True),
+        *area_resources("callcentre"),
+        *database_rows("cc-db", CC, "the staffed desk and svc-voice's hand-off ledger", now=False),
+        *project_section(CC, "call-centre project", "cc-net-nat",
+                         "the relay's calls to the telephony vendor and svc-voice's to the model"),
         row("Database and migration"),
         db_stat("cc-db", CC, "cc-db", w=6, h=7),
         series("migrate-cc executions", CC, executions("migrate-cc"),
@@ -1076,6 +1511,10 @@ def crm() -> dict:
                   name=alias("job_name", prefix="sql proxy: "))],
                "`canary-startup` and `canary-sql` for the CRM's services and jobs (beta's are in the app project).",
                bars=True),
+        *area_resources("crm"),
+        *database_rows("crm-db", CRM, "the CRM; the app project in beta", now=False),
+        *project_section(CRM, "CRM's project", note=" In beta the CRM runs in the app project, so every app service "
+                         "counts here too."),
         row("Database and jobs"),
         db_stat("crm-db", CRM, "crm-db", w=6, h=7),
         series("CRM job executions", CRM, executions(CRM_JOBS),
@@ -1148,32 +1587,11 @@ def databases(cc: bool = True) -> dict:
                           ("crm-db", CRM, "the CRM; the app project in beta"),
                           *((("cc-db", CC, "the call centre's staffed desk and svc-voice's hand-off ledger"),)
                             if cc else ())):
-        items += [
-            row(f"{name} ({who})"),
-            timeline("Up", ds, db_up(name), f"Cloud SQL's `database/up` for {name}, the lowest in each interval. "
-                     f"`{name}-down` (urgent) pages below 1 for five minutes. " + STOPPED_DB, w=12, h=5,
-                     mappings=UP_MAPPING, steps=thresholds("red", (1, "green"))),
-            series("Disk used", ds, db_disk(name), f"`{name}-disk` opens above 85% for ten minutes; automatic "
-                   "growth stops at the instance's disk_autoresize_limit.", w=8, h=5, unit="percentunit", line=0.85),
-            db_stat("Now", ds, name, w=4, h=5),
-            series("CPU and memory", ds, [db_resource(SQL_CPU, name, "CPU"), db_resource(SQL_MEMORY, name, "memory")],
-                   "Cloud SQL's CPU and memory utilisation (the monitoring module pages CPU at 80% and 95%, memory "
-                   "at 90%).", w=8, h=6, unit="percentunit", line=0.9),
-            series("Connections", ds, db_resource(SQL_BACKENDS, name, "connections", reduce="REDUCE_SUM"),
-                   f"Backends connected (num_backends, every database of the instance). The module opens at 80% and "
-                   f"95% of max_connections ({MAX_CONNECTIONS[name]} on beta).", w=8, h=6,
-                   line=round(MAX_CONNECTIONS[name] * 0.8)),
-            series("Restarts and failed backups", ds,
-                   [q(log("sql_restarts"), SQL, by=(), name="restarts", database_id=f"*:{name}"),
-                    q(log("sql_backup_failures"), SQL, by=(), name="backup failed", database_id=f"*:{name}")],
-                   "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated "
-                   "backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
-                   w=8, h=6, bars=True),
-        ]
+        items += database_rows(name, ds, who)
     return dashboard("tw-cloud-databases", "Databases (cloud)",
-                     f"The {'four' if cc else 'three'} Cloud SQL instances: up, disk, CPU, memory, connections, "
-                     "restarts and failed backups. " + STOPPED_DB, ["databases"], items,
-                     time="now-24h")
+                     f"The {'four' if cc else 'three'} Cloud SQL instances: disk space (used, and used against the "
+                     "disk's size), up, CPU, memory, connections, disk operations and throughput, restarts and failed "
+                     "backups. " + STOPPED_DB, ["databases"], items, time="now-24h")
 
 
 def jobs(cc: bool = True) -> dict:
@@ -1212,19 +1630,28 @@ def jobs(cc: bool = True) -> dict:
           if cc else []),
         series("migrate-crm and seed-crm", CRM, executions(CRM_JOBS), "The CRM's jobs, each run by a person.",
                bars=True),
+        *job_resources(APP, "app project (tpa-jobs, auth's jobs, the synthetic journeys; the CRM's in beta)"),
+        *job_resources(PHI, "PHI project"),
+        *(job_resources(CC, "call-centre project") if cc else []),
+        *job_resources(CRM, "the CRM's jobs", jobs=CRM_JOBS),
     ]
     return dashboard("tw-cloud-jobs", "Jobs (cloud)",
-                     "Every scheduled and person-run Cloud Run job: executions, failures, schedules and missed runs.",
-                     ["jobs"], items, time="now-24h")
+                     "Every scheduled and person-run Cloud Run job: executions, failures, schedules and missed runs, "
+                     "then each project's task attempts, run lengths, CPU and memory.", ["jobs"], items,
+                     time="now-24h")
 
 
 PAGES = {"overview": overview, "portal-api": portal_api, "sign-in": sign_in, "records": records,
-         "callcentre": call_centre, "crm": crm, "errors": errors, "databases": databases, "jobs": jobs}
+         "callcentre": call_centre, "crm": crm, "errors": errors, "databases": databases, "jobs": jobs,
+         **{f"service-{service}": (lambda service=service: service_page(service)) for service in SERVICES}}
 
 
 # production-full has no call-centre project: these pages are written again without their call-centre part, into
 # no-cc/, and render-dashboards.sh uses them (and leaves out callcentre.json) when TPA_CC_PROJECT_ID is empty.
 NO_CC = {"overview": overview, "errors": errors, "databases": databases, "jobs": jobs}
+# The pages that read the call-centre project alone: render-dashboards.sh leaves them out with no call-centre project
+# (its CC_ONLY_PAGES; tests/cloud hold the two lists together).
+CC_ONLY = ["callcentre", *[f"service-{service}" for service, (ds, _page) in SERVICES.items() if ds == CC]]
 
 
 def render() -> dict[str, str]:

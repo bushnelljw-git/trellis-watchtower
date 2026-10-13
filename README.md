@@ -113,7 +113,8 @@ PHI, docs/REQUESTS.md asks the TPA repos for a fourth exception fact: the innerm
   in Terraform's environment only. See [docs/PAGERDUTY.md](docs/PAGERDUTY.md).
 - **Hosted Grafana.** [cloud/](cloud/) is the production image: Grafana 12 pinned by digest, signed in only by the
   IAP assertion on `watch.${domain}` for `grp-platform`, reading Cloud Monitoring for the app, CRM, PHI and
-  call-centre projects, with nine dashboards checked against tpa-platform's metric catalogue. The owner ruled yes on
+  call-centre projects, with nine pages and a page for each Cloud Run service (its CPU, memory, instances,
+  concurrency and start-up) checked against tpa-platform's metric catalogue. The owner ruled yes on
   2026-10-11 ("Yes, everything"); the cloud half is tpa-platform's, being built. `make cloud-image-check` builds and
   checks it offline. See [cloud/README.md](cloud/README.md).
 - **Synthetic journeys.** [synthetics/](synthetics/) is the runner for the sign-in journeys (bodyfirst

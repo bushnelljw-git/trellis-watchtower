@@ -9,7 +9,7 @@
 #                                           Grafana drops a Cloud Monitoring query with no project name
 #                                           (datasource.ts filterQuery). Empty CC (production-full has no call-centre
 #                                           project): the no-cc/ variants replace the pages with a call-centre part,
-#                                           and the call-centre page is left out.
+#                                           and the pages that read the call centre alone (CC_ONLY_PAGES) are left out.
 #   TPA_ENVIRONMENT     required, `beta` or `production` (tpa-platform's local.env): the uptime tiles' wording.
 #   TPA_PAUSED_JOBS     comma list, may be empty: sweeps paused on purpose (tpa-platform's var.tpa_jobs_paused).
 #   TPA_STOPPED_DATABASES  comma list, may be empty: Cloud SQL instances stopped on purpose (tpa-platform's
@@ -41,6 +41,9 @@ fi
 # render test holds these to them).
 KNOWN_SWEEPS="erisa-clocks nightly-anomalies stoploss-surveillance accumulator-reconcile workload-audit member-access"
 KNOWN_DATABASES="auth-db tpa-db crm-db cc-db"
+# The pages that read the call-centre project alone (scripts/cloud_dashboards.py CC_ONLY): the Call centre page and
+# its services' own pages. With no call-centre project they are left out.
+CC_ONLY_PAGES="callcentre.json service-svc-voice.json service-svc-ops.json service-svc-twilio-rest.json"
 
 refuse() { echo "render-dashboards: $*" >&2; exit 1; }
 
@@ -120,7 +123,7 @@ for f in "$src"/*.json; do
   found=1
   name="$(basename "$f")"
   if [ -z "$cc" ]; then
-    [ "$name" = callcentre.json ] && continue
+    case " $CC_ONLY_PAGES " in *" $name "*) continue ;; esac
     [ -e "$src/no-cc/$name" ] && f="$src/no-cc/$name"
   fi
   sed -f "$program" "$f" > "$work/out/$name"

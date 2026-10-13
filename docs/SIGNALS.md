@@ -149,7 +149,7 @@ An **error group** is `service` + `exc_class` + (`operation` or `route`) + `sqls
 
 The TPA projects' production alerts are Cloud Monitoring alert policies in tpa-platform's `infra/modules/monitoring/`
 and its catalogue `infra/monitoring.yml` (docs/infra/monitoring.md there). The hosted Grafana in [cloud/](../cloud/)
-charts the same metrics: nine dashboards, read-only, over four datasources (`cloud-app`, `cloud-crm`, `cloud-phi`,
+charts the same metrics: nine pages and a page per Cloud Run service, read-only, over four datasources (`cloud-app`, `cloud-crm`, `cloud-phi`,
 `cloud-cc`). The owner ruled it yes on 2026-10-11; it is live once tpa-platform builds the cloud half. **Source** below
 is the Cloud Monitoring metric (`logging.googleapis.com/user/<name>` for a log-based one). A red triangle on a panel is
 a failed query, not a reading (on `cloud-phi`, most often the perimeter rule missing), and its "no value" text means

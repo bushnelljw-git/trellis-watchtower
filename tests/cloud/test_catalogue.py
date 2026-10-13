@@ -31,18 +31,41 @@ DASHBOARDS = PAGES + sorted((ROOT / "cloud" / "dashboards" / "no-cc").glob("*.js
 ROLE = {"cloud-app": "app", "cloud-phi": "phi", "cloud-crm": "crm", "cloud-cc": "cc"}
 LOG_PREFIX = "logging.googleapis.com/user/"
 
-# Google's own metrics the dashboards read: the metric labels each one carries, and its kind.
+# Google's own metrics the dashboards read: the metric labels a dashboard may read of each, and its kind (as its
+# descriptor gives it: a DELTA is a counter, a GAUGE of numbers a gauge; read from beta's metricDescriptors,
+# 2026-10-12).
 BUILTIN = {
     "run.googleapis.com/request_count": ({"response_code_class"}, "counter"),
     "run.googleapis.com/request_latencies": (set(), "distribution"),
     "run.googleapis.com/container/instance_count": ({"state"}, "gauge"),
+    "run.googleapis.com/container/cpu/utilizations": (set(), "distribution"),
+    "run.googleapis.com/container/memory/utilizations": (set(), "distribution"),
+    "run.googleapis.com/container/max_request_concurrencies": (set(), "distribution"),
+    "run.googleapis.com/container/startup_latencies": (set(), "distribution"),
+    "run.googleapis.com/container/billable_instance_time": (set(), "counter"),
     "run.googleapis.com/job/completed_execution_count": ({"result"}, "counter"),
+    "run.googleapis.com/job/completed_task_attempt_count": ({"result"}, "counter"),
+    "run.googleapis.com/job/running_task_attempts": (set(), "gauge"),
     "cloudsql.googleapis.com/database/up": (set(), "gauge"),
     "cloudsql.googleapis.com/database/disk/utilization": (set(), "gauge"),
+    "cloudsql.googleapis.com/database/disk/bytes_used": (set(), "gauge"),
+    "cloudsql.googleapis.com/database/disk/quota": (set(), "gauge"),
+    "cloudsql.googleapis.com/database/disk/read_ops_count": (set(), "counter"),
+    "cloudsql.googleapis.com/database/disk/write_ops_count": (set(), "counter"),
+    "cloudsql.googleapis.com/database/disk/read_bytes_count": (set(), "counter"),
+    "cloudsql.googleapis.com/database/disk/write_bytes_count": (set(), "counter"),
     "cloudsql.googleapis.com/database/cpu/utilization": (set(), "gauge"),
     "cloudsql.googleapis.com/database/memory/utilization": (set(), "gauge"),
     "cloudsql.googleapis.com/database/postgresql/num_backends": (set(), "gauge"),
     "monitoring.googleapis.com/uptime_check/check_passed": (set(), "bool"),
+    "router.googleapis.com/nat/allocated_ports": (set(), "gauge"),
+    "router.googleapis.com/nat/port_usage": (set(), "gauge"),
+    "router.googleapis.com/nat/new_connections_count": (set(), "counter"),
+    "router.googleapis.com/nat/dropped_sent_packets_count": ({"reason"}, "counter"),
+    "router.googleapis.com/nat/dropped_received_packets_count": (set(), "counter"),
+    "router.googleapis.com/nat/nat_allocation_failed": (set(), "bool"),
+    "storage.googleapis.com/storage/total_bytes": (set(), "gauge"),
+    "storage.googleapis.com/storage/object_count": (set(), "gauge"),
 }
 # Written by Google for objects tpa-platform's monitoring module makes, not named in the catalogue's YAML: the uptime
 # checks, public and private (modules/monitoring/main.tf, google_monitoring_alert_policy.uptime and .private read it;
@@ -51,10 +74,32 @@ BUILTIN = {
 BUILTIN_FROM_THE_MODULE = {"monitoring.googleapis.com/uptime_check/check_passed",
                            "cloudsql.googleapis.com/database/cpu/utilization",
                            "cloudsql.googleapis.com/database/memory/utilization",
-                           "cloudsql.googleapis.com/database/postgresql/num_backends"}
+                           "cloudsql.googleapis.com/database/postgresql/num_backends",
+                           # each job's `job-timeout-<job>` policy (the module's, at 80% of its timeout)
+                           "run.googleapis.com/job/running_task_attempts"}
+# Read by no policy: charted beside the signals the policies page on, so a page shows why (the owner, 2026-10-13:
+# "Where are all the primitives for each service?"). A Cloud Run service's start-up time and billed instances, a
+# job's task attempts, a database's disk in bytes, its size and its disk I/O, a Cloud NAT gateway's ports,
+# connections and dropped replies, and a bucket's size and object count.
+BUILTIN_CONTEXT = {"run.googleapis.com/container/startup_latencies",
+                   "run.googleapis.com/container/billable_instance_time",
+                   "run.googleapis.com/job/completed_task_attempt_count",
+                   "cloudsql.googleapis.com/database/disk/bytes_used",
+                   "cloudsql.googleapis.com/database/disk/quota",
+                   "cloudsql.googleapis.com/database/disk/read_ops_count",
+                   "cloudsql.googleapis.com/database/disk/write_ops_count",
+                   "cloudsql.googleapis.com/database/disk/read_bytes_count",
+                   "cloudsql.googleapis.com/database/disk/write_bytes_count",
+                   "router.googleapis.com/nat/allocated_ports",
+                   "router.googleapis.com/nat/port_usage",
+                   "router.googleapis.com/nat/new_connections_count",
+                   "router.googleapis.com/nat/dropped_received_packets_count",
+                   "storage.googleapis.com/storage/total_bytes",
+                   "storage.googleapis.com/storage/object_count"}
 RESOURCE_LABELS = {"cloud_run_revision": {"service_name"}, "cloud_run_job": {"job_name"},
                    "cloudsql_database": {"database_id"}, "uptime_url": {"host"}, "cloud_scheduler_job": {"job_id"},
-                   "audited_resource": set(), "servicedirectory_service": {"service_name"}}
+                   "audited_resource": set(), "servicedirectory_service": {"service_name"},
+                   "nat_gateway": {"gateway_name"}, "gcs_bucket": {"bucket_name"}}
 # A distribution (a latency, a lag, a backlog) is read through a percentile or its mean; a counter by its count.
 DISTRIBUTION_ALIGNERS = {"ALIGN_PERCENTILE_99", "ALIGN_PERCENTILE_95", "ALIGN_PERCENTILE_50", "ALIGN_PERCENTILE_05",
                          "ALIGN_MEAN"}
@@ -163,7 +208,8 @@ class CatalogueTest(unittest.TestCase):
                 elif not found["distribution"] and aligner not in COUNTER_ALIGNERS:
                     problems.append(f"{where}: `{metric}` is a counter; read it by its count, not {aligner}")
             elif metric in BUILTIN:
-                if metric not in BUILTIN_FROM_THE_MODULE and f'metric.type = "{metric}"' not in self.catalogue.text \
+                if metric not in BUILTIN_FROM_THE_MODULE | BUILTIN_CONTEXT \
+                        and f'metric.type = "{metric}"' not in self.catalogue.text \
                         and promql_name(metric) not in self.catalogue.text:
                     problems.append(f"{where}: `{metric}` is read by no catalogue policy")
                 kind = BUILTIN[metric][1]
@@ -274,8 +320,20 @@ class CatalogueTest(unittest.TestCase):
         script = (ROOT / "cloud" / "render-dashboards.sh").read_text()
         sweeps = re.search(r'^KNOWN_SWEEPS="([^"]*)"', script, re.M).group(1).split()
         databases = re.search(r'^KNOWN_DATABASES="([^"]*)"', script, re.M).group(1).split()
+        cc_only = re.search(r'^CC_ONLY_PAGES="([^"]*)"', script, re.M).group(1).split()
         self.assertEqual(sweeps, list(gen.SWEEPS))
         self.assertEqual(databases, list(gen.DATABASES))
+        self.assertEqual(cc_only, [f"{page}.json" for page in gen.CC_ONLY])
+
+    def test_the_call_centre_only_pages_are_exactly_those_with_no_way_to_render_without_it(self):
+        # A page that reads the call-centre project and has no no-cc/ variant must be left out without one, and
+        # every page left out must be one of those: no other page is lost in production-full.
+        reads_cc = {p.stem for p in PAGES if "cloud-cc" in p.read_text()}
+        self.assertEqual(reads_cc - set(gen.NO_CC), set(gen.CC_ONLY))
+        for page in gen.CC_ONLY:
+            uids = {t["datasource"]["uid"] for panel in lint.panels(json.loads(
+                (ROOT / "cloud" / "dashboards" / f"{page}.json").read_text())) for t in panel.get("targets") or []}
+            self.assertEqual(uids, {"cloud-cc"}, page)
 
     def test_no_cc_variants_read_no_call_centre_project(self):
         variants = [p for p in DASHBOARDS if p.parent.name == "no-cc"]

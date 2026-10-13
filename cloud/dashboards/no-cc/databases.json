@@ -1,7 +1,7 @@
 {
   "uid": "tw-cloud-databases",
   "title": "Databases (cloud)",
-  "description": "The three Cloud SQL instances: up, disk, CPU, memory, connections, restarts and failed backups. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+  "description": "The three Cloud SQL instances: disk space (used, and used against the disk's size), up, CPU, memory, connections, disk operations and throughput, restarts and failed backups. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
   "tags": [
     "trellis-watchtower",
     "cloud",
@@ -72,6 +72,20 @@
       "tooltip": ""
     },
     {
+      "title": "Services",
+      "type": "dashboards",
+      "tags": [
+        "cloud-service"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link",
+      "url": "",
+      "tooltip": "Each Cloud Run service's own page: its CPU, memory, instances, concurrency and start-up"
+    },
+    {
       "title": "PagerDuty incidents",
       "type": "link",
       "url": "https://app.pagerduty.com/incidents",
@@ -90,7 +104,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "auth-db (auth and its jobs; app project)",
+      "title": "auth-db (auth and its jobs; app project): disk space, CPU, memory, connections, disk I/O",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -102,227 +116,13 @@
       "id": 1
     },
     {
-      "type": "state-timeline",
-      "title": "Up",
-      "description": "Cloud SQL's `database/up` for auth-db, the lowest in each interval. `auth-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 0,
-        "y": 1
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-app"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "cloudsql.googleapis.com/database/up",
-              "AND",
-              "resource.type",
-              "=",
-              "cloudsql_database",
-              "AND",
-              "resource.label.database_id",
-              "=",
-              "*:auth-db"
-            ],
-            "groupBys": [
-              "resource.label.database_id"
-            ],
-            "crossSeriesReducer": "REDUCE_MIN",
-            "perSeriesAligner": "ALIGN_MIN",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "auth-db up"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "DOWN",
-                  "color": "red",
-                  "index": 0
-                },
-                "1": {
-                  "text": "up",
-                  "color": "green",
-                  "index": 1
-                }
-              }
-            }
-          ],
-          "custom": {
-            "fillOpacity": 80
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "showValue": "never",
-        "mergeValues": true,
-        "alignValue": "left",
-        "rowHeight": 0.8,
-        "legend": {
-          "showLegend": false,
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "id": 2
-    },
-    {
-      "type": "timeseries",
-      "title": "Disk used",
-      "description": "`auth-db-disk` opens above 85% for ten minutes; automatic growth stops at the instance's disk_autoresize_limit.",
-      "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 12,
-        "y": 1
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-app"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "cloudsql.googleapis.com/database/disk/utilization",
-              "AND",
-              "resource.type",
-              "=",
-              "cloudsql_database",
-              "AND",
-              "resource.label.database_id",
-              "=",
-              "*:auth-db"
-            ],
-            "groupBys": [
-              "resource.label.database_id"
-            ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "auth-db disk"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.85
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 3
-    },
-    {
       "type": "stat",
       "title": "Now",
       "description": "Cloud SQL's own signals for auth-db: `database/up` (the urgent `auth-db-down` pages below 1 for five minutes) and disk used (`auth-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
-        "h": 5,
+        "h": 6,
         "w": 4,
-        "x": 20,
+        "x": 0,
         "y": 1
       },
       "datasource": {
@@ -529,17 +329,425 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 4
+      "id": 2
     },
     {
       "type": "timeseries",
-      "title": "CPU and memory",
-      "description": "Cloud SQL's CPU and memory utilisation (the monitoring module pages CPU at 80% and 95%, memory at 90%).",
+      "title": "Disk space used (%)",
+      "description": "How full auth-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `auth-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 4,
+        "y": 1
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth-db disk"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.85
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            },
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 3
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk space: used and size (bytes)",
+      "description": "auth-db's disk in bytes: used (`database/disk/bytes_used`) and its size (`database/disk/quota`). When the size steps up, Cloud SQL's automatic storage increase grew the disk; it grows only up to disk_autoresize_limit. The dashed red line is 85% of the size, where `auth-db-disk` opens.",
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 14,
+        "y": 1
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/bytes_used",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth-db used"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/quota",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth-db size"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "alert line (85% of size)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "Time",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "alert line (85% of size)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth-db size"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "0.85"
+              }
+            }
+          }
+        }
+      ],
+      "id": 4
+    },
+    {
+      "type": "state-timeline",
+      "title": "Up",
+      "description": "Cloud SQL's `database/up` for auth-db, the lowest in each interval. `auth-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 6
+        "y": 7
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/up",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MIN",
+            "perSeriesAligner": "ALIGN_MIN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth-db up"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "up",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "custom": {
+            "fillOpacity": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "alignValue": "left",
+        "rowHeight": 0.8,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU",
+      "description": "Cloud SQL's CPU utilisation for auth-db (`database/cpu/utilization`). The red lines are the monitoring module's: `auth-db` CPU above 80% for thirty minutes, and above 95% for fifteen (urgent).",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 7
       },
       "datasource": {
         "type": "stackdriver",
@@ -578,9 +786,86 @@
             "preprocessor": "none"
           },
           "aliasBy": "auth-db CPU"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.8
+              },
+              {
+                "color": "red",
+                "value": 0.95
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            },
+            "axisSoftMax": 1
+          }
         },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 6
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory",
+      "description": "Cloud SQL's memory utilisation for auth-db (`database/memory/utilization`). The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 7
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
         {
-          "refId": "B",
+          "refId": "A",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -647,7 +932,8 @@
             "axisSoftMin": 0,
             "thresholdsStyle": {
               "mode": "line"
-            }
+            },
+            "axisSoftMax": 1
           }
         },
         "overrides": []
@@ -667,17 +953,17 @@
           "sort": "desc"
         }
       },
-      "id": 5
+      "id": 7
     },
     {
       "type": "timeseries",
       "title": "Connections",
-      "description": "Backends connected (num_backends, every database of the instance). The module opens at 80% and 95% of max_connections (100 on beta).",
+      "description": "Backends connected (num_backends, every database of the instance). The red lines are the monitoring module's: 80% of max_connections for ten minutes, and 95% for five (urgent); max_connections is 100 on beta, the grey line, where new connections are refused.",
       "gridPos": {
         "h": 6,
-        "w": 8,
-        "x": 8,
-        "y": 6
+        "w": 6,
+        "x": 0,
+        "y": 13
       },
       "datasource": {
         "type": "stackdriver",
@@ -735,6 +1021,146 @@
               {
                 "color": "red",
                 "value": 80
+              },
+              {
+                "color": "red",
+                "value": 95
+              },
+              {
+                "color": "#8c8c8c",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            },
+            "axisSoftMax": 100
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 8
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk operations per second",
+      "description": "auth-db's disk reads and writes per second (`database/disk/read_ops_count`, `write_ops_count`). Reads near none are normal: the working set is in memory.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 13
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/read_ops_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "read"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/write_ops_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "write"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
               }
             ]
           },
@@ -751,7 +1177,7 @@
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "line"
+              "mode": "off"
             }
           }
         },
@@ -772,7 +1198,137 @@
           "sort": "desc"
         }
       },
-      "id": 6
+      "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk throughput",
+      "description": "Bytes auth-db read from and wrote to its disk per second (`database/disk/read_bytes_count`, `write_bytes_count`).",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 13
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/read_bytes_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "read"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/write_bytes_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "write"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10
     },
     {
       "type": "timeseries",
@@ -780,9 +1336,9 @@
       "description": "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
       "gridPos": {
         "h": 6,
-        "w": 8,
-        "x": 16,
-        "y": 6
+        "w": 6,
+        "x": 18,
+        "y": 13
       },
       "datasource": {
         "type": "stackdriver",
@@ -902,244 +1458,30 @@
           "sort": "desc"
         }
       },
-      "id": 7
+      "id": 11
     },
     {
       "type": "row",
-      "title": "tpa-db (records and its jobs; PHI project)",
+      "title": "tpa-db (records and its jobs; PHI project): disk space, CPU, memory, connections, disk I/O",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 19
       },
-      "id": 8
-    },
-    {
-      "type": "state-timeline",
-      "title": "Up",
-      "description": "Cloud SQL's `database/up` for tpa-db, the lowest in each interval. `tpa-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 0,
-        "y": 13
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-phi"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-phi"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_PHI_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "cloudsql.googleapis.com/database/up",
-              "AND",
-              "resource.type",
-              "=",
-              "cloudsql_database",
-              "AND",
-              "resource.label.database_id",
-              "=",
-              "*:tpa-db"
-            ],
-            "groupBys": [
-              "resource.label.database_id"
-            ],
-            "crossSeriesReducer": "REDUCE_MIN",
-            "perSeriesAligner": "ALIGN_MIN",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "tpa-db up"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "DOWN",
-                  "color": "red",
-                  "index": 0
-                },
-                "1": {
-                  "text": "up",
-                  "color": "green",
-                  "index": 1
-                }
-              }
-            }
-          ],
-          "custom": {
-            "fillOpacity": 80
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "showValue": "never",
-        "mergeValues": true,
-        "alignValue": "left",
-        "rowHeight": 0.8,
-        "legend": {
-          "showLegend": false,
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "id": 9
-    },
-    {
-      "type": "timeseries",
-      "title": "Disk used",
-      "description": "`tpa-db-disk` opens above 85% for ten minutes; automatic growth stops at the instance's disk_autoresize_limit.",
-      "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 12,
-        "y": 13
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-phi"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-phi"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_PHI_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "cloudsql.googleapis.com/database/disk/utilization",
-              "AND",
-              "resource.type",
-              "=",
-              "cloudsql_database",
-              "AND",
-              "resource.label.database_id",
-              "=",
-              "*:tpa-db"
-            ],
-            "groupBys": [
-              "resource.label.database_id"
-            ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "tpa-db disk"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.85
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 10
+      "id": 12
     },
     {
       "type": "stat",
       "title": "Now",
       "description": "Cloud SQL's own signals for tpa-db: `database/up` (the urgent `tpa-db-down` pages below 1 for five minutes) and disk used (`tpa-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
-        "h": 5,
+        "h": 6,
         "w": 4,
-        "x": 20,
-        "y": 13
+        "x": 0,
+        "y": 20
       },
       "datasource": {
         "type": "stackdriver",
@@ -1345,17 +1687,425 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 11
+      "id": 13
     },
     {
       "type": "timeseries",
-      "title": "CPU and memory",
-      "description": "Cloud SQL's CPU and memory utilisation (the monitoring module pages CPU at 80% and 95%, memory at 90%).",
+      "title": "Disk space used (%)",
+      "description": "How full tpa-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `tpa-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 4,
+        "y": 20
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-db disk"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.85
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            },
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 14
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk space: used and size (bytes)",
+      "description": "tpa-db's disk in bytes: used (`database/disk/bytes_used`) and its size (`database/disk/quota`). When the size steps up, Cloud SQL's automatic storage increase grew the disk; it grows only up to disk_autoresize_limit. The dashed red line is 85% of the size, where `tpa-db-disk` opens.",
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 14,
+        "y": 20
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/bytes_used",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-db used"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/quota",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-db size"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "alert line (85% of size)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "Time",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "alert line (85% of size)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-db size"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "0.85"
+              }
+            }
+          }
+        }
+      ],
+      "id": 15
+    },
+    {
+      "type": "state-timeline",
+      "title": "Up",
+      "description": "Cloud SQL's `database/up` for tpa-db, the lowest in each interval. `tpa-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 18
+        "y": 26
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/up",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MIN",
+            "perSeriesAligner": "ALIGN_MIN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-db up"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "up",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "custom": {
+            "fillOpacity": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "alignValue": "left",
+        "rowHeight": 0.8,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "id": 16
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU",
+      "description": "Cloud SQL's CPU utilisation for tpa-db (`database/cpu/utilization`). The red lines are the monitoring module's: `tpa-db` CPU above 80% for thirty minutes, and above 95% for fifteen (urgent).",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 26
       },
       "datasource": {
         "type": "stackdriver",
@@ -1394,9 +2144,86 @@
             "preprocessor": "none"
           },
           "aliasBy": "tpa-db CPU"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.8
+              },
+              {
+                "color": "red",
+                "value": 0.95
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            },
+            "axisSoftMax": 1
+          }
         },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 17
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory",
+      "description": "Cloud SQL's memory utilisation for tpa-db (`database/memory/utilization`). The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
         {
-          "refId": "B",
+          "refId": "A",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-phi"
@@ -1463,7 +2290,8 @@
             "axisSoftMin": 0,
             "thresholdsStyle": {
               "mode": "line"
-            }
+            },
+            "axisSoftMax": 1
           }
         },
         "overrides": []
@@ -1483,17 +2311,17 @@
           "sort": "desc"
         }
       },
-      "id": 12
+      "id": 18
     },
     {
       "type": "timeseries",
       "title": "Connections",
-      "description": "Backends connected (num_backends, every database of the instance). The module opens at 80% and 95% of max_connections (400 on beta).",
+      "description": "Backends connected (num_backends, every database of the instance). The red lines are the monitoring module's: 80% of max_connections for ten minutes, and 95% for five (urgent); max_connections is 400 on beta, the grey line, where new connections are refused.",
       "gridPos": {
         "h": 6,
-        "w": 8,
-        "x": 8,
-        "y": 18
+        "w": 6,
+        "x": 0,
+        "y": 32
       },
       "datasource": {
         "type": "stackdriver",
@@ -1551,6 +2379,146 @@
               {
                 "color": "red",
                 "value": 320
+              },
+              {
+                "color": "red",
+                "value": 380
+              },
+              {
+                "color": "#8c8c8c",
+                "value": 400
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            },
+            "axisSoftMax": 400
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 19
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk operations per second",
+      "description": "tpa-db's disk reads and writes per second (`database/disk/read_ops_count`, `write_ops_count`). Reads near none are normal: the working set is in memory.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 32
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/read_ops_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "read"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/write_ops_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "write"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
               }
             ]
           },
@@ -1567,7 +2535,7 @@
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "line"
+              "mode": "off"
             }
           }
         },
@@ -1588,7 +2556,137 @@
           "sort": "desc"
         }
       },
-      "id": 13
+      "id": 20
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk throughput",
+      "description": "Bytes tpa-db read from and wrote to its disk per second (`database/disk/read_bytes_count`, `write_bytes_count`).",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 32
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/read_bytes_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "read"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/write_bytes_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "write"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 21
     },
     {
       "type": "timeseries",
@@ -1596,9 +2694,9 @@
       "description": "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
       "gridPos": {
         "h": 6,
-        "w": 8,
-        "x": 16,
-        "y": 18
+        "w": 6,
+        "x": 18,
+        "y": 32
       },
       "datasource": {
         "type": "stackdriver",
@@ -1718,244 +2816,30 @@
           "sort": "desc"
         }
       },
-      "id": 14
+      "id": 22
     },
     {
       "type": "row",
-      "title": "crm-db (the CRM; the app project in beta)",
+      "title": "crm-db (the CRM; the app project in beta): disk space, CPU, memory, connections, disk I/O",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 38
       },
-      "id": 15
-    },
-    {
-      "type": "state-timeline",
-      "title": "Up",
-      "description": "Cloud SQL's `database/up` for crm-db, the lowest in each interval. `crm-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 0,
-        "y": 25
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "cloudsql.googleapis.com/database/up",
-              "AND",
-              "resource.type",
-              "=",
-              "cloudsql_database",
-              "AND",
-              "resource.label.database_id",
-              "=",
-              "*:crm-db"
-            ],
-            "groupBys": [
-              "resource.label.database_id"
-            ],
-            "crossSeriesReducer": "REDUCE_MIN",
-            "perSeriesAligner": "ALIGN_MIN",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "crm-db up"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "DOWN",
-                  "color": "red",
-                  "index": 0
-                },
-                "1": {
-                  "text": "up",
-                  "color": "green",
-                  "index": 1
-                }
-              }
-            }
-          ],
-          "custom": {
-            "fillOpacity": 80
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "showValue": "never",
-        "mergeValues": true,
-        "alignValue": "left",
-        "rowHeight": 0.8,
-        "legend": {
-          "showLegend": false,
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "id": 16
-    },
-    {
-      "type": "timeseries",
-      "title": "Disk used",
-      "description": "`crm-db-disk` opens above 85% for ten minutes; automatic growth stops at the instance's disk_autoresize_limit.",
-      "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 12,
-        "y": 25
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "cloudsql.googleapis.com/database/disk/utilization",
-              "AND",
-              "resource.type",
-              "=",
-              "cloudsql_database",
-              "AND",
-              "resource.label.database_id",
-              "=",
-              "*:crm-db"
-            ],
-            "groupBys": [
-              "resource.label.database_id"
-            ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "crm-db disk"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.85
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 17
+      "id": 23
     },
     {
       "type": "stat",
       "title": "Now",
       "description": "Cloud SQL's own signals for crm-db: `database/up` (the urgent `crm-db-down` pages below 1 for five minutes) and disk used (`crm-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
-        "h": 5,
+        "h": 6,
         "w": 4,
-        "x": 20,
-        "y": 25
+        "x": 0,
+        "y": 39
       },
       "datasource": {
         "type": "stackdriver",
@@ -2161,17 +3045,425 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 18
+      "id": 24
     },
     {
       "type": "timeseries",
-      "title": "CPU and memory",
-      "description": "Cloud SQL's CPU and memory utilisation (the monitoring module pages CPU at 80% and 95%, memory at 90%).",
+      "title": "Disk space used (%)",
+      "description": "How full crm-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `crm-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 4,
+        "y": 39
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/utilization",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MEAN",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crm-db disk"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.85
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            },
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 25
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk space: used and size (bytes)",
+      "description": "crm-db's disk in bytes: used (`database/disk/bytes_used`) and its size (`database/disk/quota`). When the size steps up, Cloud SQL's automatic storage increase grew the disk; it grows only up to disk_autoresize_limit. The dashed red line is 85% of the size, where `crm-db-disk` opens.",
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 14,
+        "y": 39
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/bytes_used",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crm-db used"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/quota",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crm-db size"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "alert line (85% of size)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "Time",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "alert line (85% of size)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crm-db size"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "0.85"
+              }
+            }
+          }
+        }
+      ],
+      "id": 26
+    },
+    {
+      "type": "state-timeline",
+      "title": "Up",
+      "description": "Cloud SQL's `database/up` for crm-db, the lowest in each interval. `crm-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 30
+        "y": 45
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/up",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [
+              "resource.label.database_id"
+            ],
+            "crossSeriesReducer": "REDUCE_MIN",
+            "perSeriesAligner": "ALIGN_MIN",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crm-db up"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "up",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "custom": {
+            "fillOpacity": 80
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "alignValue": "left",
+        "rowHeight": 0.8,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "id": 27
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU",
+      "description": "Cloud SQL's CPU utilisation for crm-db (`database/cpu/utilization`). The red lines are the monitoring module's: `crm-db` CPU above 80% for thirty minutes, and above 95% for fifteen (urgent).",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 45
       },
       "datasource": {
         "type": "stackdriver",
@@ -2210,9 +3502,86 @@
             "preprocessor": "none"
           },
           "aliasBy": "crm-db CPU"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.8
+              },
+              {
+                "color": "red",
+                "value": 0.95
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            },
+            "axisSoftMax": 1
+          }
         },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 28
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory",
+      "description": "Cloud SQL's memory utilisation for crm-db (`database/memory/utilization`). The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 45
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
         {
-          "refId": "B",
+          "refId": "A",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-crm"
@@ -2279,7 +3648,8 @@
             "axisSoftMin": 0,
             "thresholdsStyle": {
               "mode": "line"
-            }
+            },
+            "axisSoftMax": 1
           }
         },
         "overrides": []
@@ -2299,17 +3669,17 @@
           "sort": "desc"
         }
       },
-      "id": 19
+      "id": 29
     },
     {
       "type": "timeseries",
       "title": "Connections",
-      "description": "Backends connected (num_backends, every database of the instance). The module opens at 80% and 95% of max_connections (200 on beta).",
+      "description": "Backends connected (num_backends, every database of the instance). The red lines are the monitoring module's: 80% of max_connections for ten minutes, and 95% for five (urgent); max_connections is 200 on beta, the grey line, where new connections are refused.",
       "gridPos": {
         "h": 6,
-        "w": 8,
-        "x": 8,
-        "y": 30
+        "w": 6,
+        "x": 0,
+        "y": 51
       },
       "datasource": {
         "type": "stackdriver",
@@ -2367,6 +3737,146 @@
               {
                 "color": "red",
                 "value": 160
+              },
+              {
+                "color": "red",
+                "value": 190
+              },
+              {
+                "color": "#8c8c8c",
+                "value": 200
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            },
+            "axisSoftMax": 200
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 30
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk operations per second",
+      "description": "crm-db's disk reads and writes per second (`database/disk/read_ops_count`, `write_ops_count`). Reads near none are normal: the working set is in memory.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 51
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/read_ops_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "read"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/write_ops_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "write"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
               }
             ]
           },
@@ -2383,7 +3893,7 @@
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "line"
+              "mode": "off"
             }
           }
         },
@@ -2404,7 +3914,137 @@
           "sort": "desc"
         }
       },
-      "id": 20
+      "id": 31
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk throughput",
+      "description": "Bytes crm-db read from and wrote to its disk per second (`database/disk/read_bytes_count`, `write_bytes_count`).",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 51
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/read_bytes_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "read"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/disk/write_bytes_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_RATE",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "write"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 32
     },
     {
       "type": "timeseries",
@@ -2412,9 +4052,9 @@
       "description": "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
       "gridPos": {
         "h": 6,
-        "w": 8,
-        "x": 16,
-        "y": 30
+        "w": 6,
+        "x": 18,
+        "y": 51
       },
       "datasource": {
         "type": "stackdriver",
@@ -2534,7 +4174,7 @@
           "sort": "desc"
         }
       },
-      "id": 21
+      "id": 33
     }
   ]
 }

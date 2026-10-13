@@ -72,6 +72,20 @@
       "tooltip": ""
     },
     {
+      "title": "Services",
+      "type": "dashboards",
+      "tags": [
+        "cloud-service"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link",
+      "url": "",
+      "tooltip": "Each Cloud Run service's own page: its CPU, memory, instances, concurrency and start-up"
+    },
+    {
       "title": "PagerDuty incidents",
       "type": "link",
       "url": "https://app.pagerduty.com/incidents",
@@ -3533,13 +3547,20 @@
     {
       "type": "stat",
       "title": "web",
-      "description": "web: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "web: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). The link by the title opens the service's own page: its CPU, memory, instances, concurrency and start-up. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 3,
         "x": 7,
         "y": 20
       },
+      "links": [
+        {
+          "title": "web: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-web?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
       "datasource": {
         "type": "stackdriver",
         "uid": "cloud-app"
@@ -3698,13 +3719,20 @@
     {
       "type": "stat",
       "title": "tpa-api",
-      "description": "tpa-api: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "tpa-api: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). The link by the title opens the service's own page: its CPU, memory, instances, concurrency and start-up. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 3,
         "x": 10,
         "y": 20
       },
+      "links": [
+        {
+          "title": "tpa-api: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-tpa-api?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
       "datasource": {
         "type": "stackdriver",
         "uid": "cloud-app"
@@ -3863,13 +3891,25 @@
     {
       "type": "stat",
       "title": "auth",
-      "description": "auth: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "auth: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). The link by the title opens the service's own page: its CPU, memory, instances, concurrency and start-up. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 3,
         "x": 13,
         "y": 20
       },
+      "links": [
+        {
+          "title": "auth: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-auth?${__url_time_range}",
+          "targetBlank": false
+        },
+        {
+          "title": "auth-outbox-publisher: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-auth-outbox-publisher?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
       "datasource": {
         "type": "stackdriver",
         "uid": "cloud-app"
@@ -4028,13 +4068,20 @@
     {
       "type": "stat",
       "title": "records",
-      "description": "records: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "records: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). The link by the title opens the service's own page: its CPU, memory, instances, concurrency and start-up. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 3,
         "x": 16,
         "y": 20
       },
+      "links": [
+        {
+          "title": "records: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-records?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
       "datasource": {
         "type": "stackdriver",
         "uid": "cloud-phi"
@@ -4193,13 +4240,20 @@
     {
       "type": "stat",
       "title": "connectors",
-      "description": "connectors: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "connectors: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). The link by the title opens the service's own page: its CPU, memory, instances, concurrency and start-up. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 3,
         "x": 19,
         "y": 20
       },
+      "links": [
+        {
+          "title": "connectors: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-connectors?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
       "datasource": {
         "type": "stackdriver",
         "uid": "cloud-phi"
@@ -4371,13 +4425,20 @@
     {
       "type": "stat",
       "title": "crm-web",
-      "description": "crm-web: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "crm-web: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). The link by the title opens the service's own page: its CPU, memory, instances, concurrency and start-up. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 3,
         "x": 0,
         "y": 25
       },
+      "links": [
+        {
+          "title": "crm-web: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-crm-web?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
       "datasource": {
         "type": "stackdriver",
         "uid": "cloud-crm"
@@ -4536,13 +4597,20 @@
     {
       "type": "stat",
       "title": "engine",
-      "description": "engine: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "engine: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). The link by the title opens the service's own page: its CPU, memory, instances, concurrency and start-up. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 3,
         "x": 3,
         "y": 25
       },
+      "links": [
+        {
+          "title": "engine: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-engine?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
       "datasource": {
         "type": "stackdriver",
         "uid": "cloud-crm"
@@ -7727,13 +7795,35 @@
     {
       "type": "stat",
       "title": "Instances now",
-      "description": "Cloud Run instances per service. Zero is how a scale-to-zero service idles; a service kept warm with none is the urgent `no instance` policy.",
+      "description": "Cloud Run instances per service. Zero is how a scale-to-zero service idles; a service kept warm with none is the urgent `no instance` policy. The link by the title opens each service's own page.",
       "gridPos": {
         "h": 5,
         "w": 4,
         "x": 16,
         "y": 45
       },
+      "links": [
+        {
+          "title": "web: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-web?${__url_time_range}",
+          "targetBlank": false
+        },
+        {
+          "title": "tpa-api: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-tpa-api?${__url_time_range}",
+          "targetBlank": false
+        },
+        {
+          "title": "model-gateway: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-model-gateway?${__url_time_range}",
+          "targetBlank": false
+        },
+        {
+          "title": "tpa-jobs-drains: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-tpa-jobs-drains?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
       "datasource": {
         "type": "stackdriver",
         "uid": "cloud-app"

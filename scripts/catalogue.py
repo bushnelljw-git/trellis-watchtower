@@ -21,6 +21,11 @@ BLOCK_SCALAR_RE = re.compile(r"^[|>][-+]?\s*(#.*)?$")
 # a line: `^...`, or `(?:^|\n)...` (the call centre's form; written `\\n` inside the YAML's single quotes). An
 # unanchored one can take a word out of free text (the CRM's, 2026-10-11: "...\nfor Jane Doe" gave class "Doe").
 ANCHORS = ("^", r"(?:^|\\n)", r"(?:^|\n)", "(?m)^")
+# What tpa-platform's monitoring module fills in when a catalogue threshold condition leaves a field out
+# (modules/monitoring/variables.tf, the alert_policies threshold object's optional defaults).
+THRESHOLD_DEFAULTS = {"comparison": "COMPARISON_GT", "threshold_value": "0", "duration": "0s",
+                      "alignment_period": "300s", "per_series_aligner": "ALIGN_DELTA",
+                      "cross_series_reducer": "REDUCE_SUM"}
 
 
 def git_blob_sha(data: bytes) -> str:
@@ -85,7 +90,7 @@ class Catalogue:
     def __init__(self, path: Path = CATALOGUE):
         self.text = path.read_text()
         self.data = path.read_bytes()
-        tree = mapping_tree(self.text)
+        tree = self.tree = mapping_tree(self.text)
         self.shared = self._metrics(tree["shared"]["log_metrics"])
         self.roles = {role: self._metrics(body.get("log_metrics", {})) for role, body in tree["projects"].items()}
         # The synthetic journeys' own section (D-149): beta's root reads it alone, and their result lines land in
@@ -113,6 +118,21 @@ class Catalogue:
 
     def metric(self, role: str, name: str) -> dict | None:
         return self.roles.get(role, {}).get(name) or self.shared.get(name)
+
+    def policy(self, name: str, role: str | None = None) -> dict:
+        """An alert policy as the reader keeps it: the shared list's, or a role's own (`<instance>-disk` is the
+        role's whose project holds the instance). KeyError when the catalogue has no such policy."""
+        return (self.tree["projects"][role] if role else self.tree["shared"])["alert_policies"][name]
+
+    def threshold(self, name: str, role: str | None = None, condition: int = 0) -> dict:
+        """A policy's threshold condition, as the module applies it: every field a string with the module's defaults
+        filled in (THRESHOLD_DEFAULTS), and `threshold_value` a number. The dashboards draw this value as the line
+        the pager uses, aggregated as the condition aggregates it."""
+        found = self.policy(name, role)["conditions"][f"-{condition}"]["threshold"]
+        out = {**THRESHOLD_DEFAULTS, **{key: str(value).strip("'\"") for key, value in found.items()
+                                        if value != "<block>"}}
+        out["threshold_value"] = float(out["threshold_value"])
+        return out
 
     def jobs_named(self) -> set[str]:
         """Every Cloud Run job the catalogue's alert filters name (`job_name = one_of(...)` or `= "..."`)."""

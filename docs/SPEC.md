@@ -38,7 +38,8 @@ The research found five constraints that shape the design:
   - It rules P3's class 3 question (the IAP exception for `watch.${domain}`, `sa-watchtower`, the read into the PHI
     project's monitoring) and reverses tpa-platform D-92 ("No hosted dashboard yet").
   - trellis-watchtower builds the image: four datasources (`cloud-cc` added for beta's call-centre project) and nine
-    dashboards over the catalogue's metrics, checked against a vendored, pinned copy of tpa-platform's
+    dashboards over the catalogue's metrics (since 2026-10-13 with each Cloud Run service's resources and a page per
+    service), checked against a vendored, pinned copy of tpa-platform's
     `infra/monitoring.yml` ([cloud/README.md](../cloud/README.md)). tpa-platform's lane builds the cloud half after
     its alert-gaps branch lands. Still no Terraform, deploy identity or image push here.
 - **No Fly (2026-10-11):** *"There will be NO systems in fly ONLY the gcp project"*. Every Fly piece is removed: the

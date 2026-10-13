@@ -11,11 +11,15 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT / "scripts"))
+import cloud_dashboards as gen  # noqa: E402
+
 SCRIPT = ROOT / "cloud" / "render-dashboards.sh"
 DASHBOARDS = ROOT / "cloud" / "dashboards"
 BETA = {"TPA_APP_PROJECT_ID": "beta-tpa-app", "TPA_CRM_PROJECT_ID": "beta-tpa-app",
@@ -86,7 +90,10 @@ class RenderTest(unittest.TestCase):
     def test_production_leaves_out_the_call_centre_and_words_uptime_for_public_hosts(self):
         pages = self.rendered(PRODUCTION)
         self.assertNotIn("callcentre.json", pages)
-        self.assertEqual(len(pages), len(list(self.src.glob("*.json"))) - 1)
+        # The Call centre page and its services' own pages, and nothing else.
+        self.assertEqual(sorted(p.name for p in self.src.glob("*.json")),
+                         sorted([*pages, *(f"{page}.json" for page in gen.CC_ONLY)]))
+        self.assertIn("service-svc-voice.json", [f"{page}.json" for page in gen.CC_ONLY])
         self.assertNotIn("cloud-cc", self.projects(pages))
         self.assertEqual(self.projects(pages)["cloud-crm"], {"prod-crm"})
         overview = pages["overview.json"]

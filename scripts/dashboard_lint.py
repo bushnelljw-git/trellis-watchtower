@@ -98,20 +98,23 @@ FORBIDDEN_RE = re.compile(r"(?<![A-Za-z0-9_])(" + "|".join(sorted(FORBIDDEN, key
 
 # ---- Cloud: what a query may name ------------------------------------------------------------------------------------
 # The catalogue's closed label list (tpa-platform docs/infra/monitoring.md §2) and Google's own metric labels the
-# dashboards read (the status class, a job execution's result, an instance's state), as `metric.label.X`; the
-# resource labels that come with every series and name our own services, jobs, instances, schedules and hosts, as
+# dashboards read (the status class, a job execution's or task attempt's result, an instance's state, the reason
+# Cloud NAT dropped a packet: each a fixed word of Google's), as `metric.label.X`; the resource labels that come with
+# every series and name our own services, jobs, instances, schedules, hosts, NAT gateways and buckets, as
 # `resource.label.X`.
 CATALOGUE_LABELS = {"service", "operation", "gate", "code", "outcome", "status_class", "job", "lane", "class", "sqlstate"}
-GOOGLE_METRIC_LABELS = {"response_code_class", "result", "state"}
+GOOGLE_METRIC_LABELS = {"response_code_class", "result", "state", "reason"}
 METRIC_LABELS = CATALOGUE_LABELS | GOOGLE_METRIC_LABELS
-RESOURCE_LABELS = {"service_name", "job_name", "database_id", "job_id", "host"}
+RESOURCE_LABELS = {"service_name", "job_name", "database_id", "job_id", "host", "gateway_name", "bucket_name"}
 ALLOWED_LABELS = {f"metric.label.{x}" for x in METRIC_LABELS} | {f"resource.label.{x}" for x in RESOURCE_LABELS}
 
 # servicedirectory_service: a private uptime check's resource (Google's VPC checkers reading auth's and tpa-api's
-# /ready at their internal balancers; tpa-platform D-149). Its one label read here is service_name.
+# /ready at their internal balancers; tpa-platform D-149). Its one label read here is service_name. nat_gateway: a
+# project's Cloud NAT (its ports, connections and drops), read by gateway_name. gcs_bucket: a bucket's size and
+# object count, read by bucket_name, never an object's name.
 MONITORED_RESOURCES = {"cloud_run_revision", "cloud_run_job", "cloudsql_database", "uptime_url", "cloud_scheduler_job",
-                       "audited_resource", "servicedirectory_service"}
-METRIC_TYPE_RE = re.compile(r"^(logging|run|cloudsql|monitoring)\.googleapis\.com/[a-z0-9_/]+$")
+                       "audited_resource", "servicedirectory_service", "nat_gateway", "gcs_bucket"}
+METRIC_TYPE_RE = re.compile(r"^(logging|run|cloudsql|monitoring|router|storage)\.googleapis\.com/[a-z0-9_/]+$")
 FILTER_OPERATORS = {"=", "=~"}
 CLOUD_PANEL_TYPES = {"row", "stat", "timeseries", "table", "state-timeline", "text", "bargauge"}
 ALIAS_RE = re.compile(r"\{\{\s*([^}\s]+)\s*\}\}")

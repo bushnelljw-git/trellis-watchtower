@@ -72,6 +72,20 @@
       "tooltip": ""
     },
     {
+      "title": "Services",
+      "type": "dashboards",
+      "tags": [
+        "cloud-service"
+      ],
+      "asDropdown": true,
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false,
+      "icon": "external link",
+      "url": "",
+      "tooltip": "Each Cloud Run service's own page: its CPU, memory, instances, concurrency and start-up"
+    },
+    {
       "title": "PagerDuty incidents",
       "type": "link",
       "url": "https://app.pagerduty.com/incidents",

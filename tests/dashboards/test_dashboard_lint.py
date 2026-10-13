@@ -206,6 +206,15 @@ class CloudMutationTest(unittest.TestCase):
         self.assertCaught(lambda d: self.panel(d, "Uptime checks passing (24 h)")["fieldConfig"]["defaults"].update(
             displayName="${__field.labels.revision_name}"), "a legend names the label `revision_name`")
 
+    def test_cloud_nat_by_its_address_is_refused(self):
+        # Cloud NAT's gateway and drop reason are on the list; the address a port belongs to is not.
+        def mutate(d):
+            tsl = self.first_query(d, "5xx (1 h)", "Sign-in")
+            tsl["filters"] = ["metric.type", "=", "router.googleapis.com/nat/allocated_ports",
+                              "AND", "resource.type", "=", "nat_gateway"]
+            tsl["groupBys"] = ["resource.label.gateway_name", "metric.label.nat_ip"]
+        self.assertCaught(mutate, "names the label `metric.label.nat_ip`, which is not on the allowlist")
+
     def test_a_field_label_on_the_allowlist_passes(self):
         code, out = self.lint_mutated(lambda d: self.panel(d, "Uptime checks passing (24 h)")[
             "fieldConfig"]["defaults"].update(displayName="${__field.labels.resource.label.host}"))
