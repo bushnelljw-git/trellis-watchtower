@@ -399,10 +399,16 @@ class RunsTest(unittest.TestCase):
     def test_the_inside_rule_is_the_modules(self):
         self.assertEqual(gen.INSIDE_POLICY, INFRA.inside_policy())
 
-    def test_kept_warm_is_what_terraform_keeps_warm(self):
+    def test_kept_warm_is_what_terraform_keeps_warm_and_the_deployments_tfvars_add(self):
         for env in gen.RUNS:
             minimum = INFRA.min_instances(env)
-            self.assertEqual(set(gen.KEPT_WARM[env]), {s for s in gen.RUNS[env] if minimum.get(s, 0) >= 1}, env)
+            self.assertEqual(set(gen.TERRAFORM_WARM[env]), {s for s in gen.RUNS[env] if minimum.get(s, 0) >= 1}, env)
+            self.assertEqual(set(gen.KEPT_WARM[env]), set(gen.TERRAFORM_WARM[env]) | set(gen.DEPLOYMENT_WARM[env]))
+            # A deployment's tfvars can raise only a minimum its root reads from service_min_instances.
+            keys = INFRA.min_defaults(env) if gen.DEPLOYMENT_WARM[env] else {}
+            for service in gen.DEPLOYMENT_WARM[env]:
+                self.assertIn(service, gen.RUNS[env], env)
+                self.assertIn(service.replace("-", "_"), keys, f"{env}: {service} has no service_min_instances key")
 
     def test_every_service_with_a_no_instance_policy_is_kept_warm(self):
         for env in gen.RUNS:
@@ -425,6 +431,24 @@ class RunsTest(unittest.TestCase):
         self.assertEqual({k: uptime[k] for k in ("aligner", "period", "reducer")},
                          {k: gen.UPTIME_POLICY[k] for k in ("aligner", "period", "reducer")})
         self.assertEqual((uptime["comparison"], uptime["value"]), ("COMPARISON_GT", gen.UPTIME_POLICY["above"]))
+
+
+class DeploymentWarmTest(unittest.TestCase):
+    """Beta's own terraform.tfvars (untracked: read by the orchestrating session on 2026-10-13) keeps auth, records,
+    tpa-api and svc-ops warm too: at none running each reads ✕ down, never idle, and counts in its area."""
+
+    def test_betas_tfvars_warm_services_are_kept_warm(self):
+        self.assertLessEqual({"auth", "records", "tpa-api", "svc-ops"}, set(gen.KEPT_WARM["beta"]))
+
+    def test_they_read_down_with_none_running(self):
+        tiles = {p["title"]: p for p in services_row(RENDERED["beta"]["overview"])}
+        for service in ("auth", "records", "tpa-api", "svc-ops"):
+            self.assertEqual(tiles[service]["fieldConfig"]["defaults"]["noValue"], "✕ down", service)
+            self.assertIn("no instance ×4", calcs(tiles[service]), service)
+        areas = {p["title"]: calcs(p) for p in area_panels(RENDERED["beta"]["overview"]) if p["title"] in AREA_PAGES}
+        for area, service in (("Portal & sign-in", "auth"), ("Portal & sign-in", "tpa-api"),
+                              ("Member records", "records"), ("Call centre", "svc-ops")):
+            self.assertIn(f"✕ no instance · {service} (spells)", areas[area], service)
 
 
 class MutationTest(unittest.TestCase):

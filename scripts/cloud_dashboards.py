@@ -840,12 +840,20 @@ RUNS = {
 }
 
 
-# The services each environment's Terraform keeps warm (min_instances 1 or more: production-full's literals, beta's
-# service_min_instances defaults and literals, a switch on), of those it runs. With none running such a service is
-# down, not idle: the module's `<service> has no instance` pages (urgent) at none for five minutes, or none reported
-# for ten. Only the others may rest at none.
-KEPT_WARM = {"beta": ("auth-outbox-publisher", "svc-voice", "svc-twilio-rest"),
-             "production": ("auth", "auth-outbox-publisher", "model-gateway", "tpa-jobs-drains", "connectors")}
+# The services each environment keeps warm, of those it runs. With none running such a service is down, not idle: the
+# module's `<service> has no instance` pages (urgent) at none for five minutes, or none reported for ten. Only the
+# others may rest at none.
+# - TERRAFORM_WARM: min_instances 1 or more as the roots write it (production-full's literals; beta's literals and
+#   service_min_instances defaults, a switch on), pinned to tpa-platform by tests/cloud/test_overview.py.
+# - DEPLOYMENT_WARM: what a deployment's own terraform.tfvars raises besides. Beta's (untracked; read by the
+#   orchestrating session on 2026-10-13, values only) sets service_min_instances = { auth = 1, records = 1,
+#   tpa_api = 1, svc_ops = 1 }. The tests cannot read that file: they hold these to beta's list, and each to a
+#   service_min_instances key its root really has. A change to that file is a line here.
+TERRAFORM_WARM = {"beta": ("auth-outbox-publisher", "svc-voice", "svc-twilio-rest"),
+                  "production": ("auth", "auth-outbox-publisher", "model-gateway", "tpa-jobs-drains", "connectors")}
+DEPLOYMENT_WARM = {"beta": ("auth", "records", "tpa-api", "svc-ops"), "production": ()}
+KEPT_WARM = {env: TERRAFORM_WARM[env] + tuple(s for s in DEPLOYMENT_WARM[env] if s not in TERRAFORM_WARM[env])
+             for env in TERRAFORM_WARM}
 # What each root builds that the environment does not run, and why: no tile for it, said here, so a service its
 # Terraform adds and nobody placed fails tests/cloud/test_overview.py.
 NOT_RUN = {"beta": {"connectors": "connectors_enabled off: beta has no destination for it (R120)",

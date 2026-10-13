@@ -118,7 +118,7 @@
     {
       "type": "stat",
       "title": "Portal & sign-in",
-      "description": "The last 15 minutes in this project: how many problems, of 5xx answers, uptime and inside checks failing (beta's checks pass on IAP's sign-in page), synthetic journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the database was down, and five minutes or more with no instance for a service kept warm (auth-outbox-publisher: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Portal & API and Sign-in. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "The last 15 minutes in this project: how many problems, of 5xx answers, uptime and inside checks failing (beta's checks pass on IAP's sign-in page), synthetic journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the database was down, and five minutes or more with no instance for a service kept warm (auth-outbox-publisher, auth, tpa-api: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Portal & API and Sign-in. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -614,6 +614,72 @@
             "filters": [
               "metric.type",
               "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "auth"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "auth instances"
+        },
+        {
+          "refId": "P",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "tpa-api"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-api instances"
+        },
+        {
+          "refId": "Q",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
               "cloudsql.googleapis.com/database/up",
               "AND",
               "resource.type",
@@ -636,7 +702,7 @@
           "aliasBy": "auth-db up"
         },
         {
-          "refId": "P",
+          "refId": "R",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -667,7 +733,7 @@
           "aliasBy": "auth-db points"
         },
         {
-          "refId": "Q",
+          "refId": "S",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -1026,6 +1092,230 @@
         {
           "id": "calculateField",
           "options": {
+            "mode": "reduceRow",
+            "alias": "auth instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "auth instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "auth ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "auth ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "auth ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "auth ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · auth (minutes)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "auth ran"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · auth (spells)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "✕ no instance · auth (minutes)"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "tpa-api instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "tpa-api instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "tpa-api ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-api instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "tpa-api ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-api instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-api ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "tpa-api ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "tpa-api ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · tpa-api (minutes)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-api ran"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · tpa-api (spells)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "✕ no instance · tpa-api (minutes)"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
             "mode": "binary",
             "alias": "inside passed · tpa-api +1",
             "replaceFields": false,
@@ -1329,6 +1619,18 @@
               "auth-outbox-publisher ran /": true,
               "auth-outbox-publisher ran": true,
               "✕ no instance · auth-outbox-publisher (minutes)": true,
+              "auth instances": true,
+              "auth instances or none": true,
+              "auth ran +1": true,
+              "auth ran /": true,
+              "auth ran": true,
+              "✕ no instance · auth (minutes)": true,
+              "tpa-api instances": true,
+              "tpa-api instances or none": true,
+              "tpa-api ran +1": true,
+              "tpa-api ran /": true,
+              "tpa-api ran": true,
+              "✕ no instance · tpa-api (minutes)": true,
               "inside passing · tpa-api": true,
               "inside reporting · tpa-api": true,
               "inside passed · tpa-api +1": true,
@@ -1487,7 +1789,7 @@
     {
       "type": "stat",
       "title": "Member records",
-      "description": "The last 15 minutes in this project: how many problems, of its 5xx answers, crashes, out-of-memory kills, failed job runs and the minutes tpa-db was down. Each one, named with its count, is in the shut row What's wrong now (details) below, and on Member records. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "The last 15 minutes in this project: how many problems, of its 5xx answers, crashes, out-of-memory kills, failed job runs and the minutes tpa-db was down, and five minutes or more with no instance for a service kept warm (records: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Member records. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -1691,6 +1993,66 @@
             "filters": [
               "metric.type",
               "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "instances reported"
+        },
+        {
+          "refId": "G",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "records"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "records instances"
+        },
+        {
+          "refId": "H",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
               "cloudsql.googleapis.com/database/up",
               "AND",
               "resource.type",
@@ -1713,7 +2075,7 @@
           "aliasBy": "tpa-db up"
         },
         {
-          "refId": "G",
+          "refId": "I",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-phi"
@@ -1744,7 +2106,7 @@
           "aliasBy": "tpa-db points"
         },
         {
-          "refId": "H",
+          "refId": "J",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-phi"
@@ -1941,6 +2303,173 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
+            "alias": "project ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances reported"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "project ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances reported"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "project ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "project ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "records instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "records instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "records ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "records instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "records ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "records instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "records ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "records ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "records ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · records (minutes)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "records ran"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · records (spells)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "✕ no instance · records (minutes)"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
             "alias": "✓ member records",
             "replaceFields": false,
             "binary": {
@@ -1966,7 +2495,17 @@
               "seeing": true,
               "tpa-db wrote +1": true,
               "tpa-db wrote /": true,
-              "tpa-db wrote": true
+              "tpa-db wrote": true,
+              "instances reported": true,
+              "project ran +1": true,
+              "project ran /": true,
+              "project ran": true,
+              "records instances": true,
+              "records instances or none": true,
+              "records ran +1": true,
+              "records ran /": true,
+              "records ran": true,
+              "✕ no instance · records (minutes)": true
             }
           }
         },
@@ -3914,7 +4453,7 @@
     {
       "type": "stat",
       "title": "tpa-api",
-      "description": "tpa-api (Portal & API). Its status, worst first: ✕ down when its private check has no checker region passing, as `inside-down` decides (the balancer answers its own region alone, so the other two fail by design); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running; idle with none, as a service Terraform lets scale to zero rests. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "tpa-api (Portal & API). Its status, worst first: ✕ down when its private check has no checker region passing, as `inside-down` decides (the balancer answers its own region alone, so the other two fail by design) or when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -4108,14 +4647,14 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
                 "value": null
               }
             ]
           },
           "mappings": [],
           "decimals": 0,
-          "noValue": "@@R,auth-db,tpa-db,@@idle@@",
+          "noValue": "@@R,auth-db,tpa-db,@@✕ down@@",
           "displayName": "@@R,auth-db,tpa-db,@@@@"
         },
         "overrides": [
@@ -4592,6 +5131,46 @@
                 "matcher": {
                   "id": "byName",
                   "options": "failing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
                 }
               },
               "operator": "*",
@@ -5835,7 +6414,7 @@
     {
       "type": "stat",
       "title": "auth",
-      "description": "auth (Sign-in). Its status, worst first: ✕ down when its private check has no checker region passing, as `inside-down` decides (the balancer answers its own region alone, so the other two fail by design); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running; idle with none, as a service Terraform lets scale to zero rests. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "auth (Sign-in). Its status, worst first: ✕ down when its private check has no checker region passing, as `inside-down` decides (the balancer answers its own region alone, so the other two fail by design) or when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -6029,14 +6608,14 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "@@F,auth-db,@@text@@text@@",
+                "color": "@@F,auth-db,@@text@@#d03b3b@@",
                 "value": null
               }
             ]
           },
           "mappings": [],
           "decimals": 0,
-          "noValue": "@@R,auth-db,@@idle@@",
+          "noValue": "@@R,auth-db,@@✕ down@@",
           "displayName": "@@R,auth-db,@@@@"
         },
         "overrides": [
@@ -6513,6 +7092,46 @@
                 "matcher": {
                   "id": "byName",
                   "options": "failing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
                 }
               },
               "operator": "*",
@@ -7199,7 +7818,7 @@
     {
       "type": "stat",
       "title": "records",
-      "description": "records (Member records). Its status, worst first: ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running; idle with none, as a service Terraform lets scale to zero rests. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "records (Member records). Its status, worst first: ✕ down when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -7360,14 +7979,14 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "@@F,tpa-db,@@text@@text@@",
+                "color": "@@F,tpa-db,@@text@@#d03b3b@@",
                 "value": null
               }
             ]
           },
           "mappings": [],
           "decimals": 0,
-          "noValue": "@@R,tpa-db,@@idle@@",
+          "noValue": "@@R,tpa-db,@@✕ down@@",
           "displayName": "@@R,tpa-db,@@@@"
         },
         "overrides": [
@@ -7754,6 +8373,46 @@
               "operator": "*",
               "right": {
                 "fixed": "3"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
               }
             }
           }
@@ -10599,6 +11258,72 @@
                 "filters": [
                   "metric.type",
                   "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "auth instances"
+            },
+            {
+              "refId": "P",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "tpa-api"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "tpa-api instances"
+            },
+            {
+              "refId": "Q",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
                   "cloudsql.googleapis.com/database/up",
                   "AND",
                   "resource.type",
@@ -10621,7 +11346,7 @@
               "aliasBy": "auth-db up"
             },
             {
-              "refId": "P",
+              "refId": "R",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -10652,7 +11377,7 @@
               "aliasBy": "auth-db points"
             },
             {
-              "refId": "Q",
+              "refId": "S",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -11022,6 +11747,190 @@
             {
               "id": "calculateField",
               "options": {
+                "mode": "reduceRow",
+                "alias": "auth instances or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "auth instances"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "auth ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth instances or none"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "auth ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth instances or none"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "auth ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "auth ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "✕ no instance · auth (minutes)",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "auth ran"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "tpa-api instances or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "tpa-api instances"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "tpa-api ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-api instances or none"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "tpa-api ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-api instances or none"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-api ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "tpa-api ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "tpa-api ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "✕ no instance · tpa-api (minutes)",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-api ran"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
                 "mode": "binary",
                 "alias": "inside passed · tpa-api +1",
                 "replaceFields": false,
@@ -11324,6 +12233,16 @@
                   "auth-outbox-publisher ran +1": true,
                   "auth-outbox-publisher ran /": true,
                   "auth-outbox-publisher ran": true,
+                  "auth instances": true,
+                  "auth instances or none": true,
+                  "auth ran +1": true,
+                  "auth ran /": true,
+                  "auth ran": true,
+                  "tpa-api instances": true,
+                  "tpa-api instances or none": true,
+                  "tpa-api ran +1": true,
+                  "tpa-api ran /": true,
+                  "tpa-api ran": true,
                   "inside passing · tpa-api": true,
                   "inside reporting · tpa-api": true,
                   "inside passed · tpa-api +1": true,
@@ -11604,6 +12523,66 @@
                 "filters": [
                   "metric.type",
                   "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_COUNT",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "instances reported"
+            },
+            {
+              "refId": "G",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-phi"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_PHI_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "records"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "records instances"
+            },
+            {
+              "refId": "H",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-phi"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_PHI_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
                   "cloudsql.googleapis.com/database/up",
                   "AND",
                   "resource.type",
@@ -11626,7 +12605,7 @@
               "aliasBy": "tpa-db up"
             },
             {
-              "refId": "G",
+              "refId": "I",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-phi"
@@ -11657,7 +12636,7 @@
               "aliasBy": "tpa-db points"
             },
             {
-              "refId": "H",
+              "refId": "J",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-phi"
@@ -11885,6 +12864,153 @@
               "id": "calculateField",
               "options": {
                 "mode": "binary",
+                "alias": "project ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "instances reported"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "project ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "instances reported"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "project ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "project ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "records instances or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "records instances"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "records ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "records instances or none"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "records ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "records instances or none"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "records ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "records ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "records ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "✕ no instance · records (minutes)",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "records ran"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
                 "alias": "✓ member records",
                 "replaceFields": false,
                 "binary": {
@@ -11910,7 +13036,16 @@
                   "seeing": true,
                   "tpa-db wrote +1": true,
                   "tpa-db wrote /": true,
-                  "tpa-db wrote": true
+                  "tpa-db wrote": true,
+                  "instances reported": true,
+                  "project ran +1": true,
+                  "project ran /": true,
+                  "project ran": true,
+                  "records instances": true,
+                  "records instances or none": true,
+                  "records ran +1": true,
+                  "records ran /": true,
+                  "records ran": true
                 }
               }
             },
