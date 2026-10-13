@@ -50,7 +50,8 @@ A cloud dashboard (the production image, read by grp-platform through IAP) also 
      panel would read as zero. Nothing here reads logs: the datasource has no log query, and a log-based metric is a
      metric;
   7. a filter, a group-by or a legend (`{{...}}`, `${__field.labels.X}`) names a label outside the allowlist below,
-     or a legend names `__field.labels` without one allowed key; a resource label is used without the query's
+     or one the allowlist admits on other metrics alone (LABEL_ONLY_ON: Cloud NAT's drop `reason`), or a legend names
+     `__field.labels` without one allowed key; a resource label is used without the query's
      `resource.type`; the metric is not a Google Cloud one; a filter is not `=` or `=~`; a cross-series reducer, primary
      or secondary, is missing or REDUCE_NONE (which would return every label of every series); or any Grafana
      variable appears in a query, so no dashboard query takes the viewer's input;
@@ -107,6 +108,9 @@ GOOGLE_METRIC_LABELS = {"response_code_class", "result", "state", "reason"}
 METRIC_LABELS = CATALOGUE_LABELS | GOOGLE_METRIC_LABELS
 RESOURCE_LABELS = {"service_name", "job_name", "database_id", "job_id", "host", "gateway_name", "bucket_name"}
 ALLOWED_LABELS = {f"metric.label.{x}" for x in METRIC_LABELS} | {f"resource.label.{x}" for x in RESOURCE_LABELS}
+# A label allowed on these metrics alone: `reason` is the word Cloud NAT gives a packet it dropped, on its sent-packet
+# drop counter only (the received-packet one carries none); on any other metric it could be anything.
+LABEL_ONLY_ON = {"metric.label.reason": {"router.googleapis.com/nat/dropped_sent_packets_count"}}
 
 # servicedirectory_service: a private uptime check's resource (Google's VPC checkers reading auth's and tpa-api's
 # /ready at their internal balancers; tpa-platform D-149). Its one label read here is service_name. nat_gateway: a
@@ -764,6 +768,10 @@ def lint_cloud(path: Path, dashboard: dict, datasources: dict[str, str]) -> list
             labels = facts["labels"] | set(ALIAS_RE.findall(target.get("aliasBy") or ""))
             for label in sorted(labels - ALLOWED_LABELS):
                 fail(where, f"query {ref}: names the label `{label}`, which is not on the allowlist")
+            for label in sorted(labels & set(LABEL_ONLY_ON)):
+                if facts["metric"] not in LABEL_ONLY_ON[label]:
+                    fail(where, f"query {ref}: names the label `{label}`, allowed only on "
+                                f"{', '.join(sorted(LABEL_ONLY_ON[label]))}")
             if facts["resource"] is None and any(label.startswith("resource.label.") for label in labels):
                 fail(where, f"query {ref}: uses a resource label without filtering on resource.type")
             for key in ("perSeriesAligner", "secondaryPerSeriesAligner"):

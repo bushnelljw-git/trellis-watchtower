@@ -808,8 +808,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Instances (active, idle)",
-      "description": "web's Cloud Run instances, the most in each interval: active (serving or starting) and idle (kept warm, or waiting to be shut down). max_instances is Cloud Run's default, 100, so the project's regional quota of 85 binds first (`run-instances-near-quota`: the project's instances, on its area's page).",
+      "title": "Instances (total, active, idle)",
+      "description": "web's Cloud Run instances: the total, the most in each minute summed over active and idle, as the `ceiling-` policies read it, and active (serving or starting) and idle (kept warm, or waiting to be shut down) apart. max_instances is Cloud Run's default, 100, so the project's regional quota of 85 binds first (`run-instances-near-quota`: the project's instances, on its area's page).",
       "gridPos": {
         "h": 7,
         "w": 6,
@@ -823,6 +823,39 @@
       "targets": [
         {
           "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "web"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "total"
+        },
+        {
+          "refId": "B",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -911,7 +944,7 @@
     {
       "type": "timeseries",
       "title": "Concurrent requests, busiest instance (p99, p50)",
-      "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. The red line is `run-concurrency-high`'s: the p99 above 71.5 (90% of 80) for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.",
+      "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.",
       "gridPos": {
         "h": 7,
         "w": 6,

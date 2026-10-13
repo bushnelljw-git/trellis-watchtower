@@ -117,11 +117,12 @@ def promql_name(metric_type: str) -> str:
 
 
 # Each project's Cloud Run services, jobs, schedules and Cloud SQL instances, from tpa-platform's beta roots at the
-# pinned commit (infra/envs/beta/main.tf, crm.tf, callcentre.tf). The jobs, schedules and instances are also held
-# to the names the catalogue's own policies use (test_names_agree_with_the_catalogue).
+# pinned commit (infra/envs/beta/main.tf, crm.tf, callcentre.tf, watch.tf). The jobs, schedules and instances are also
+# held to the names the catalogue's own policies use (test_names_agree_with_the_catalogue).
 NAMES = {
     "app": {
-        "service_name": {"web", "auth", "auth-outbox-publisher", "tpa-api", "model-gateway", "tpa-jobs-drains"},
+        "service_name": {"web", "auth", "auth-outbox-publisher", "tpa-api", "model-gateway", "tpa-jobs-drains",
+                         "watchtower"},
         "job_name": {"migrate-auth", "auth-publisher", "auth-sweeper", "auth-audit-head", "auth-audit-verify",
                      "auth-audit-verify-monthly", "auth-bootstrap", "auth-tag-credentials", "auth-retag-bearer-key",
                      "tpa-jobs-erisa-clocks", "tpa-jobs-nightly-anomalies", "tpa-jobs-stoploss-surveillance",

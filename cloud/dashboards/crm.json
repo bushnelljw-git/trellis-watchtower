@@ -963,7 +963,7 @@
     },
     {
       "type": "row",
-      "title": "Resources: each Cloud Run service's CPU, memory, instances, concurrency and start-up",
+      "title": "Resources: each Cloud Run service's CPU, memory, instances, concurrency and start-up (open a row)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -997,8 +997,1019 @@
     {
       "type": "row",
       "title": "Resources · crm-web: CPU, memory, instances, concurrency, start-up",
-      "collapsed": false,
-      "panels": [],
+      "collapsed": true,
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "CPU (p99, p95, p50)",
+          "description": "crm-web's container CPU, the share of its CPU limit in use (`container/cpu/utilizations`): the 99th, 95th and 50th percentile across its instances in each 5-minute window. The red line is `run-cpu-high`'s: the p99 above 90% for 15 minutes pages (instances saturated: requests queue and slow).",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 0,
+            "y": 38
+          },
+          "links": [
+            {
+              "title": "crm-web: CPU, memory, instances, concurrency, start-up",
+              "url": "/d/tw-cloud-service-crm-web?${__url_time_range}",
+              "targetBlank": false
+            }
+          ],
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/cpu/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/cpu/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_95",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p95"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/cpu/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              },
+              "mappings": [],
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "line"
+                },
+                "axisSoftMax": 1
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 12
+        },
+        {
+          "type": "timeseries",
+          "title": "Memory (p99, p95, p50)",
+          "description": "crm-web's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 10 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 6,
+            "y": 38
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/memory/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/memory/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_95",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p95"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/memory/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              },
+              "mappings": [],
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "line"
+                },
+                "axisSoftMax": 1
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 13
+        },
+        {
+          "type": "timeseries",
+          "title": "Instances (total, active, idle)",
+          "description": "crm-web's Cloud Run instances: the total, the most in each minute summed over active and idle, as the `ceiling-` policies read it, and active (serving or starting) and idle (kept warm, or waiting to be shut down) apart. @@E@@This environment's Terraform does not build it, so no limit is drawn.@@The grey line is max_instances, 2 (too few for a `ceiling-` policy): at it new requests wait or fail with 429.@@",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 12,
+            "y": 38
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "total"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [
+                  "metric.label.state"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "{{metric.label.state}}"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "@@E@@transparent@@#8c8c8c@@",
+                    "value": 2
+                  }
+                ]
+              },
+              "mappings": [],
+              "decimals": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "@@E@@off@@line@@"
+                },
+                "axisSoftMax": "@@N@@null@@2@@"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 14
+        },
+        {
+          "type": "timeseries",
+          "title": "Concurrent requests, busiest instance (p99, p50)",
+          "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. @@E@@The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. This environment's Terraform does not build it.@@The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.@@",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 18,
+            "y": 38
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/max_request_concurrencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/max_request_concurrencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 71.5
+                  },
+                  {
+                    "color": "@@E@@transparent@@#8c8c8c@@",
+                    "value": "@@N@@71.5@@80@@"
+                  }
+                ]
+              },
+              "mappings": [],
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "line"
+                },
+                "axisSoftMax": "@@N@@71.5@@80@@"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 15
+        },
+        {
+          "type": "timeseries",
+          "title": "Start-up time (p99, p50)",
+          "description": "How long a new instance took to start, until it was ready to serve (`container/startup_latencies`): a dot for each interval in which one started. Nothing drawn: no instance started. No policy reads it; a start-up that failed is the last panel.",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 45
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/startup_latencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/startup_latencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "custom": {
+                "drawStyle": "points",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "always",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "pointSize": 6
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 16
+        },
+        {
+          "type": "timeseries",
+          "title": "Instances billed",
+          "description": "Billable instance time per second (`container/billable_instance_time`): how many instances were billed on average. An instance kept warm with CPU always on bills all the time; one that scales to zero, only while it serves.",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 45
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/billable_instance_time",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_RATE",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "billed"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "decimals": 1,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 17
+        },
+        {
+          "type": "timeseries",
+          "title": "Killed for memory, crashed, failed to start",
+          "description": "From Cloud Run's own system log: a container killed for exceeding its memory limit (`run_oom_kills`; `run-oom` pages on one), a container that exited with an error or a signal (`run_crash_exits`; `run-crash-loop` at three in fifteen minutes), and a failed start-up or liveness probe (`run_system_errors`; `canary-startup`).",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 45
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/run_oom_kills",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "killed for memory"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/run_crash_exits",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "crashed"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/run_system_errors",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "crm-web"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "failed probe or exit"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "custom": {
+                "drawStyle": "bars",
+                "lineWidth": 1,
+                "fillOpacity": 60,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 18
+        }
+      ],
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1008,1971 +2019,1028 @@
       "id": 11
     },
     {
-      "type": "timeseries",
-      "title": "CPU (p99, p95, p50)",
-      "description": "crm-web's container CPU, the share of its CPU limit in use (`container/cpu/utilizations`): the 99th, 95th and 50th percentile across its instances in each 5-minute window. The red line is `run-cpu-high`'s: the p99 above 90% for 15 minutes pages (instances saturated: requests queue and slow).",
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 0,
-        "y": 38
-      },
-      "links": [
-        {
-          "title": "crm-web: CPU, memory, instances, concurrency, start-up",
-          "url": "/d/tw-cloud-service-crm-web?${__url_time_range}",
-          "targetBlank": false
-        }
-      ],
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/cpu/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_99",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p99"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/cpu/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_95",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p95"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/cpu/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_50",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p50"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.9
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            },
-            "axisSoftMax": 1
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 12
-    },
-    {
-      "type": "timeseries",
-      "title": "Memory (p99, p95, p50)",
-      "description": "crm-web's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 10 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 6,
-        "y": 38
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/memory/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_99",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p99"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/memory/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_95",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p95"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/memory/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_50",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p50"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.9
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            },
-            "axisSoftMax": 1
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 13
-    },
-    {
-      "type": "timeseries",
-      "title": "Instances (active, idle)",
-      "description": "crm-web's Cloud Run instances, the most in each interval: active (serving or starting) and idle (kept warm, or waiting to be shut down). The grey line is max_instances, 2 on beta (too few for a `ceiling-` policy): at it new requests wait or fail with 429.",
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 12,
-        "y": 38
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/instance_count",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [
-              "metric.label.state"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_MAX",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "{{metric.label.state}}"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "#8c8c8c",
-                "value": 2
-              }
-            ]
-          },
-          "mappings": [],
-          "decimals": 0,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            },
-            "axisSoftMax": 2
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 14
-    },
-    {
-      "type": "timeseries",
-      "title": "Concurrent requests, busiest instance (p99, p50)",
-      "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. The red line is `run-concurrency-high`'s: the p99 above 71.5 (90% of 80) for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.",
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 18,
-        "y": 38
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/max_request_concurrencies",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_99",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p99"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/max_request_concurrencies",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_50",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p50"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 71.5
-              },
-              {
-                "color": "#8c8c8c",
-                "value": 80
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            },
-            "axisSoftMax": 80
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 15
-    },
-    {
-      "type": "timeseries",
-      "title": "Start-up time (p99, p50)",
-      "description": "How long a new instance took to start, until it was ready to serve (`container/startup_latencies`): a dot for each interval in which one started. Nothing drawn: no instance started. No policy reads it; a start-up that failed is the last panel.",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 45
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/startup_latencies",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_99",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p99"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/startup_latencies",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_50",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p50"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "points",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "always",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            },
-            "pointSize": 6
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 16
-    },
-    {
-      "type": "timeseries",
-      "title": "Instances billed",
-      "description": "Billable instance time per second (`container/billable_instance_time`): how many instances were billed on average. An instance kept warm with CPU always on bills all the time; one that scales to zero, only while it serves.",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 45
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/billable_instance_time",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_RATE",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "billed"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "decimals": 1,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 17
-    },
-    {
-      "type": "timeseries",
-      "title": "Killed for memory, crashed, failed to start",
-      "description": "From Cloud Run's own system log: a container killed for exceeding its memory limit (`run_oom_kills`; `run-oom` pages on one), a container that exited with an error or a signal (`run_crash_exits`; `run-crash-loop` at three in fifteen minutes), and a failed start-up or liveness probe (`run_system_errors`; `canary-startup`).",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 45
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/run_oom_kills",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "killed for memory"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/run_crash_exits",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "crashed"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/run_system_errors",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "crm-web"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "failed probe or exit"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "bars",
-            "lineWidth": 1,
-            "fillOpacity": 60,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 18
-    },
-    {
       "type": "row",
       "title": "Resources · engine: CPU, memory, instances, concurrency, start-up",
-      "collapsed": false,
-      "panels": [],
+      "collapsed": true,
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "CPU (p99, p95, p50)",
+          "description": "engine's container CPU, the share of its CPU limit in use (`container/cpu/utilizations`): the 99th, 95th and 50th percentile across its instances in each 5-minute window. The red line is `run-cpu-high`'s: the p99 above 90% for 15 minutes pages (instances saturated: requests queue and slow).",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 0,
+            "y": 39
+          },
+          "links": [
+            {
+              "title": "engine: CPU, memory, instances, concurrency, start-up",
+              "url": "/d/tw-cloud-service-engine?${__url_time_range}",
+              "targetBlank": false
+            }
+          ],
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/cpu/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/cpu/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_95",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p95"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/cpu/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              },
+              "mappings": [],
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "line"
+                },
+                "axisSoftMax": 1
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 20
+        },
+        {
+          "type": "timeseries",
+          "title": "Memory (p99, p95, p50)",
+          "description": "engine's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 10 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 6,
+            "y": 39
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/memory/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/memory/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_95",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p95"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/memory/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              },
+              "mappings": [],
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "line"
+                },
+                "axisSoftMax": 1
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 21
+        },
+        {
+          "type": "timeseries",
+          "title": "Instances (total, active, idle)",
+          "description": "engine's Cloud Run instances: the total, the most in each minute summed over active and idle, as the `ceiling-` policies read it, and active (serving or starting) and idle (kept warm, or waiting to be shut down) apart. @@E@@This environment's Terraform does not build it, so no limit is drawn.@@The grey line is max_instances, 1 (too few for a `ceiling-` policy): at it new requests wait or fail with 429.@@",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 12,
+            "y": 39
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "total"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [
+                  "metric.label.state"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "{{metric.label.state}}"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "@@E@@transparent@@#8c8c8c@@",
+                    "value": 1
+                  }
+                ]
+              },
+              "mappings": [],
+              "decimals": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "@@E@@off@@line@@"
+                },
+                "axisSoftMax": "@@N@@null@@1@@"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 22
+        },
+        {
+          "type": "timeseries",
+          "title": "Concurrent requests, busiest instance (p99, p50)",
+          "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. @@E@@The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. This environment's Terraform does not build it.@@The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.@@",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 18,
+            "y": 39
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/max_request_concurrencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/max_request_concurrencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 71.5
+                  },
+                  {
+                    "color": "@@E@@transparent@@#8c8c8c@@",
+                    "value": "@@N@@71.5@@80@@"
+                  }
+                ]
+              },
+              "mappings": [],
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "line"
+                },
+                "axisSoftMax": "@@N@@71.5@@80@@"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 23
+        },
+        {
+          "type": "timeseries",
+          "title": "Start-up time (p99, p50)",
+          "description": "How long a new instance took to start, until it was ready to serve (`container/startup_latencies`): a dot for each interval in which one started. Nothing drawn: no instance started. No policy reads it; a start-up that failed is the last panel.",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 46
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/startup_latencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/startup_latencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "custom": {
+                "drawStyle": "points",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "always",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "pointSize": 6
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 24
+        },
+        {
+          "type": "timeseries",
+          "title": "Instances billed",
+          "description": "Billable instance time per second (`container/billable_instance_time`): how many instances were billed on average. An instance kept warm with CPU always on bills all the time; one that scales to zero, only while it serves.",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 46
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/billable_instance_time",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_RATE",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "billed"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "decimals": 1,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 25
+        },
+        {
+          "type": "timeseries",
+          "title": "Killed for memory, crashed, failed to start",
+          "description": "From Cloud Run's own system log: a container killed for exceeding its memory limit (`run_oom_kills`; `run-oom` pages on one), a container that exited with an error or a signal (`run_crash_exits`; `run-crash-loop` at three in fifteen minutes), and a failed start-up or liveness probe (`run_system_errors`; `canary-startup`).",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 46
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/run_oom_kills",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "killed for memory"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/run_crash_exits",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "crashed"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/run_system_errors",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "engine"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "failed probe or exit"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "custom": {
+                "drawStyle": "bars",
+                "lineWidth": 1,
+                "fillOpacity": 60,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 26
+        }
+      ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 52
+        "y": 38
       },
       "id": 19
-    },
-    {
-      "type": "timeseries",
-      "title": "CPU (p99, p95, p50)",
-      "description": "engine's container CPU, the share of its CPU limit in use (`container/cpu/utilizations`): the 99th, 95th and 50th percentile across its instances in each 5-minute window. The red line is `run-cpu-high`'s: the p99 above 90% for 15 minutes pages (instances saturated: requests queue and slow).",
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 0,
-        "y": 53
-      },
-      "links": [
-        {
-          "title": "engine: CPU, memory, instances, concurrency, start-up",
-          "url": "/d/tw-cloud-service-engine?${__url_time_range}",
-          "targetBlank": false
-        }
-      ],
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/cpu/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_99",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p99"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/cpu/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_95",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p95"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/cpu/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_50",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p50"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.9
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            },
-            "axisSoftMax": 1
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 20
-    },
-    {
-      "type": "timeseries",
-      "title": "Memory (p99, p95, p50)",
-      "description": "engine's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 10 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 6,
-        "y": 53
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/memory/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_99",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p99"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/memory/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_95",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p95"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/memory/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_50",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p50"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.9
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            },
-            "axisSoftMax": 1
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 21
-    },
-    {
-      "type": "timeseries",
-      "title": "Instances (active, idle)",
-      "description": "engine's Cloud Run instances, the most in each interval: active (serving or starting) and idle (kept warm, or waiting to be shut down). The grey line is max_instances, 1 on beta (too few for a `ceiling-` policy): at it new requests wait or fail with 429.",
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 12,
-        "y": 53
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/instance_count",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [
-              "metric.label.state"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_MAX",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "{{metric.label.state}}"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "#8c8c8c",
-                "value": 1
-              }
-            ]
-          },
-          "mappings": [],
-          "decimals": 0,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            },
-            "axisSoftMax": 1
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 22
-    },
-    {
-      "type": "timeseries",
-      "title": "Concurrent requests, busiest instance (p99, p50)",
-      "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. The red line is `run-concurrency-high`'s: the p99 above 71.5 (90% of 80) for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.",
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 18,
-        "y": 53
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/max_request_concurrencies",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_99",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p99"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/max_request_concurrencies",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_50",
-            "alignmentPeriod": "+300s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p50"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 71.5
-              },
-              {
-                "color": "#8c8c8c",
-                "value": 80
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            },
-            "axisSoftMax": 80
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 23
-    },
-    {
-      "type": "timeseries",
-      "title": "Start-up time (p99, p50)",
-      "description": "How long a new instance took to start, until it was ready to serve (`container/startup_latencies`): a dot for each interval in which one started. Nothing drawn: no instance started. No policy reads it; a start-up that failed is the last panel.",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 60
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/startup_latencies",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_99",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p99"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/startup_latencies",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_50",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "p50"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "points",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "always",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            },
-            "pointSize": 6
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 24
-    },
-    {
-      "type": "timeseries",
-      "title": "Instances billed",
-      "description": "Billable instance time per second (`container/billable_instance_time`): how many instances were billed on average. An instance kept warm with CPU always on bills all the time; one that scales to zero, only while it serves.",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 60
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/billable_instance_time",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_RATE",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "billed"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "decimals": 1,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 25
-    },
-    {
-      "type": "timeseries",
-      "title": "Killed for memory, crashed, failed to start",
-      "description": "From Cloud Run's own system log: a container killed for exceeding its memory limit (`run_oom_kills`; `run-oom` pages on one), a container that exited with an error or a signal (`run_crash_exits`; `run-crash-loop` at three in fifteen minutes), and a failed start-up or liveness probe (`run_system_errors`; `canary-startup`).",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 60
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-crm"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/run_oom_kills",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "killed for memory"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/run_crash_exits",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "crashed"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/run_system_errors",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=",
-              "engine"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "failed probe or exit"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "bars",
-            "lineWidth": 1,
-            "fillOpacity": 60,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 26
     },
     {
       "type": "row",
@@ -2983,7 +3051,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 67
+        "y": 39
       },
       "id": 27
     },
@@ -2995,7 +3063,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 68
+        "y": 40
       },
       "datasource": {
         "type": "stackdriver",
@@ -3101,7 +3169,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 68
+        "y": 40
       },
       "datasource": {
         "type": "stackdriver",
@@ -3294,7 +3362,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 74
+        "y": 46
       },
       "datasource": {
         "type": "stackdriver",
@@ -3398,12 +3466,12 @@
     {
       "type": "timeseries",
       "title": "CPU",
-      "description": "Cloud SQL's CPU utilisation for crm-db (`database/cpu/utilization`). The red lines are the monitoring module's: `crm-db` CPU above 80% for thirty minutes, and above 95% for fifteen (urgent).",
+      "description": "Cloud SQL's CPU utilisation for crm-db (`database/cpu/utilization`), the mean of each five minutes, as the monitoring module's policies read it. Their red lines: above 80% for thirty minutes, and above 95% for fifteen (urgent).",
       "gridPos": {
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 74
+        "y": 46
       },
       "datasource": {
         "type": "stackdriver",
@@ -3437,7 +3505,7 @@
             ],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -3508,12 +3576,12 @@
     {
       "type": "timeseries",
       "title": "Memory",
-      "description": "Cloud SQL's memory utilisation for crm-db (`database/memory/utilization`). The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
+      "description": "Cloud SQL's memory utilisation for crm-db (`database/memory/utilization`), the mean of each five minutes. The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
       "gridPos": {
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 74
+        "y": 46
       },
       "datasource": {
         "type": "stackdriver",
@@ -3547,7 +3615,7 @@
             ],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -3614,12 +3682,12 @@
     {
       "type": "timeseries",
       "title": "Connections",
-      "description": "Backends connected (num_backends, every database of the instance). The red lines are the monitoring module's: 80% of max_connections for ten minutes, and 95% for five (urgent); max_connections is 200 on beta, the grey line, where new connections are refused.",
+      "description": "Backends connected (num_backends, summed over the instance's databases), the mean of each minute, as the monitoring module's connection policies read it. Their red lines: above 160 (80% of max_connections) for ten minutes, and above 190 (95%) for five (urgent); max_connections is 200, the grey line, where new connections are refused.",
       "gridPos": {
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 80
+        "y": 52
       },
       "datasource": {
         "type": "stackdriver",
@@ -3653,7 +3721,7 @@
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+60s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -3734,7 +3802,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 80
+        "y": 52
       },
       "datasource": {
         "type": "stackdriver",
@@ -3864,7 +3932,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 80
+        "y": 52
       },
       "datasource": {
         "type": "stackdriver",
@@ -3994,7 +4062,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 80
+        "y": 52
       },
       "datasource": {
         "type": "stackdriver",
@@ -4125,7 +4193,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 86
+        "y": 58
       },
       "id": 37
     },
@@ -4137,7 +4205,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 87
+        "y": 59
       },
       "datasource": {
         "type": "stackdriver",
@@ -4243,7 +4311,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 94
+        "y": 66
       },
       "id": 39
     },
@@ -4255,7 +4323,7 @@
         "h": 7,
         "w": 6,
         "x": 0,
-        "y": 95
+        "y": 67
       },
       "datasource": {
         "type": "stackdriver",
@@ -4471,7 +4539,7 @@
         "h": 7,
         "w": 18,
         "x": 6,
-        "y": 95
+        "y": 67
       },
       "datasource": {
         "type": "stackdriver",

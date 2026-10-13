@@ -116,6 +116,21 @@ class RenderTest(unittest.TestCase):
                          ("auto", "", "MISSED", ["red", "green"]))
         self.assertEqual(shown(stat(overview, "Sign-in", "5xx (1 h)")), ("auto", "", "0", ["text", "orange", "red"]))
 
+    def test_a_number_settles_per_environment_as_a_number(self):
+        # records' instance ceiling: beta's Terraform asks for `ceiling-records`; production-full does not.
+        raw = (self.src / "service-records.json").read_text()
+        self.assertIn('"@@N@@15.5@@20@@"', raw)
+        for env, want in ((BETA, [15.5, 20]), (PRODUCTION, [15.5, 15.5])):
+            page = self.rendered(env)["service-records.json"]
+            panel = stat(page, "Resources", "Instances (total, active, idle)")
+            steps = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
+            self.assertEqual([s["value"] for s in steps[1:]], want)
+            self.assertTrue(all(isinstance(s["value"], (int, float)) for s in steps[1:]), "a number, not a string")
+            mode = panel["fieldConfig"]["defaults"]["custom"]["thresholdsStyle"]["mode"]
+            self.assertEqual(mode, "line" if env is BETA else "off")
+            if env is PRODUCTION:
+                self.assertEqual({s["color"] for s in steps}, {"transparent"})
+
     # ---- paused sweeps and stopped databases --------------------------------------------------------------------
     def test_resting_beta_reads_paused_and_database_stopped_in_no_colour(self):
         pages = self.rendered(BETA, **RESTING)

@@ -10,7 +10,9 @@
 #                                           (datasource.ts filterQuery). Empty CC (production-full has no call-centre
 #                                           project): the no-cc/ variants replace the pages with a call-centre part,
 #                                           and the pages that read the call centre alone (CC_ONLY_PAGES) are left out.
-#   TPA_ENVIRONMENT     required, `beta` or `production` (tpa-platform's local.env): the uptime tiles' wording.
+#   TPA_ENVIRONMENT     required, `beta` or `production` (tpa-platform's local.env): the uptime tiles' wording, and
+#                       the limits each environment's Terraform sets (a service's max_instances and ceiling policy, a
+#                       database's max_connections): a line drawn in beta and not in production, or at another value.
 #   TPA_PAUSED_JOBS     comma list, may be empty: sweeps paused on purpose (tpa-platform's var.tpa_jobs_paused).
 #   TPA_STOPPED_DATABASES  comma list, may be empty: Cloud SQL instances stopped on purpose (tpa-platform's
 #                       local.database_stopped; `auth_db` and `auth-db` both name auth-db).
@@ -76,9 +78,13 @@ crm="$(project_id TPA_CRM_PROJECT_ID 1)"
 phi="$(project_id TPA_PHI_PROJECT_ID 1)"
 cc="$(project_id TPA_CC_PROJECT_ID 0)"
 environment="${TPA_ENVIRONMENT:-}"
+# `@@E@@production@@beta@@` inside a string; `"@@N@@production@@beta@@"`, a number (or null) written as a string,
+# settles with its quotes, so the JSON holds the number. The generator writes an N token's two values as numbers alone.
 case "$environment" in
-  beta) settle_environment='s/@@E@@[^@]*@@\([^@]*\)@@/\1/g' ;;
-  production) settle_environment='s/@@E@@\([^@]*\)@@[^@]*@@/\1/g' ;;
+  beta) settle_environment='s/@@E@@[^@]*@@\([^@]*\)@@/\1/g'
+        settle_numbers='s/"@@N@@[^@"]*@@\([^@"]*\)@@"/\1/g' ;;
+  production) settle_environment='s/@@E@@\([^@]*\)@@[^@]*@@/\1/g'
+              settle_numbers='s/"@@N@@\([^@"]*\)@@[^@"]*@@"/\1/g' ;;
   *) refuse "TPA_ENVIRONMENT must be 'beta' or 'production', got '${environment}'" ;;
 esac
 # Production pauses and stops nothing on purpose, so a quiet tile there would hide a real failure.
@@ -108,6 +114,7 @@ program="$work/program.sed"
   printf 's/@@R[a-z0-9,-]*@@\\([^@]*\\)@@/\\1/g\n'
   printf 's/@@F[a-z0-9,-]*@@[^@]*@@\\([^@]*\\)@@/\\1/g\n'
   printf '%s\n' "$settle_environment"
+  printf '%s\n' "$settle_numbers"
   printf 's/__TPA_APP_PROJECT_ID__/%s/g\n' "$app"
   printf 's/__TPA_CRM_PROJECT_ID__/%s/g\n' "$crm"
   printf 's/__TPA_PHI_PROJECT_ID__/%s/g\n' "$phi"

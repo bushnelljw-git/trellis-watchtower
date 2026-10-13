@@ -15,10 +15,12 @@ its datasource's project as a placeholder, which the image fills in at start (cl
 The image also settles three things at start, from the service's environment, so that one image serves every
 environment: tiles of a sweep that is paused (TPA_PAUSED_JOBS) or of a database that is stopped
 (TPA_STOPPED_DATABASES) read neutral "paused" or "database stopped" instead of red; the uptime tile's wording
-(TPA_ENVIRONMENT); and, with no call-centre project (TPA_CC_PROJECT_ID empty, production-full), the variants in
-cloud/dashboards/no-cc/ replace the pages that have a call-centre part, and the call-centre page is left out. Each such
-string is a token, `@@R,deps,@@normal@@`, `@@F,deps,@@quiet@@normal@@` or `@@E@@production@@beta@@`, that the
-render step resolves (when_quiet, per_environment below).
+(TPA_ENVIRONMENT), and the limits each environment's Terraform sets (a service's max_instances, its ceiling policy, a
+database's max_connections: LIMITS); and, with no call-centre project (TPA_CC_PROJECT_ID empty, production-full), the
+variants in cloud/dashboards/no-cc/ replace the pages that have a call-centre part, and the pages that read the call
+centre alone are left out. Each such string is a token, `@@R,deps,@@normal@@`, `@@F,deps,@@quiet@@normal@@`,
+`@@E@@production@@beta@@`, or, for a number, `"@@N@@production@@beta@@"` (its quotes go with it), that the render step
+resolves (when_quiet, per_environment, per_env_number below).
 
 Usage:
   scripts/cloud_dashboards.py           write cloud/dashboards/*.json
@@ -260,6 +262,22 @@ def thresholds(*steps) -> dict:
             [{"color": color, "value": value} for value, color in rest]}
 
 
+def env_thresholds(base: str, steps: dict) -> dict:
+    """thresholds() whose steps differ per environment: `steps` maps each environment to its [(value, colour)]. Each
+    step's value and colour are settled at start (per_env_number, per_environment); an environment with fewer steps
+    gets transparent ones, at a value it already has, so nothing more is drawn."""
+    ordered = {env: sorted(steps.get(env) or []) for env in ENVIRONMENTS}
+    width = max(len(v) for v in ordered.values())
+    if width == 0:
+        return thresholds(base)
+    for env, values in ordered.items():
+        filler = values[-1][0] if values else next(v for vs in ordered.values() for v, _c in vs)
+        values += [(filler, "transparent")] * (width - len(values))
+    return {"mode": "absolute", "steps": [{"color": base, "value": None}] + [
+        {"color": per_environment(*(ordered[env][i][1] for env in ENVIRONMENTS)),
+         "value": per_env_number({env: ordered[env][i][0] for env in ENVIRONMENTS})} for i in range(width)]}
+
+
 def by_ref(ref: str, **props) -> dict:
     names = {"name": "displayName", "unit": "unit", "mappings": "mappings", "thresholds": "thresholds",
              "decimals": "decimals"}
@@ -285,7 +303,21 @@ def when_quiet(deps, normal: str, quiet: str | None = None) -> str:
 def per_environment(production: str, beta: str) -> str:
     """A string render-dashboards.sh settles from TPA_ENVIRONMENT (`production` or `beta`)."""
     assert "@" not in production + beta
-    return f"@@E@@{production}@@{beta}@@"
+    return f"@@E@@{production}@@{beta}@@" if production != beta else beta
+
+
+ENVIRONMENTS = ("production", "beta")   # TPA_ENVIRONMENT's two words, in the order the tokens hold them
+
+
+def per_env_number(values: dict):
+    """A number render-dashboards.sh settles from TPA_ENVIRONMENT: `values` maps each environment to a number, or to
+    None (JSON null). The same in both: the number itself, with no token."""
+    production, beta = (values.get(env) for env in ENVIRONMENTS)
+    if production == beta:
+        return production
+    words = ["null" if v is None else f"{v:g}" for v in (production, beta)]
+    assert all(re.fullmatch(r"null|-?[0-9]+(\.[0-9]+)?", w) for w in words), words
+    return f"@@N@@{words[0]}@@{words[1]}@@"
 
 
 def quieten(p: dict, deps) -> dict:
@@ -364,20 +396,25 @@ def stat(title, ds, queries, description, *, w=4, h=5, calc="sum", text_mode="au
 def series(title, ds, queries, description, *, w=12, h=8, bars=False, points=False, line=None, lines=(),
            soft_max=None, **kw):
     """A time series. `line` draws the pager's threshold in red; `lines` draws several, each (value, colour): red
-    for a line the pager uses, GREY for a limit the service is set to. `soft_max` keeps the y axis
-    up to a limit, so the lines show while the readings sit far below them. `points` draws each reading as a dot,
-    for a metric that writes only now and then (a start-up)."""
-    lines = [(line, "red")] if line is not None else sorted(lines)
+    for a line the pager uses, GREY for a limit the service is set to; or, a dict, each environment's lines
+    (env_thresholds). `soft_max` keeps the y axis up to a limit, so the lines show while the readings sit far below
+    them (a dict: each environment's, None for none). `points` draws each reading as a dot, for a metric that writes
+    only now and then (a start-up)."""
+    if not isinstance(lines, dict):
+        lines = {env: [(line, "red")] if line is not None else list(lines) for env in ENVIRONMENTS}
+    shown = any(lines.values())
     custom = {"drawStyle": "points" if points else "bars" if bars else "line", "lineWidth": 1,
               "fillOpacity": 60 if bars else 10, "showPoints": "always" if points else "never", "spanNulls": False,
               "stacking": {"mode": "normal" if bars else "none", "group": "A"},
-              "axisSoftMin": 0, "thresholdsStyle": {"mode": "line" if lines else "off"}}
+              "axisSoftMin": 0, "thresholdsStyle": {
+                  "mode": per_environment(*("line" if lines[env] else "off" for env in ENVIRONMENTS))}}
     if points:
         custom["pointSize"] = 6
+    soft_max = per_env_number(soft_max) if isinstance(soft_max, dict) else soft_max
     if soft_max is not None:
         custom["axisSoftMax"] = soft_max
-    if lines:
-        kw["steps"] = thresholds("transparent", *lines)
+    if shown:
+        kw["steps"] = env_thresholds("transparent", lines)
     return panel("timeseries", title, ds, queries, description, w=w, h=h, custom=custom, options={
         "legend": {"displayMode": "table", "placement": "right", "showLegend": True, "calcs": ["max", "lastNotNull"]},
         "tooltip": {"mode": "multi", "sort": "desc"}}, **kw)
@@ -417,21 +454,42 @@ def row(title):
     return {"type": "row", "title": title, "collapsed": False, "panels": [], "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}}
 
 
+def collapsed(items: list[dict]) -> list[dict]:
+    """A row (the first item) shut by default, holding the panels after it: Grafana runs their queries only once a
+    viewer opens it."""
+    head, *inside = items
+    assert head["type"] == "row" and all(p["type"] != "row" for p in inside)
+    return [{**head, "collapsed": True, "panels": inside}]
+
+
 def layout(items: list[dict]) -> list[dict]:
-    """Place panels left to right, wrapping at 24 columns; a row starts a new line. Ids in order."""
+    """Place panels left to right, wrapping at 24 columns; a row starts a new line. A shut row's panels are placed
+    under it as they will be when it opens, and the page goes on one line below it. Ids in order, nested included."""
     x = y = line_h = 0
-    for n, p in enumerate(items, start=1):
+    n = 0
+
+    def place(p):
+        nonlocal x, y, line_h, n
         g = p["gridPos"]
         if p["type"] == "row" or x + g["w"] > 24:
             y += line_h
             x = line_h = 0
         g["x"], g["y"] = x, y
+        n += 1
         p["id"] = n
         if p["type"] == "row":
             y += 1
         else:
             x += g["w"]
             line_h = max(line_h, g["h"])
+
+    for p in items:
+        place(p)
+        if p["type"] == "row" and p["collapsed"]:
+            after = y
+            for inner in p["panels"]:
+                place(inner)
+            x, y, line_h = 0, after, 0
     return items
 
 
@@ -667,19 +725,94 @@ def db_tile(instance, ds, *, w=3, h=4) -> dict:
                 steps=thresholds(RED, (1, TEAL)))
 
 
-# max_connections on beta (tpa-platform infra/envs/beta, the module's connection policies at 80% and 95%).
-MAX_CONNECTIONS = {"tpa-db": 400, "crm-db": 200, "auth-db": 100, "cc-db": 100}
+# ---- What tpa-platform's Terraform sets, per environment, and what its monitoring module pages on -----------------
+# Each environment root's limits (tpa-platform infra/envs/beta and infra/envs/production-full, read at the catalogue's
+# pinned commit by tests/cloud/test_resources.py): each Cloud Run service's max_instances (Cloud Run's default, 100,
+# where a root sets none) and concurrency (80 where none is set), the services the module writes a
+# `ceiling-<service>` policy for (instance_ceilings: name -> max_instances), and each Cloud SQL instance's
+# max_connections (the root's flag, else Cloud SQL's own for the tier its terraform.tfvars.example gives). A service or
+# instance a root does not build is absent: no limit is drawn for it there. Each line is settled per TPA_ENVIRONMENT
+# at start (per_env_number), so production never shows a line beta's Terraform drew.
+DEFAULT_MAX_INSTANCES, DEFAULT_CONCURRENCY = 100, 80
+LIMITS = {
+    "beta": {
+        "max_instances": {"web": 100, "tpa-api": 100, "model-gateway": 100, "tpa-jobs-drains": 1, "auth": 20,
+                          "auth-outbox-publisher": 3, "watchtower": 1, "records": 20, "connectors": 4, "svc-voice": 1,
+                          "svc-ops": 1, "svc-twilio-rest": 1, "crm-web": 2, "engine": 1},
+        "concurrency": {"svc-voice": 20},   # one call each
+        "ceilings": {"auth": 20, "auth-outbox-publisher": 3, "records": 20, "connectors": 4},
+        "max_connections": {"auth-db": 100, "tpa-db": 400, "crm-db": 200, "cc-db": 100},
+    },
+    "production": {   # production-full: records keeps Cloud Run's default; no call centre, CRM services or watchtower
+        "max_instances": {"web": 100, "tpa-api": 100, "model-gateway": 100, "tpa-jobs-drains": 1, "auth": 20,
+                          "auth-outbox-publisher": 3, "records": 100, "connectors": 4},
+        "concurrency": {},
+        "ceilings": {"auth": 20, "auth-outbox-publisher": 3, "connectors": 4},
+        "max_connections": {"auth-db": 500, "tpa-db": 400, "crm-db": 200},
+    },
+}
+
+
+def limit(kind: str, name: str) -> dict:
+    """Each environment's value of a limit (None where that environment does not build `name`)."""
+    out = {}
+    for env in ENVIRONMENTS:
+        built = LIMITS[env]["max_instances"] if kind == "concurrency" else LIMITS[env][kind]
+        if kind == "concurrency":
+            out[env] = LIMITS[env]["concurrency"].get(name, DEFAULT_CONCURRENCY) if name in built else None
+        else:
+            out[env] = built.get(name)
+    return out
+
+
+# The monitoring module's own per-resource policies (tpa-platform infra/modules/monitoring/main.tf: local.sql_thresholds
+# for each Cloud SQL instance, local.ceiling_policies for each instance ceiling), each as its condition reads: its
+# line (a value, or a share of max_connections or of max_instances), and its window, aligner and reducer.
+SQL_POLICIES = {
+    "cpu-high": {"metric": SQL_CPU, "value": 0.8, "period": "300s", "aligner": "ALIGN_MEAN", "reducer": "REDUCE_MAX"},
+    "cpu-saturated": {"metric": SQL_CPU, "value": 0.95, "period": "300s", "aligner": "ALIGN_MEAN",
+                      "reducer": "REDUCE_MAX"},
+    "memory-high": {"metric": SQL_MEMORY, "value": 0.9, "period": "300s", "aligner": "ALIGN_MEAN",
+                    "reducer": "REDUCE_MAX"},
+    "connections-high": {"metric": SQL_BACKENDS, "share": 0.8, "period": "60s", "aligner": "ALIGN_MEAN",
+                         "reducer": "REDUCE_SUM"},
+    "connections-saturated": {"metric": SQL_BACKENDS, "share": 0.95, "period": "60s", "aligner": "ALIGN_MEAN",
+                              "reducer": "REDUCE_SUM"},
+}
+# `ceiling-<service>`: the service's instances, summed (active and idle), above ceil(share * max_instances) - 0.5.
+CEILING_POLICY = {"metric": RUN_INSTANCES, "share": 0.8, "period": "60s", "aligner": "ALIGN_MAX",
+                  "reducer": "REDUCE_SUM"}
+
+
+def connections_lines(cap: int | None) -> list[tuple[float, str]]:
+    """The connection policies' lines for a max_connections (none where it is not known)."""
+    return [] if cap is None else [(math.floor(SQL_POLICIES[n]["share"] * cap), "red")
+                                   for n in ("connections-high", "connections-saturated")]
+
+
+def ceiling_line(cap: int) -> float:
+    return math.ceil(CEILING_POLICY["share"] * cap) - 0.5
+
+
+def sql_query(policy: str, instance: str, name: str) -> dict:
+    """A Cloud SQL instance's metric read as the module's policy reads it."""
+    m = SQL_POLICIES[policy]
+    return db_resource(m["metric"], instance, name, "+" + m["period"], align=m["aligner"], reduce=m["reducer"])
 
 
 def db_resources(instance, ds, w=6) -> dict:
-    cap = MAX_CONNECTIONS[instance]
+    caps = limit("max_connections", instance)
+    lines = {env: connections_lines(cap) for env, cap in caps.items()}
+    cpu = [SQL_POLICIES[n]["value"] for n in ("cpu-high", "cpu-saturated")]
     return stat(instance, ds,
                 [db_up(instance, "+60s"), db_resource(SQL_CPU, instance, "CPU", "+60s"),
                  db_resource(SQL_MEMORY, instance, "memory", "+60s"), db_disk(instance, "+300s"),
                  db_resource(SQL_BACKENDS, instance, "connections", "+60s", reduce="REDUCE_SUM")],
-                f"Cloud SQL's own signals for {instance}, now: up; CPU (the module pages at 80% and 95%); memory "
-                f"(90%); disk used (`{instance}-disk` at 85%); connections (num_backends; the module opens at 80% "
-                f"and 95% of max_connections, {cap} on beta). " + STOPPED_DB,
+                f"Cloud SQL's own signals for {instance}, now: up; CPU (the module pages at {pct(cpu[0])} and "
+                f"{pct(cpu[1])}); memory ({pct(SQL_POLICIES['memory-high']['value'])}); disk used (`{instance}-disk` "
+                "at 85%); connections (num_backends; the module opens at 80% and 95% of max_connections, " +
+                per_environment(*(f"{caps[env]} here" if caps[env] else "not known here" for env in ENVIRONMENTS)) +
+                "). " + STOPPED_DB,
                 w=w, h=5, calc="lastNotNull", text_mode="value_and_name", time_from="15m", value_size=26,
                 no_value=when_quiet((instance,), "not reporting"),
                 overrides=[by_ref("A", name="up", mappings=[{"type": "value", "options": {
@@ -687,13 +820,14 @@ def db_resources(instance, ds, w=6) -> dict:
                                "1": {"text": "✓ up", "color": TEAL, "index": 1}}}], unit="none",
                                   thresholds=thresholds(RED, (1, TEAL))),
                            by_ref("B", name="CPU", unit="percentunit", decimals=0,
-                                  thresholds=thresholds(NEUTRAL, (0.8, AMBER), (0.95, RED))),
+                                  thresholds=thresholds(NEUTRAL, (cpu[0], AMBER), (cpu[1], RED))),
                            by_ref("C", name="memory", unit="percentunit", decimals=0,
-                                  thresholds=thresholds(NEUTRAL, (0.9, RED))),
+                                  thresholds=thresholds(NEUTRAL, (SQL_POLICIES["memory-high"]["value"], RED))),
                            by_ref("D", name="disk", unit="percentunit", decimals=0,
                                   thresholds=thresholds(NEUTRAL, (0.75, AMBER), (0.85, RED))),
                            by_ref("E", name="connections", decimals=0,
-                                  thresholds=thresholds(NEUTRAL, (round(cap * 0.8), AMBER), (round(cap * 0.95), RED)))])
+                                  thresholds=env_thresholds(NEUTRAL, {env: [(v, c) for (v, _), c in zip(
+                                      lines[env], (AMBER, RED))] for env in ENVIRONMENTS}))])
 
 
 def journeys_stat() -> dict:
@@ -723,7 +857,7 @@ def journeys_stat() -> dict:
 # Each service: its datasource, and the page whose Resources rows hold it.
 SERVICES = {
     "web": (APP, "portal-api"), "tpa-api": (APP, "portal-api"), "model-gateway": (APP, "portal-api"),
-    "tpa-jobs-drains": (APP, "portal-api"),
+    "tpa-jobs-drains": (APP, "portal-api"), "watchtower": (APP, "portal-api"),
     "auth": (APP, "sign-in"), "auth-outbox-publisher": (APP, "sign-in"),
     "records": (PHI, "records"), "connectors": (PHI, "records"),
     "svc-voice": (CC, "callcentre"), "svc-ops": (CC, "callcentre"), "svc-twilio-rest": (CC, "callcentre"),
@@ -731,15 +865,7 @@ SERVICES = {
 }
 AREA_TITLES = {"portal-api": "Portal & API", "sign-in": "Sign-in", "records": "Member records",
                "callcentre": "Call centre", "crm": "CRM"}
-# Each service's max_instances and concurrency on beta (tpa-platform infra/envs/beta main.tf, crm.tf, callcentre.tf;
-# the run-service module's defaults are 100 and 80). The module writes a `ceiling-<service>` policy for beta's
-# instance_ceilings (max_instances of three or more, below the default), opening at 80% of it rounded up for ten
-# minutes; web, tpa-api and model-gateway keep the default, so the project's regional quota binds them first.
-DEFAULT_MAX_INSTANCES, DEFAULT_CONCURRENCY = 100, 80
-MAX_INSTANCES = {"tpa-jobs-drains": 1, "auth": 20, "auth-outbox-publisher": 3, "records": 20, "connectors": 4,
-                 "svc-voice": 1, "svc-ops": 1, "svc-twilio-rest": 1, "crm-web": 2, "engine": 1}
-CONCURRENCY = {"svc-voice": 20}   # one call each
-CEILING_POLICIES = ("auth", "auth-outbox-publisher", "records", "connectors")
+WHAT = {"watchtower": "this monitoring site"}   # a service whose name does not say what it is
 # The services whose Cloud Run latency beta's `canary-latency` leaves out: they hold a stream or a call open.
 LATENCY_LEFT_OUT = ("web", "tpa-api", "svc-voice", "svc-ops")
 # The pager's lines, read from the vendored catalogue. Each panel aggregates as the policy's condition does (its
@@ -791,47 +917,67 @@ def percentiles(metric: str, resource: str, policy: dict, **where) -> list[dict]
               reduce=policy["cross_series_reducer"], name=f"p{n}", **where) for n in (99, 95, 50)]
 
 
+def instance_limits(service: str) -> tuple[dict, dict]:
+    """Each environment's lines on a service's instance count, and their words: a red line where the module writes a
+    `ceiling-<service>` policy, a grey one at max_instances where it is below Cloud Run's default."""
+    lines, words = {}, {}
+    for env in ENVIRONMENTS:
+        cap, ceiling = LIMITS[env]["max_instances"].get(service), LIMITS[env]["ceilings"].get(service)
+        if cap is None:
+            lines[env], words[env] = [], "This environment's Terraform does not build it, so no limit is drawn."
+        elif ceiling is not None:
+            red = ceiling_line(ceiling)
+            lines[env] = [(red, "red")] + ([(cap, GREY)] if cap > red else [])
+            words[env] = (f"The red line is `ceiling-{service}`'s: the total above {red:g} (80% of max_instances, "
+                          f"rounded up, less a half) for ten minutes pages; the grey line is max_instances, {cap}: at "
+                          "it new requests wait or fail with 429.")
+        elif cap < DEFAULT_MAX_INSTANCES:
+            lines[env], words[env] = [(cap, GREY)], (f"The grey line is max_instances, {cap} (too few for a "
+                                                     "`ceiling-` policy): at it new requests wait or fail with 429.")
+        else:
+            lines[env], words[env] = [], (f"max_instances is Cloud Run's default, {cap}, so the project's regional "
+                                          f"quota of {REGIONAL_QUOTA} binds first (`run-instances-near-quota`: the "
+                                          "project's instances, on its area's page).")
+    return lines, words
+
+
+def concurrency_limits(service: str) -> tuple[dict, dict]:
+    """Each environment's lines on a service's busiest instance: `run-concurrency-high`'s (every project has it) where
+    it is below the concurrency setting, and the setting itself, grey, where the environment builds the service."""
+    busy = CONCURRENCY_POLICY["threshold_value"]
+    lines, words = {}, {}
+    for env, slots in limit("concurrency", service).items():
+        red = [] if slots is not None and busy >= slots else [(busy, "red")]
+        lines[env] = red + ([(slots, GREY)] if slots is not None else [])
+        words[env] = (
+            (f"The red line is `run-concurrency-high`'s: the p99 above {busy:g} for "
+             f"{minutes(CONCURRENCY_POLICY, 'duration')} minutes pages. " if red else
+             f"`run-concurrency-high` opens above {busy:g}, beyond this service's setting, so it never opens for it. ")
+            + (f"The grey line is the concurrency setting, {slots}: past it a request waits for a slot or a new "
+               "instance." if slots is not None else "This environment's Terraform does not build it."))
+    return lines, words
+
+
 def resources(service: str, *, own_page: bool = False) -> list[dict]:
     """One Cloud Run service's Resources row: CPU, memory, instances, concurrency, start-up, instances billed, and
-    containers killed for memory, crashed or failing to start. The same row on its area's page and on its own."""
+    containers killed for memory, crashed or failing to start. The same row on its area's page (shut) and on its own
+    page (open). The lines drawn from Terraform's limits are each environment's (render-dashboards.sh settles them)."""
     ds, _page = SERVICES[service]
     me = {"service_name": service}
-    cap = MAX_INSTANCES.get(service, DEFAULT_MAX_INSTANCES)
-    slots = CONCURRENCY.get(service, DEFAULT_CONCURRENCY)
-    cpu, memory, busy = (p["threshold_value"] for p in (CPU_POLICY, MEMORY_POLICY, CONCURRENCY_POLICY))
-    if service in CEILING_POLICIES:
-        ceiling = math.ceil(0.8 * cap)
-        instance_lines = [(ceiling, "red")] + ([(cap, GREY)] if cap > ceiling else [])
-        instance_words = (f"The red line is `ceiling-{service}`'s, {ceiling} instances (80% of max_instances, "
-                          "rounded up) for ten minutes" +
-                          (f"; the grey line is max_instances, {cap}" if cap > ceiling else
-                           ", which is max_instances itself") + ": at the ceiling new requests wait or fail with 429.")
-    elif cap < DEFAULT_MAX_INSTANCES:
-        instance_lines = [(cap, GREY)]
-        instance_words = (f"The grey line is max_instances, {cap} on beta (too few for a `ceiling-` policy): at it "
-                          "new requests wait or fail with 429.")
-    else:
-        instance_lines = []
-        instance_words = (f"max_instances is Cloud Run's default, {cap}, so the project's regional quota of "
-                          f"{REGIONAL_QUOTA} binds first (`run-instances-near-quota`: the project's instances, on "
-                          "its area's page).")
-    if busy < slots:
-        busy_lines = [(busy, "red"), (slots, GREY)]
-        busy_words = (f"The red line is `run-concurrency-high`'s: the p99 above {busy:g} (90% of {slots}) for "
-                      f"{minutes(CONCURRENCY_POLICY, 'duration')} minutes pages. The grey line is the concurrency "
-                      f"setting, {slots}: past it a request waits for a slot or a new instance.")
-    else:
-        busy_lines = [(slots, GREY)]
-        busy_words = (f"The grey line is its concurrency setting, {slots} (one call each): past it a call waits for a "
-                      f"new instance. `run-concurrency-high` opens above {busy:g}, beyond that setting, so it never "
-                      f"opens for {service}.")
+    cpu, memory = (p["threshold_value"] for p in (CPU_POLICY, MEMORY_POLICY))
+    instance_lines, instance_words = instance_limits(service)
+    busy_lines, busy_words = concurrency_limits(service)
+    top = {env: max((v for v, _c in lines), default=None) for env, lines in instance_lines.items()}
+    slots = {env: max((v for v, _c in lines), default=None) for env, lines in busy_lines.items()}
+    ceiling = CEILING_POLICY
     if own_page:
         link = [{"title": f"{AREA_TITLES[_page]}: the page {service} is on", "url": f"/d/tw-cloud-{_page}"
                  "?${__url_time_range}", "targetBlank": False}]
     else:
         link = service_links(service)
+    what = f" ({WHAT[service]})" if service in WHAT else ""
     return [
-        row(f"Resources · {service}: CPU, memory, instances, concurrency, start-up"),
+        row(f"Resources · {service}: CPU, memory, instances, concurrency, start-up{what}"),
         series("CPU (p99, p95, p50)", ds, percentiles(RUN_CPU, REV, CPU_POLICY, **me),
                f"{service}'s container CPU, the share of its CPU limit in use (`container/cpu/utilizations`): the "
                f"99th, 95th and 50th percentile across its instances in each {minutes(CPU_POLICY)}-minute window. The "
@@ -845,16 +991,21 @@ def resources(service: str, *, own_page: bool = False) -> list[dict]:
                f"`run-memory-high`'s: the p99 above {pct(memory)} for {minutes(MEMORY_POLICY, 'duration')} minutes "
                "pages; at the limit the container is killed (`run-oom`, the last panel of this row).", w=6, h=7,
                unit="percentunit", line=memory, soft_max=1),
-        series("Instances (active, idle)", ds, q(RUN_INSTANCES, REV, align="ALIGN_MAX", by=("state",), **me),
-               f"{service}'s Cloud Run instances, the most in each interval: active (serving or starting) and idle "
-               "(kept warm, or waiting to be shut down). " + instance_words, w=6, h=7, decimals=0,
-               lines=instance_lines, soft_max=max((v for v, _ in instance_lines), default=None)),
+        series("Instances (total, active, idle)", ds,
+               [q(ceiling["metric"], REV, align=ceiling["aligner"], period="+" + ceiling["period"],
+                  reduce=ceiling["reducer"], by=("service_name",), name="total", **me),
+                q(RUN_INSTANCES, REV, align="ALIGN_MAX", by=("state",), **me)],
+               f"{service}'s Cloud Run instances: the total, the most in each minute summed over active and idle, as "
+               "the `ceiling-` policies read it, and active (serving or starting) and idle (kept warm, or waiting to "
+               "be shut down) apart. " + per_environment(*(instance_words[env] for env in ENVIRONMENTS)), w=6, h=7,
+               decimals=0, lines=instance_lines, soft_max=top),
         series("Concurrent requests, busiest instance (p99, p50)", ds,
                [q(RUN_CONCURRENCY, REV, align=f"ALIGN_PERCENTILE_{n}", period=window(CONCURRENCY_POLICY),
                   reduce=CONCURRENCY_POLICY["cross_series_reducer"], name=f"p{n}", **me) for n in (99, 50)],
                "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and "
-               f"50th percentile in each {minutes(CONCURRENCY_POLICY)}-minute window. " + busy_words, w=6, h=7,
-               lines=busy_lines, soft_max=slots),
+               f"50th percentile in each {minutes(CONCURRENCY_POLICY)}-minute window. " +
+               per_environment(*(busy_words[env] for env in ENVIRONMENTS)), w=6, h=7, lines=busy_lines,
+               soft_max=slots),
         series("Start-up time (p99, p50)", ds,
                [q(RUN_STARTUP, REV, align=f"ALIGN_PERCENTILE_{n}", reduce="REDUCE_MAX", name=f"p{n}", **me)
                 for n in (99, 50)],
@@ -877,10 +1028,11 @@ def resources(service: str, *, own_page: bool = False) -> list[dict]:
 
 
 def area_resources(page: str) -> list[dict]:
-    """An area page's Resources: the note, then a row for each service SERVICES puts on the page."""
-    return [row("Resources: each Cloud Run service's CPU, memory, instances, concurrency and start-up"),
+    """An area page's Resources: the note, then a shut row for each service SERVICES puts on the page (opened, its
+    queries run; its own page has it open)."""
+    return [row("Resources: each Cloud Run service's CPU, memory, instances, concurrency and start-up (open a row)"),
             text("No disk on a Cloud Run service", NO_DISK, w=24, h=3),
-            *[p for service, (_ds, on) in SERVICES.items() if on == page for p in resources(service)]]
+            *[p for service, (_ds, on) in SERVICES.items() if on == page for p in collapsed(resources(service))]]
 
 
 def project_section(ds: str, where: str, gateway: str | None = None, through: str = "",
@@ -959,7 +1111,10 @@ def database_rows(name: str, ds: str, who: str, *, now: bool = True) -> list[dic
     line), up, CPU, memory, connections, disk operations and throughput, restarts and failed backups. On the Databases
     page (with the "Now" tile) and on the page of the area that owns it."""
     disk = CATALOGUE.threshold(f"{name}-disk", DB_ROLE[name])
-    full, cap = disk["threshold_value"], MAX_CONNECTIONS[name]
+    full = disk["threshold_value"]
+    caps = limit("max_connections", name)
+    connection_lines = {env: connections_lines(cap) + ([(cap, GREY)] if cap else []) for env, cap in caps.items()}
+    cpu, saturated, memory = (SQL_POLICIES[n]["value"] for n in ("cpu-high", "cpu-saturated", "memory-high"))
     alert = f"alert line ({pct(full)} of size)"
     where = {"database_id": f"*:{name}"}
     wide = 10 if now else 12
@@ -993,19 +1148,25 @@ def database_rows(name: str, ds: str, who: str, *, now: bool = True) -> list[dic
         timeline("Up", ds, db_up(name), f"Cloud SQL's `database/up` for {name}, the lowest in each interval. "
                  f"`{name}-down` (urgent) pages below 1 for five minutes. " + STOPPED_DB, w=8, h=6,
                  mappings=UP_MAPPING, steps=thresholds("red", (1, "green"))),
-        series("CPU", ds, db_resource(SQL_CPU, name, "CPU"),
-               f"Cloud SQL's CPU utilisation for {name} (`database/cpu/utilization`). The red lines are the monitoring "
-               f"module's: `{name}` CPU above 80% for thirty minutes, and above 95% for fifteen (urgent).", w=8, h=6,
-               unit="percentunit", lines=[(0.8, "red"), (0.95, "red")], soft_max=1),
-        series("Memory", ds, db_resource(SQL_MEMORY, name, "memory"),
-               f"Cloud SQL's memory utilisation for {name} (`database/memory/utilization`). The red line is the "
-               "monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer "
-               "restarts the server.", w=8, h=6, unit="percentunit", line=0.9, soft_max=1),
-        series("Connections", ds, db_resource(SQL_BACKENDS, name, "connections", reduce="REDUCE_SUM"),
-               f"Backends connected (num_backends, every database of the instance). The red lines are the monitoring "
-               f"module's: 80% of max_connections for ten minutes, and 95% for five (urgent); max_connections is "
-               f"{cap} on beta, the grey line, where new connections are refused.", w=6, h=6, decimals=0,
-               lines=[(math.floor(cap * 0.8), "red"), (math.floor(cap * 0.95), "red"), (cap, GREY)], soft_max=cap),
+        series("CPU", ds, sql_query("cpu-high", name, "CPU"),
+               f"Cloud SQL's CPU utilisation for {name} (`database/cpu/utilization`), the mean of each five minutes, "
+               f"as the monitoring module's policies read it. Their red lines: above {pct(cpu)} for thirty minutes, "
+               f"and above {pct(saturated)} for fifteen (urgent).", w=8, h=6, unit="percentunit",
+               lines=[(cpu, "red"), (saturated, "red")], soft_max=1),
+        series("Memory", ds, sql_query("memory-high", name, "memory"),
+               f"Cloud SQL's memory utilisation for {name} (`database/memory/utilization`), the mean of each five "
+               f"minutes. The red line is the monitoring module's: above {pct(memory)} for fifteen minutes; past it "
+               "PostgreSQL's out-of-memory killer restarts the server.", w=8, h=6, unit="percentunit", line=memory,
+               soft_max=1),
+        series("Connections", ds, sql_query("connections-high", name, "connections"),
+               "Backends connected (num_backends, summed over the instance's databases), the mean of each minute, as "
+               "the monitoring module's connection policies read it. " + per_environment(*(
+                   f"Their red lines: above {connection_lines[env][0][0]:g} (80% of max_connections) for ten minutes, "
+                   f"and above {connection_lines[env][1][0]:g} (95%) for five (urgent); max_connections is "
+                   f"{caps[env]}, the grey line, where new connections are refused." if caps[env] else
+                   "This environment does not build it, so no limit is drawn." for env in ENVIRONMENTS)),
+               w=6, h=6, decimals=0, lines=connection_lines,
+               soft_max={env: caps[env] for env in ENVIRONMENTS}),
         series("Disk operations per second", ds,
                [q(SQL_READ_OPS, SQL, align="ALIGN_RATE", by=(), name="read", **where),
                 q(SQL_WRITE_OPS, SQL, align="ALIGN_RATE", by=(), name="write", **where)],
@@ -1154,11 +1315,13 @@ def overview(cc: bool = True) -> dict:
         service_tile("auth", APP, AUTH_SERVICES, ("auth-db",)),
         service_tile("records", PHI, "records", ("tpa-db",)),
         service_tile("connectors", PHI, "connectors", ("tpa-db",)),
-        row(("Call centre (svc-voice, svc-ops, relay, cc-db) and " if cc else "") + "CRM (crm-web, engine, crm-db)"),
+        row(("Call centre (svc-voice, svc-ops, relay, cc-db), " if cc else "") +
+            "CRM (crm-web, engine, crm-db), and this site (watchtower)"),
         *([service_tile("svc-voice", CC, "svc-voice", ("cc-db",)), service_tile("svc-ops", CC, "svc-ops", ("cc-db",)),
            service_tile("relay", CC, "svc-twilio-rest", ("cc-db",)), db_tile("cc-db", CC)] if cc else []),
         service_tile("crm-web", CRM, "crm-web", ("crm-db",)), service_tile("engine", CRM, "engine", ("crm-db",)),
         db_tile("crm-db", CRM),
+        service_tile("watchtower", APP, "watchtower"),
         row("Databases now: up, CPU, memory, disk, connections"),
         *[db_resources(db, ds, w=span) for db, ds in dbs],
         row("Scheduled runs: a successful run within each job's deadline"),

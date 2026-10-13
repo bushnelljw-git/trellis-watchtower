@@ -742,7 +742,7 @@
     {
       "type": "timeseries",
       "title": "CPU",
-      "description": "Cloud SQL's CPU utilisation for auth-db (`database/cpu/utilization`). The red lines are the monitoring module's: `auth-db` CPU above 80% for thirty minutes, and above 95% for fifteen (urgent).",
+      "description": "Cloud SQL's CPU utilisation for auth-db (`database/cpu/utilization`), the mean of each five minutes, as the monitoring module's policies read it. Their red lines: above 80% for thirty minutes, and above 95% for fifteen (urgent).",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -781,7 +781,7 @@
             ],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -852,7 +852,7 @@
     {
       "type": "timeseries",
       "title": "Memory",
-      "description": "Cloud SQL's memory utilisation for auth-db (`database/memory/utilization`). The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
+      "description": "Cloud SQL's memory utilisation for auth-db (`database/memory/utilization`), the mean of each five minutes. The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -891,7 +891,7 @@
             ],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -958,7 +958,7 @@
     {
       "type": "timeseries",
       "title": "Connections",
-      "description": "Backends connected (num_backends, every database of the instance). The red lines are the monitoring module's: 80% of max_connections for ten minutes, and 95% for five (urgent); max_connections is 100 on beta, the grey line, where new connections are refused.",
+      "description": "Backends connected (num_backends, summed over the instance's databases), the mean of each minute, as the monitoring module's connection policies read it. @@E@@Their red lines: above 400 (80% of max_connections) for ten minutes, and above 475 (95%) for five (urgent); max_connections is 500, the grey line, where new connections are refused.@@Their red lines: above 80 (80% of max_connections) for ten minutes, and above 95 (95%) for five (urgent); max_connections is 100, the grey line, where new connections are refused.@@",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -997,7 +997,7 @@
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+60s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -1020,15 +1020,15 @@
               },
               {
                 "color": "red",
-                "value": 80
+                "value": "@@N@@400@@80@@"
               },
               {
                 "color": "red",
-                "value": 95
+                "value": "@@N@@475@@95@@"
               },
               {
                 "color": "#8c8c8c",
-                "value": 100
+                "value": "@@N@@500@@100@@"
               }
             ]
           },
@@ -1048,7 +1048,7 @@
             "thresholdsStyle": {
               "mode": "line"
             },
-            "axisSoftMax": 100
+            "axisSoftMax": "@@N@@500@@100@@"
           }
         },
         "overrides": []
@@ -2100,7 +2100,7 @@
     {
       "type": "timeseries",
       "title": "CPU",
-      "description": "Cloud SQL's CPU utilisation for tpa-db (`database/cpu/utilization`). The red lines are the monitoring module's: `tpa-db` CPU above 80% for thirty minutes, and above 95% for fifteen (urgent).",
+      "description": "Cloud SQL's CPU utilisation for tpa-db (`database/cpu/utilization`), the mean of each five minutes, as the monitoring module's policies read it. Their red lines: above 80% for thirty minutes, and above 95% for fifteen (urgent).",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -2139,7 +2139,7 @@
             ],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -2210,7 +2210,7 @@
     {
       "type": "timeseries",
       "title": "Memory",
-      "description": "Cloud SQL's memory utilisation for tpa-db (`database/memory/utilization`). The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
+      "description": "Cloud SQL's memory utilisation for tpa-db (`database/memory/utilization`), the mean of each five minutes. The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -2249,7 +2249,7 @@
             ],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -2316,7 +2316,7 @@
     {
       "type": "timeseries",
       "title": "Connections",
-      "description": "Backends connected (num_backends, every database of the instance). The red lines are the monitoring module's: 80% of max_connections for ten minutes, and 95% for five (urgent); max_connections is 400 on beta, the grey line, where new connections are refused.",
+      "description": "Backends connected (num_backends, summed over the instance's databases), the mean of each minute, as the monitoring module's connection policies read it. Their red lines: above 320 (80% of max_connections) for ten minutes, and above 380 (95%) for five (urgent); max_connections is 400, the grey line, where new connections are refused.",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -2355,7 +2355,7 @@
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+60s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -3458,7 +3458,7 @@
     {
       "type": "timeseries",
       "title": "CPU",
-      "description": "Cloud SQL's CPU utilisation for crm-db (`database/cpu/utilization`). The red lines are the monitoring module's: `crm-db` CPU above 80% for thirty minutes, and above 95% for fifteen (urgent).",
+      "description": "Cloud SQL's CPU utilisation for crm-db (`database/cpu/utilization`), the mean of each five minutes, as the monitoring module's policies read it. Their red lines: above 80% for thirty minutes, and above 95% for fifteen (urgent).",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -3497,7 +3497,7 @@
             ],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -3568,7 +3568,7 @@
     {
       "type": "timeseries",
       "title": "Memory",
-      "description": "Cloud SQL's memory utilisation for crm-db (`database/memory/utilization`). The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
+      "description": "Cloud SQL's memory utilisation for crm-db (`database/memory/utilization`), the mean of each five minutes. The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -3607,7 +3607,7 @@
             ],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -3674,7 +3674,7 @@
     {
       "type": "timeseries",
       "title": "Connections",
-      "description": "Backends connected (num_backends, every database of the instance). The red lines are the monitoring module's: 80% of max_connections for ten minutes, and 95% for five (urgent); max_connections is 200 on beta, the grey line, where new connections are refused.",
+      "description": "Backends connected (num_backends, summed over the instance's databases), the mean of each minute, as the monitoring module's connection policies read it. Their red lines: above 160 (80% of max_connections) for ten minutes, and above 190 (95%) for five (urgent); max_connections is 200, the grey line, where new connections are refused.",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -3713,7 +3713,7 @@
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+60s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -4816,7 +4816,7 @@
     {
       "type": "timeseries",
       "title": "CPU",
-      "description": "Cloud SQL's CPU utilisation for cc-db (`database/cpu/utilization`). The red lines are the monitoring module's: `cc-db` CPU above 80% for thirty minutes, and above 95% for fifteen (urgent).",
+      "description": "Cloud SQL's CPU utilisation for cc-db (`database/cpu/utilization`), the mean of each five minutes, as the monitoring module's policies read it. Their red lines: above 80% for thirty minutes, and above 95% for fifteen (urgent).",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -4855,7 +4855,7 @@
             ],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -4926,7 +4926,7 @@
     {
       "type": "timeseries",
       "title": "Memory",
-      "description": "Cloud SQL's memory utilisation for cc-db (`database/memory/utilization`). The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
+      "description": "Cloud SQL's memory utilisation for cc-db (`database/memory/utilization`), the mean of each five minutes. The red line is the monitoring module's: above 90% for fifteen minutes; past it PostgreSQL's out-of-memory killer restarts the server.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -4965,7 +4965,7 @@
             ],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -5032,7 +5032,7 @@
     {
       "type": "timeseries",
       "title": "Connections",
-      "description": "Backends connected (num_backends, every database of the instance). The red lines are the monitoring module's: 80% of max_connections for ten minutes, and 95% for five (urgent); max_connections is 100 on beta, the grey line, where new connections are refused.",
+      "description": "Backends connected (num_backends, summed over the instance's databases), the mean of each minute, as the monitoring module's connection policies read it. @@E@@This environment does not build it, so no limit is drawn.@@Their red lines: above 80 (80% of max_connections) for ten minutes, and above 95 (95%) for five (urgent); max_connections is 100, the grey line, where new connections are refused.@@",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -5071,7 +5071,7 @@
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_MEAN",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+60s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -5093,16 +5093,16 @@
                 "value": null
               },
               {
-                "color": "red",
+                "color": "@@E@@transparent@@red@@",
                 "value": 80
               },
               {
-                "color": "red",
-                "value": 95
+                "color": "@@E@@transparent@@red@@",
+                "value": "@@N@@80@@95@@"
               },
               {
-                "color": "#8c8c8c",
-                "value": 100
+                "color": "@@E@@transparent@@#8c8c8c@@",
+                "value": "@@N@@80@@100@@"
               }
             ]
           },
@@ -5120,9 +5120,9 @@
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "line"
+              "mode": "@@E@@off@@line@@"
             },
-            "axisSoftMax": 100
+            "axisSoftMax": "@@N@@null@@100@@"
           }
         },
         "overrides": []

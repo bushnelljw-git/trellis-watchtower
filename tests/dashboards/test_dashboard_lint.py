@@ -215,6 +215,14 @@ class CloudMutationTest(unittest.TestCase):
             tsl["groupBys"] = ["resource.label.gateway_name", "metric.label.nat_ip"]
         self.assertCaught(mutate, "names the label `metric.label.nat_ip`, which is not on the allowlist")
 
+    def test_a_drop_reason_off_the_nat_drop_counter_is_refused(self):
+        # `reason` is Cloud NAT's word for a dropped packet; on any other metric it is refused.
+        def mutate(d):
+            tsl = self.first_query(d, "5xx (1 h)", "Sign-in")
+            tsl["groupBys"] = ["resource.label.service_name", "metric.label.reason"]
+        self.assertCaught(mutate, "names the label `metric.label.reason`, allowed only on "
+                                  "router.googleapis.com/nat/dropped_sent_packets_count")
+
     def test_a_field_label_on_the_allowlist_passes(self):
         code, out = self.lint_mutated(lambda d: self.panel(d, "Uptime checks passing (24 h)")[
             "fieldConfig"]["defaults"].update(displayName="${__field.labels.resource.label.host}"))

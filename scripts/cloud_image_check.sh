@@ -320,7 +320,8 @@ if resting != {"nightly-anomalies": "paused", "erisa-clocks": "database stopped"
 counted = {}
 for entry in found:
     dashboard = api(f"/api/dashboards/uid/{entry['uid']}", good)[1]["dashboard"]
-    for panel in dashboard.get("panels", []):
+    # A shut row holds its panels inside it: their queries are sent too.
+    for panel in [q for p in dashboard.get("panels", []) for q in (p, *(p.get("panels") or []))]:
         targets = panel.get("targets") or []
         if not targets:
             continue

@@ -812,8 +812,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Instances (active, idle)",
-      "description": "connectors's Cloud Run instances, the most in each interval: active (serving or starting) and idle (kept warm, or waiting to be shut down). The red line is `ceiling-connectors`'s, 4 instances (80% of max_instances, rounded up) for ten minutes, which is max_instances itself: at the ceiling new requests wait or fail with 429.",
+      "title": "Instances (total, active, idle)",
+      "description": "connectors's Cloud Run instances: the total, the most in each minute summed over active and idle, as the `ceiling-` policies read it, and active (serving or starting) and idle (kept warm, or waiting to be shut down) apart. The red line is `ceiling-connectors`'s: the total above 3.5 (80% of max_instances, rounded up, less a half) for ten minutes pages; the grey line is max_instances, 4: at it new requests wait or fail with 429.",
       "gridPos": {
         "h": 7,
         "w": 6,
@@ -827,6 +827,39 @@
       "targets": [
         {
           "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "connectors"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "total"
+        },
+        {
+          "refId": "B",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-phi"
@@ -875,6 +908,10 @@
               },
               {
                 "color": "red",
+                "value": 3.5
+              },
+              {
+                "color": "#8c8c8c",
                 "value": 4
               }
             ]
@@ -920,7 +957,7 @@
     {
       "type": "timeseries",
       "title": "Concurrent requests, busiest instance (p99, p50)",
-      "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. The red line is `run-concurrency-high`'s: the p99 above 71.5 (90% of 80) for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.",
+      "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.",
       "gridPos": {
         "h": 7,
         "w": 6,

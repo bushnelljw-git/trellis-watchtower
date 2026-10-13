@@ -5316,7 +5316,7 @@
     },
     {
       "type": "row",
-      "title": "Call centre (svc-voice, svc-ops, relay, cc-db) and CRM (crm-web, engine, crm-db)",
+      "title": "Call centre (svc-voice, svc-ops, relay, cc-db), CRM (crm-web, engine, crm-db), and this site (watchtower)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -6408,6 +6408,177 @@
       "id": 28
     },
     {
+      "type": "stat",
+      "title": "watchtower",
+      "description": "watchtower: 5xx answers in the last 15 minutes (red from 1) and Cloud Run instances now. No 5xx series means none was answered; no instance series, none is running (a scale-to-zero service idles at none). The link by the title opens the service's own page: its CPU, memory, instances, concurrency and start-up.",
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 21,
+        "y": 25
+      },
+      "links": [
+        {
+          "title": "watchtower: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-watchtower?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "watchtower",
+              "AND",
+              "metric.label.response_code_class",
+              "=",
+              "5xx"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "5xx (15 m)"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "watchtower"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "instances"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "15m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "no data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "#d03b3b",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "id": 29
+    },
+    {
       "type": "row",
       "title": "Databases now: up, CPU, memory, disk, connections",
       "collapsed": false,
@@ -6418,12 +6589,12 @@
         "x": 0,
         "y": 29
       },
-      "id": 29
+      "id": 30
     },
     {
       "type": "stat",
       "title": "auth-db",
-      "description": "Cloud SQL's own signals for auth-db, now: up; CPU (the module pages at 80% and 95%); memory (90%); disk used (`auth-db-disk` at 85%); connections (num_backends; the module opens at 80% and 95% of max_connections, 100 on beta). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's own signals for auth-db, now: up; CPU (the module pages at 80% and 95%); memory (90%); disk used (`auth-db-disk` at 85%); connections (num_backends; the module opens at 80% and 95% of max_connections, @@E@@500 here@@100 here@@). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -6816,11 +6987,11 @@
                     },
                     {
                       "color": "#fab219",
-                      "value": 80
+                      "value": "@@N@@400@@80@@"
                     },
                     {
                       "color": "#d03b3b",
-                      "value": 95
+                      "value": "@@N@@475@@95@@"
                     }
                   ]
                 }
@@ -6848,12 +7019,12 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 30
+      "id": 31
     },
     {
       "type": "stat",
       "title": "tpa-db",
-      "description": "Cloud SQL's own signals for tpa-db, now: up; CPU (the module pages at 80% and 95%); memory (90%); disk used (`tpa-db-disk` at 85%); connections (num_backends; the module opens at 80% and 95% of max_connections, 400 on beta). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's own signals for tpa-db, now: up; CPU (the module pages at 80% and 95%); memory (90%); disk used (`tpa-db-disk` at 85%); connections (num_backends; the module opens at 80% and 95% of max_connections, 400 here). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -7278,12 +7449,12 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 31
+      "id": 32
     },
     {
       "type": "stat",
       "title": "cc-db",
-      "description": "Cloud SQL's own signals for cc-db, now: up; CPU (the module pages at 80% and 95%); memory (90%); disk used (`cc-db-disk` at 85%); connections (num_backends; the module opens at 80% and 95% of max_connections, 100 on beta). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's own signals for cc-db, now: up; CPU (the module pages at 80% and 95%); memory (90%); disk used (`cc-db-disk` at 85%); connections (num_backends; the module opens at 80% and 95% of max_connections, @@E@@not known here@@100 here@@). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -7675,12 +7846,12 @@
                       "value": null
                     },
                     {
-                      "color": "#fab219",
+                      "color": "@@E@@transparent@@#fab219@@",
                       "value": 80
                     },
                     {
-                      "color": "#d03b3b",
-                      "value": 95
+                      "color": "@@E@@transparent@@#d03b3b@@",
+                      "value": "@@N@@80@@95@@"
                     }
                   ]
                 }
@@ -7708,12 +7879,12 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 32
+      "id": 33
     },
     {
       "type": "stat",
       "title": "crm-db",
-      "description": "Cloud SQL's own signals for crm-db, now: up; CPU (the module pages at 80% and 95%); memory (90%); disk used (`crm-db-disk` at 85%); connections (num_backends; the module opens at 80% and 95% of max_connections, 200 on beta). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's own signals for crm-db, now: up; CPU (the module pages at 80% and 95%); memory (90%); disk used (`crm-db-disk` at 85%); connections (num_backends; the module opens at 80% and 95% of max_connections, 200 here). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -8138,7 +8309,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 33
+      "id": 34
     },
     {
       "type": "row",
@@ -8151,7 +8322,7 @@
         "x": 0,
         "y": 35
       },
-      "id": 34
+      "id": 35
     },
     {
       "type": "stat",
@@ -8248,7 +8419,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 35
+      "id": 36
     },
     {
       "type": "stat",
@@ -8345,7 +8516,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 36
+      "id": 37
     },
     {
       "type": "stat",
@@ -8442,7 +8613,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 37
+      "id": 38
     },
     {
       "type": "stat",
@@ -8539,7 +8710,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 38
+      "id": 39
     },
     {
       "type": "stat",
@@ -8636,7 +8807,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 39
+      "id": 40
     },
     {
       "type": "stat",
@@ -8733,7 +8904,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 40
+      "id": 41
     },
     {
       "type": "stat",
@@ -8830,7 +9001,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 41
+      "id": 42
     },
     {
       "type": "stat",
@@ -8927,7 +9098,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 42
+      "id": 43
     },
     {
       "type": "stat",
@@ -9024,7 +9195,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 43
+      "id": 44
     },
     {
       "type": "stat",
@@ -9121,7 +9292,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 44
+      "id": 45
     },
     {
       "type": "stat",
@@ -9218,7 +9389,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 45
+      "id": 46
     },
     {
       "type": "stat",
@@ -9315,7 +9486,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 46
+      "id": 47
     },
     {
       "type": "row",
@@ -9328,7 +9499,7 @@
         "x": 0,
         "y": 44
       },
-      "id": 47
+      "id": 48
     },
     {
       "type": "stat",
@@ -9418,7 +9589,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 48
+      "id": 49
     },
     {
       "type": "stat",
@@ -9521,7 +9692,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 49
+      "id": 50
     },
     {
       "type": "stat",
@@ -9615,7 +9786,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 50
+      "id": 51
     },
     {
       "type": "stat",
@@ -9751,7 +9922,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 51
+      "id": 52
     },
     {
       "type": "stat",
@@ -9863,7 +10034,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 52
+      "id": 53
     },
     {
       "type": "stat",
@@ -9991,7 +10162,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 53
+      "id": 54
     },
     {
       "type": "row",
@@ -10004,7 +10175,7 @@
         "x": 0,
         "y": 50
       },
-      "id": 54
+      "id": 55
     },
     {
       "type": "stat",
@@ -10094,7 +10265,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 55
+      "id": 56
     },
     {
       "type": "stat",
@@ -10197,7 +10368,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 56
+      "id": 57
     },
     {
       "type": "stat",
@@ -10295,7 +10466,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 57
+      "id": 58
     },
     {
       "type": "stat",
@@ -10429,7 +10600,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 58
+      "id": 59
     },
     {
       "type": "stat",
@@ -10645,7 +10816,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 59
+      "id": 60
     },
     {
       "type": "stat",
@@ -10773,7 +10944,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 60
+      "id": 61
     },
     {
       "type": "row",
@@ -10786,7 +10957,7 @@
         "x": 0,
         "y": 56
       },
-      "id": 61
+      "id": 62
     },
     {
       "type": "stat",
@@ -10876,7 +11047,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 62
+      "id": 63
     },
     {
       "type": "stat",
@@ -10979,7 +11150,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 63
+      "id": 64
     },
     {
       "type": "stat",
@@ -11077,7 +11248,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 64
+      "id": 65
     },
     {
       "type": "stat",
@@ -11215,7 +11386,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 65
+      "id": 66
     },
     {
       "type": "stat",
@@ -11431,7 +11602,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 66
+      "id": 67
     },
     {
       "type": "stat",
@@ -11559,7 +11730,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 67
+      "id": 68
     },
     {
       "type": "row",
@@ -11572,7 +11743,7 @@
         "x": 0,
         "y": 62
       },
-      "id": 68
+      "id": 69
     },
     {
       "type": "stat",
@@ -11662,7 +11833,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 69
+      "id": 70
     },
     {
       "type": "stat",
@@ -11765,7 +11936,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 70
+      "id": 71
     },
     {
       "type": "stat",
@@ -11863,7 +12034,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 71
+      "id": 72
     },
     {
       "type": "stat",
@@ -11993,7 +12164,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 72
+      "id": 73
     },
     {
       "type": "stat",
@@ -12209,7 +12380,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 73
+      "id": 74
     },
     {
       "type": "stat",
@@ -12306,7 +12477,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 74
+      "id": 75
     },
     {
       "type": "row",
@@ -12319,7 +12490,7 @@
         "x": 0,
         "y": 68
       },
-      "id": 75
+      "id": 76
     },
     {
       "type": "stat",
@@ -12409,7 +12580,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 76
+      "id": 77
     },
     {
       "type": "stat",
@@ -12512,7 +12683,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 77
+      "id": 78
     },
     {
       "type": "stat",
@@ -12610,7 +12781,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 78
+      "id": 79
     },
     {
       "type": "stat",
@@ -12744,7 +12915,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 79
+      "id": 80
     },
     {
       "type": "stat",
@@ -12960,7 +13131,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 80
+      "id": 81
     },
     {
       "type": "stat",
@@ -13057,7 +13228,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 81
+      "id": 82
     }
   ]
 }

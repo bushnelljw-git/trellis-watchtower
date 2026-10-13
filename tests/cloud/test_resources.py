@@ -1,14 +1,25 @@
-"""Every Cloud Run service's resource primitives are on the cloud pages, drawn with the lines the pager uses.
+"""Every Cloud Run service's resource primitives are on the cloud pages, drawn with the lines the pager uses, in each
+environment.
 
 The owner (2026-10-13): "Where are all the primitives for each service?" Each area page carries a Resources row for
-each Cloud Run service it covers (CPU, memory, instances, concurrency, start-up, instances billed, and containers
-killed for memory, crashed or failing to start); each service has a page of its own, linked from the overview; the
-databases show their disk space in bytes against their size; the app, PHI and call-centre projects' Cloud NAT and the
-PHI project's buckets are on the pages that own them; the Jobs page shows each project's task attempts, run lengths,
-CPU and memory. Every red line is checked against the vendored catalogue's own threshold, and against the way its
-condition aggregates (aligner, window, reducer), so the line means what the pager means.
+each Cloud Run service it covers (shut until opened; open on the service's own page): CPU, memory, instances (their
+total as the `ceiling-` policies read it, and active and idle), concurrency, start-up, instances billed, and containers
+killed for memory, crashed or failing to start. The databases show their disk space in bytes against their size; the
+app, PHI and call-centre projects' Cloud NAT and the PHI project's buckets are on the pages that own them; the Jobs page
+shows each project's task attempts, run lengths, CPU and memory.
 
-The checks are functions returning problems, run on the real pages and, in MutationTest, on broken copies.
+The pages are checked as each environment renders them (cloud/render-dashboards.sh, beta and production), against
+the source of every line:
+- the vendored catalogue (run-cpu-high, run-memory-high, run-concurrency-high, run-instances-near-quota,
+  nat-port-exhaustion, `<instance>-disk`);
+- tpa-platform's Terraform, at the catalogue's pinned commit (cloud/catalogue/SOURCE), read from the tpa-platform
+  checkout beside this repository (or $TPA_PLATFORM_CHECKOUT): each root's max_instances, concurrency, instance
+  ceilings and max_connections (infra/envs/beta and infra/envs/production-full), and the monitoring module's own
+  per-instance and per-ceiling policies (infra/modules/monitoring/main.tf). Without that checkout (or that commit in
+  it) the pins are skipped, said loudly, and the pages are checked against the generator's own copy only.
+The line and the aggregation are both checked, so a line means what the pager means.
+
+The checks are functions returning problems, run on the rendered pages and, in MutationTest, on broken copies.
 
 Run: python3 -m unittest discover -s tests/cloud -v
 """
@@ -17,17 +28,25 @@ from __future__ import annotations
 
 import copy
 import json
+import math
+import os
+import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 DASHBOARDS = ROOT / "cloud" / "dashboards"
+RENDER = ROOT / "cloud" / "render-dashboards.sh"
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(HERE))
 
 import catalogue as cat  # noqa: E402
+import cloud_dashboards as gen  # noqa: E402
 import dashboard_lint as lint  # noqa: E402
 from test_catalogue import NAMES  # noqa: E402
 
@@ -38,10 +57,13 @@ CONCURRENCY, STARTUP, BILLABLE = RUN + "max_request_concurrencies", RUN + "start
 LOG = "logging.googleapis.com/user/"
 FAILURES = {LOG + "run_oom_kills", LOG + "run_crash_exits", LOG + "run_system_errors"}
 PRIMITIVES = {CPU, MEMORY, INSTANCES, CONCURRENCY, STARTUP, BILLABLE, *FAILURES}
+SQL = "cloudsql.googleapis.com/database/"
 DATASOURCE = {"app": "cloud-app", "phi": "cloud-phi", "crm": "cloud-crm", "cc": "cloud-cc"}
+GREY = "#8c8c8c"
+DEFAULT_MAX_INSTANCES = 100
 # Which page holds which services' Resources rows, written out here rather than read from the generator, and held
 # to the catalogue test's list of every project's Cloud Run services.
-AREAS = {"portal-api": ("app", {"web", "tpa-api", "model-gateway", "tpa-jobs-drains"}),
+AREAS = {"portal-api": ("app", {"web", "tpa-api", "model-gateway", "tpa-jobs-drains", "watchtower"}),
          "sign-in": ("app", {"auth", "auth-outbox-publisher"}),
          "records": ("phi", {"records", "connectors"}),
          "callcentre": ("cc", {"svc-voice", "svc-ops", "svc-twilio-rest"}),
@@ -50,23 +72,190 @@ DATABASE_PAGES = {"auth-db": ("app", "sign-in"), "tpa-db": ("phi", "records"), "
                   "cc-db": ("cc", "callcentre")}
 NAT_PAGES = {"portal-api": "app", "records": "phi", "callcentre": "cc"}
 JOB_PROJECTS = ("cloud-app", "cloud-phi", "cloud-cc", "cloud-crm")
+ENVIRONMENTS = {"beta": {"TPA_APP_PROJECT_ID": "beta-tpa-app", "TPA_CRM_PROJECT_ID": "beta-tpa-app",
+                         "TPA_PHI_PROJECT_ID": "beta-tpa-phi", "TPA_CC_PROJECT_ID": "beta-callcentre",
+                         "TPA_ENVIRONMENT": "beta"},
+                "production": {"TPA_APP_PROJECT_ID": "prod-tpa-app", "TPA_CRM_PROJECT_ID": "prod-crm",
+                               "TPA_PHI_PROJECT_ID": "prod-tpa-phi", "TPA_CC_PROJECT_ID": "",
+                               "TPA_ENVIRONMENT": "production"}}
+ROOTS = {"beta": "infra/envs/beta", "production": "infra/envs/production-full"}
 
 
-def load(name: str) -> dict:
-    return json.loads((DASHBOARDS / f"{name}.json").read_text())
+# ---- tpa-platform's Terraform, at the catalogue's pinned commit ----------------------------------------------------
+class Infra:
+    """What tpa-platform's Terraform says, read with `git show <pinned commit>:<path>` from a local checkout."""
+
+    def __init__(self, checkout: Path, commit: str):
+        self.checkout, self.commit = checkout, commit
+
+    @classmethod
+    def find(cls) -> tuple["Infra | None", str]:
+        checkout = Path(os.environ.get("TPA_PLATFORM_CHECKOUT", ROOT.parent / "tpa-platform"))
+        commit = cat.source()["commit"]
+        if not (checkout / ".git").exists():
+            return None, f"no tpa-platform checkout at {checkout} (set TPA_PLATFORM_CHECKOUT)"
+        found = subprocess.run(["git", "-C", str(checkout), "cat-file", "-e", f"{commit}^{{commit}}"],
+                               capture_output=True)
+        if found.returncode:
+            return None, f"{checkout} lacks the catalogue's pinned commit {commit[:8]} (git fetch there)"
+        return cls(checkout, commit), f"tpa-platform at {commit[:8]} ({checkout})"
+
+    def show(self, path: str) -> str:
+        return subprocess.run(["git", "-C", str(self.checkout), "show", f"{self.commit}:{path}"],
+                              capture_output=True, text=True, check=True).stdout
+
+    def root_text(self, env: str) -> str:
+        names = subprocess.run(["git", "-C", str(self.checkout), "ls-tree", "--name-only", self.commit,
+                                ROOTS[env] + "/"], capture_output=True, text=True, check=True).stdout.split()
+        return "\n".join(self.show(n) for n in names if n.endswith(".tf"))
+
+    @staticmethod
+    def block(text: str, opening: str) -> str:
+        """The text of the first `{...}` after `opening` (balanced braces)."""
+        start = text.index(opening) + len(opening)
+        depth, i = 0, text.index("{", start - 1)
+        for j in range(i, len(text)):
+            depth += {"{": 1, "}": -1}.get(text[j], 0)
+            if depth == 0:
+                return text[i:j + 1]
+        raise ValueError(opening)
+
+    def module_default(self, module: str, variable: str) -> int:
+        text = self.show(f"infra/modules/{module}/variables.tf")
+        return int(re.search(r"\bdefault\s*=\s*(\d+)", self.block(text, f'variable "{variable}"')).group(1))
+
+    def services(self, env: str) -> dict[str, tuple[int, int]]:
+        """Each Cloud Run service the root builds: (max_instances, concurrency), the module's default where unset."""
+        out = {}
+        defaults = (self.module_default("run-service", "max_instances"),
+                    self.module_default("run-service", "concurrency"))
+        for m in re.finditer(r'^module "[^"]+" \{\n(.*?)^\}', self.root_text(env), re.M | re.S):
+            body = m.group(1)
+            if not re.search(r'^\s*source\s*=\s*"[./]*modules/run-service"', body, re.M):
+                continue
+            name = re.search(r'^  name\s*=\s*"([a-z0-9-]+)"', body, re.M).group(1)
+            values = []
+            for key, default in zip(("max_instances", "concurrency"), defaults):
+                set_ = re.search(rf"^  {key}\s*=\s*(.+?)\s*$", body, re.M)
+                if set_ and not set_.group(1).isdigit():
+                    raise AssertionError(f"{env}: {name}'s {key} is `{set_.group(1)}`, not a number this reads")
+                values.append(int(set_.group(1)) if set_ else default)
+            out[name] = tuple(values)
+        return out
+
+    def ceilings(self, env: str) -> dict[str, int]:
+        """The services the root asks the module for a `ceiling-<service>` policy for (instance_ceilings)."""
+        text, out = self.root_text(env), {}
+        for m in re.finditer(r"\binstance_ceilings(?:_by_role)?\s*=\s*\{", text):
+            body = self.block(text[m.start():], m.group(0))
+            out.update({k: int(v) for k, v in re.findall(r"\b([a-z][a-z0-9-]*)\s*=\s*(\d+)\b", body)})
+        return out
+
+    def max_connections(self, env: str) -> dict[str, int]:
+        """Each Cloud SQL instance's max_connections as the root's sql_max_connections computes it: its flag, else the
+        shared-core value, else the band for its tier's memory, the tier being terraform.tfvars.example's (cc-db's
+        commented example, for a staffed-call plan, included)."""
+        text = self.root_text(env)
+
+        def pairs(name):
+            return dict(re.findall(r'"?([a-z0-9-]+)"?\s*=\s*(\d+)', self.block(text, f"{name} ")))
+        flag, shared = pairs("sql_max_connections_flag"), pairs("sql_shared_core_connections")
+        bands = [tuple(map(int, b)) for b in re.findall(r"\[(\d+),\s*(\d+)\]", re.search(
+            r"sql_connection_bands\s*=\s*(\[.*\])", text).group(1))]
+        tiers = {}
+        current = None
+        for line in self.show(ROOTS[env] + "/terraform.tfvars.example").splitlines():
+            m = re.match(r"^\s*#?\s*([a-z][a-z0-9-]*-db) = \{", line)
+            if m:
+                current = m.group(1)
+            m = re.match(r'^\s*#?\s*tier\s*=\s*"([^"]+)"', line)
+            if m and current:
+                tiers.setdefault(current, m.group(1))
+        out = {}
+        for db, tier in tiers.items():
+            memory = re.fullmatch(r"db-custom-\d+-(\d+)", tier)
+            band = next((n for floor, n in bands if memory and int(memory.group(1)) >= floor), None)
+            value = int(flag[db]) if db in flag else int(shared[tier]) if tier in shared else band
+            if value is not None:
+                out[db] = value
+        return out
+
+    def sql_policies(self) -> dict[str, dict]:
+        text = self.block(self.show("infra/modules/monitoring/main.tf"), "sql_thresholds =")
+        out = {}
+        for name in gen.SQL_POLICIES:
+            body = self.block(text, f"{name} =")
+            get = lambda key: re.search(rf'^\s*{key}\s*=\s*"?([^"\n]+?)"?\s*$', body, re.M).group(1)
+            value = get("value")
+            share = re.fullmatch(r"floor\(([0-9.]+) \* i\.max_connections\)", value)
+            out[name] = {"metric": get("metric"), **({"share": float(share.group(1))} if share else
+                                                     {"value": float(value)}),
+                         "period": get("period"), "aligner": get("aligner"), "reducer": get("reducer")}
+        return out
+
+    def ceiling_policy(self) -> dict:
+        body = self.block(self.show("infra/modules/monitoring/main.tf"), "ceiling_policies =")
+        get = lambda key: re.search(rf"^\s*{key}\s*=\s*(.+?)\s*$", body, re.M).group(1)
+        share = re.fullmatch(r"ceil\(([0-9.]+) \* max\) - 0\.5", get("threshold_value"))
+        assert share, f"the ceiling's threshold is `{get('threshold_value')}`, not ceil(share * max) - 0.5"
+        assert get("group_by_fields") == '["resource.label.service_name"]', get("group_by_fields")
+        return {"metric": re.search(r'metric\.type = \\"([^\\]+)\\"', get("filter")).group(1),
+                "share": float(share.group(1)), "period": get("alignment_period").strip('"'),
+                "aligner": get("per_series_aligner").strip('"'), "reducer": get("cross_series_reducer").strip('"')}
+
+    def limits(self) -> dict:
+        """LIMITS as tpa-platform's roots set them, for the services and instances the dashboards chart."""
+        out = {}
+        for env in ROOTS:
+            built = {s: v for s, v in self.services(env).items() if s in gen.SERVICES}
+            out[env] = {"max_instances": {s: v[0] for s, v in built.items()},
+                        "concurrency": {s: v[1] for s, v in built.items() if v[1] != gen.DEFAULT_CONCURRENCY},
+                        "ceilings": {s: n for s, n in self.ceilings(env).items() if s in gen.SERVICES},
+                        "max_connections": {d: n for d, n in self.max_connections(env).items()
+                                            if d in gen.DATABASES}}
+        return out
 
 
+INFRA, INFRA_SOURCE = Infra.find()
+if INFRA is None:
+    print(f"\ntest_resources: SKIPPING the tpa-platform pins: {INFRA_SOURCE}. The lines are checked against the "
+          "generator's own copy only.", file=sys.stderr)
+# What the lines must be: tpa-platform's own where it can be read, else the generator's.
+LIMITS = INFRA.limits() if INFRA else gen.LIMITS
+SQL_POLICIES = INFRA.sql_policies() if INFRA else gen.SQL_POLICIES
+CEILING_POLICY = INFRA.ceiling_policy() if INFRA else gen.CEILING_POLICY
+
+
+def render(env: str) -> dict[str, dict]:
+    with tempfile.TemporaryDirectory() as tmp:
+        src, dst = Path(tmp) / "src", Path(tmp) / "dst"
+        shutil.copytree(DASHBOARDS, src, ignore=shutil.ignore_patterns("*.md"))
+        base = {k: v for k, v in os.environ.items() if not k.startswith("TPA_")}
+        done = subprocess.run(["sh", str(RENDER), "--render-only", str(src), str(dst)],
+                              env={**base, **ENVIRONMENTS[env]}, capture_output=True, text=True)
+        assert done.returncode == 0, done.stderr
+        return {p.stem: json.loads(p.read_text()) for p in dst.glob("*.json")}
+
+
+RENDERED = {env: render(env) for env in ENVIRONMENTS}
+
+
+# ---- Reading a page ----------------------------------------------------------------------------------------------
 def sections(dashboard: dict) -> dict[str, list[dict]]:
-    """Row title -> the panels under it."""
+    """Row title -> the panels under it (a shut row's are inside it)."""
     out: dict[str, list[dict]] = {}
     current = None
     for panel in dashboard["panels"]:
         if panel["type"] == "row":
             current = panel["title"]
-            out[current] = []
+            out[current] = list(panel.get("panels") or [])
         elif current is not None:
             out[current].append(panel)
     return out
+
+
+def shut(dashboard: dict) -> dict[str, bool]:
+    return {p["title"]: p["collapsed"] for p in dashboard["panels"] if p["type"] == "row"}
 
 
 def resource_rows(dashboard: dict) -> dict[str, list[dict]]:
@@ -83,9 +272,12 @@ def filters(target: dict) -> dict[str, tuple[str, str]]:
     return {k: (op, v) for k, op, v in lint.query_facts(target["timeSeriesList"])["filters"]}
 
 
-def red_lines(panel: dict) -> list[float]:
-    return [s["value"] for s in panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
-            if s["value"] is not None and s["color"] == "red"]
+def lines(panel: dict, colour: str = "red") -> list[float]:
+    """The threshold lines a panel draws in a colour (none when it draws no threshold line)."""
+    defaults = panel["fieldConfig"]["defaults"]
+    if defaults.get("custom", {}).get("thresholdsStyle", {}).get("mode") != "line":
+        return []
+    return sorted(s["value"] for s in defaults["thresholds"]["steps"] if s["value"] is not None and s["color"] == colour)
 
 
 def reads(panel: dict, metric_type: str) -> bool:
@@ -93,24 +285,36 @@ def reads(panel: dict, metric_type: str) -> bool:
 
 
 def aggregated_as(target: dict, policy: dict) -> list[str]:
-    """How a query differs from the policy condition whose line its panel draws."""
+    """How a query differs from the policy condition whose line its panel draws (a catalogue threshold, or the
+    module's own policy as SQL_POLICIES and CEILING_POLICY hold it)."""
     tsl = target["timeSeriesList"]
-    want = {"perSeriesAligner": policy["per_series_aligner"], "alignmentPeriod": "+" + policy["alignment_period"],
-            "crossSeriesReducer": policy["cross_series_reducer"]}
-    return [f"{k} {tsl.get(k)} is not the policy's {v}" for k, v in want.items() if tsl.get(k) != v]
+    if "alignment_period" in policy:
+        want = (policy["per_series_aligner"], policy["alignment_period"], policy["cross_series_reducer"])
+    else:
+        want = (policy["aligner"], policy["period"], policy["reducer"])
+    got = (tsl.get("perSeriesAligner"), tsl.get("alignmentPeriod"), tsl.get("crossSeriesReducer"))
+    return [f"{k} {g} is not the policy's {w}" for k, g, w in zip(
+        ("perSeriesAligner", "alignmentPeriod", "crossSeriesReducer"), got, (want[0], "+" + want[1], want[2]))
+            if g != w]
 
 
 # ---- The checks --------------------------------------------------------------------------------------------------
-def check_resources(page: str, dashboard: dict) -> list[str]:
+def check_resources(page: str, dashboard: dict, env: str) -> list[str]:
     """The page's Resources rows: one per service it covers, each reading every primitive of that service alone on
-    the project's datasource, with the CPU, memory and concurrency lines the catalogue's policies use."""
+    the project's datasource, with the lines the catalogue's and the module's policies use in this environment, and
+    the instances' total aggregated as `ceiling-<service>` reads it."""
     role, services = AREAS[page] if page in AREAS else (None, None)
     rows = resource_rows(dashboard)
     problems = []
     if services is not None and set(rows) != services:
         problems.append(f"{page}: Resources rows for {sorted(rows)}, not {sorted(services)}")
+    for title, is_shut in shut(dashboard).items():
+        if title.startswith("Resources · ") and is_shut != (page in AREAS):
+            problems.append(f"{page}: `{title}` is {'shut' if is_shut else 'open'}; the area pages shut it, a "
+                            "service's own page opens it")
+    limits = LIMITS[env]
     for service, panels in rows.items():
-        where = f"{page}: Resources · {service}"
+        where = f"{env} {page}: Resources · {service}"
         targets = [t for p in panels for t in p.get("targets") or []]
         missing = PRIMITIVES - {metric(t) for t in targets}
         if missing:
@@ -125,26 +329,42 @@ def check_resources(page: str, dashboard: dict) -> list[str]:
             panel = next((p for p in panels if reads(p, metric_type)), None)
             if panel is None:
                 continue
-            if red_lines(panel) != [policy["threshold_value"]]:
-                problems.append(f"{where}: {panel['title']} draws red at {red_lines(panel)}, not `{name}`'s "
+            if lines(panel) != [policy["threshold_value"]]:
+                problems.append(f"{where}: {panel['title']} draws red at {lines(panel)}, not `{name}`'s "
                                 f"{policy['threshold_value']}")
             p99 = next((t for t in panel["targets"] if t["aliasBy"] == "p99"), None)
-            if p99 is None:
-                problems.append(f"{where}: {panel['title']} has no p99")
-            else:
-                problems += [f"{where}: {panel['title']}: {d}" for d in aggregated_as(p99, policy)]
-            if panel["fieldConfig"]["defaults"]["custom"].get("thresholdsStyle", {}).get("mode") != "line":
-                problems.append(f"{where}: {panel['title']} does not draw its thresholds as lines")
-        policy = CATALOGUE.threshold("run-concurrency-high")
+            problems += [f"{where}: {panel['title']}: {d}" for d in (aggregated_as(p99, policy) if p99 else ["no p99"])]
+        # Concurrency: run-concurrency-high's line where it is below the setting; the setting where it is built.
+        busy = CATALOGUE.threshold("run-concurrency-high")
+        built = service in limits["max_instances"]
+        slots = limits["concurrency"].get(service, gen.DEFAULT_CONCURRENCY) if built else None
         panel = next((p for p in panels if reads(p, CONCURRENCY)), None)
         if panel is not None:
-            setting = panel["fieldConfig"]["defaults"]["custom"].get("axisSoftMax")
-            want = [policy["threshold_value"]] if setting and policy["threshold_value"] < setting else []
-            if red_lines(panel) != want:
-                problems.append(f"{where}: concurrency draws red at {red_lines(panel)}, not {want} (its setting "
-                                f"{setting}, `run-concurrency-high` {policy['threshold_value']})")
+            want_red = [] if slots is not None and busy["threshold_value"] >= slots else [busy["threshold_value"]]
+            if lines(panel) != want_red or lines(panel, GREY) != ([slots] if slots else []):
+                problems.append(f"{where}: concurrency draws red {lines(panel)} and grey {lines(panel, GREY)}, not "
+                                f"{want_red} and {[slots] if slots else []}")
             p99 = next((t for t in panel["targets"] if t["aliasBy"] == "p99"), None)
-            problems += [f"{where}: concurrency: {d}" for d in (aggregated_as(p99, policy) if p99 else ["no p99"])]
+            problems += [f"{where}: concurrency: {d}" for d in (aggregated_as(p99, busy) if p99 else ["no p99"])]
+        # Instances: the total as the ceiling policy reads it, its line, and max_instances.
+        panel = next((p for p in panels if reads(p, INSTANCES)), None)
+        if panel is not None:
+            cap, ceiling = limits["max_instances"].get(service), limits["ceilings"].get(service)
+            red = [math.ceil(CEILING_POLICY["share"] * ceiling) - 0.5] if ceiling else []
+            grey = [cap] if cap is not None and cap < DEFAULT_MAX_INSTANCES and (not red or cap > red[0]) else []
+            if lines(panel) != red or lines(panel, GREY) != grey:
+                problems.append(f"{where}: instances draw red {lines(panel)} and grey {lines(panel, GREY)}, not "
+                                f"{red} (`ceiling-{service}`) and {grey} (max_instances)")
+            total = [t for t in panel["targets"] if t["aliasBy"] == "total"]
+            if len(total) != 1:
+                problems.append(f"{where}: instances have {len(total)} total series")
+            for t in total:
+                problems += [f"{where}: instances' total: {d}" for d in aggregated_as(t, CEILING_POLICY)]
+                if metric(t) != CEILING_POLICY["metric"] or set(filters(t)) - {"metric.type", "resource.type",
+                                                                                 "resource.label.service_name"}:
+                    problems.append(f"{where}: instances' total does not read every instance of {service}")
+                if t["timeSeriesList"]["groupBys"] != ["resource.label.service_name"]:
+                    problems.append(f"{where}: instances' total is not grouped by service, as the policy groups it")
     return problems
 
 
@@ -156,8 +376,8 @@ def check_project(page: str, dashboard: dict) -> list[str]:
     if len(panels) != 1:
         problems.append(f"{page}: {len(panels)} project instance panels")
     for panel in panels:
-        if red_lines(panel) != [quota["threshold_value"]]:
-            problems.append(f"{page}: the project's instances draw red at {red_lines(panel)}, not "
+        if lines(panel) != [quota["threshold_value"]]:
+            problems.append(f"{page}: the project's instances draw red at {lines(panel)}, not "
                             f"`run-instances-near-quota`'s {quota['threshold_value']}")
         problems += [f"{page}: project instances: {d}" for d in aggregated_as(panel["targets"][0], quota)]
     nat = [p for p in lint.panels(dashboard) if any(metric(t).startswith("router.googleapis.com/nat/")
@@ -174,8 +394,8 @@ def check_project(page: str, dashboard: dict) -> list[str]:
     for condition, metric_type in ((0, "nat_allocation_failed"), (1, "dropped_sent_packets_count")):
         policy = CATALOGUE.threshold("nat-port-exhaustion", condition=condition)
         panel = next(p for p in nat if reads(p, f"router.googleapis.com/nat/{metric_type}"))
-        if red_lines(panel) != [policy["threshold_value"]]:
-            problems.append(f"{page}: {panel['title']} draws red at {red_lines(panel)}, not "
+        if lines(panel) != [policy["threshold_value"]]:
+            problems.append(f"{page}: {panel['title']} draws red at {lines(panel)}, not "
                             f"`nat-port-exhaustion`'s {policy['threshold_value']}")
         paged = [t for t in panel["targets"] if metric(t).endswith(metric_type) and
                  filters(t).get("metric.label.reason", ("=", "OUT_OF_RESOURCES")) == ("=", "OUT_OF_RESOURCES")]
@@ -183,38 +403,73 @@ def check_project(page: str, dashboard: dict) -> list[str]:
     return problems
 
 
-def check_database(name: str, page: str, dashboard: dict) -> list[str]:
-    """One instance's disk space, in percent with `<name>-disk`'s line and in bytes against its size, and its I/O."""
+def check_database(name: str, page: str, dashboard: dict, env: str) -> list[str]:
+    """One instance's disk space, in percent with `<name>-disk`'s line and in bytes against its size, its CPU, memory
+    and connections with the module's lines (read as the module reads them), and its I/O."""
     role = DATABASE_PAGES[name][0]
-    policy = CATALOGUE.threshold(f"{name}-disk", role)
+    disk = CATALOGUE.threshold(f"{name}-disk", role)
     rows = {t: ps for t, ps in sections(dashboard).items() if t.startswith(f"{name} (")}
     if len(rows) != 1:
         return [f"{page}: {len(rows)} sections for {name}"]
     panels = next(iter(rows.values()))
+    where = f"{env} {page}: {name}"
     problems = []
     read = {metric(t) for p in panels for t in p.get("targets") or []}
     for suffix in ("disk/utilization", "disk/bytes_used", "disk/quota", "disk/read_ops_count", "disk/write_ops_count",
                    "disk/read_bytes_count", "disk/write_bytes_count", "cpu/utilization", "memory/utilization",
                    "postgresql/num_backends", "up"):
-        if f"cloudsql.googleapis.com/database/{suffix}" not in read:
-            problems.append(f"{page}: {name}: {suffix} is not charted")
+        if SQL + suffix not in read:
+            problems.append(f"{where}: {suffix} is not charted")
     for p in panels:
         for t in p.get("targets") or []:
             if filters(t).get("resource.label.database_id") != ("=", f"*:{name}"):
-                problems.append(f"{page}: {name}: {p['title']} does not read {name} alone")
+                problems.append(f"{where}: {p['title']} does not read {name} alone")
             if t["datasource"]["uid"] != DATASOURCE[role]:
-                problems.append(f"{page}: {name}: {p['title']} on {t['datasource']['uid']}")
+                problems.append(f"{where}: {p['title']} on {t['datasource']['uid']}")
     percent = next((p for p in panels if p["title"] == "Disk space used (%)"), None)
-    if percent is None or red_lines(percent) != [policy["threshold_value"]]:
-        problems.append(f"{page}: {name}: disk space (%) does not draw `{name}-disk`'s {policy['threshold_value']}")
+    if percent is None or lines(percent) != [disk["threshold_value"]]:
+        problems.append(f"{where}: disk space (%) does not draw `{name}-disk`'s {disk['threshold_value']}")
     else:
-        problems += [f"{page}: {name}: disk space (%): {d}" for d in aggregated_as(percent["targets"][0], policy)]
-    size = next((p for p in panels if reads(p, "cloudsql.googleapis.com/database/disk/quota")), None)
+        problems += [f"{where}: disk space (%): {d}" for d in aggregated_as(percent["targets"][0], disk)]
+    size = next((p for p in panels if reads(p, SQL + "disk/quota")), None)
     factors = [c["options"]["binary"]["right"]["fixed"] for c in (size or {}).get("transformations", [])
                if c["id"] == "calculateField"]
-    if factors != [f"{policy['threshold_value']:g}"]:
-        problems.append(f"{page}: {name}: the bytes panel's alert line is {factors} of the size, not "
-                        f"`{name}-disk`'s {policy['threshold_value']}")
+    if factors != [f"{disk['threshold_value']:g}"]:
+        problems.append(f"{where}: the bytes panel's alert line is {factors} of the size, not "
+                        f"`{name}-disk`'s {disk['threshold_value']}")
+    cap = LIMITS[env]["max_connections"].get(name)
+    for title, policies, grey in (
+            ("CPU", ("cpu-high", "cpu-saturated"), []), ("Memory", ("memory-high",), []),
+            ("Connections", ("connections-high", "connections-saturated"), [cap] if cap else [])):
+        panel = next((p for p in panels if p["title"] == title), None)
+        if panel is None:
+            problems.append(f"{where}: no {title} panel")
+            continue
+        want = sorted(SQL_POLICIES[n]["value"] if "value" in SQL_POLICIES[n] else
+                      math.floor(SQL_POLICIES[n]["share"] * cap) for n in policies if cap or "value" in SQL_POLICIES[n])
+        if lines(panel) != want or lines(panel, GREY) != grey:
+            problems.append(f"{where}: {title} draws red {lines(panel)} and grey {lines(panel, GREY)}, not the "
+                            f"module's {want} and {grey}")
+        problems += [f"{where}: {title}: {d}" for d in aggregated_as(panel["targets"][0], SQL_POLICIES[policies[0]])]
+    return problems
+
+
+def check_overview_databases(overview: dict, env: str) -> list[str]:
+    """The overview's "Databases now" tiles colour CPU, memory and connections at the module's lines."""
+    problems = []
+    for name, steps in ((p["title"], {o["matcher"]["options"]: next(
+            (x["value"]["steps"] for x in o["properties"] if x["id"] == "thresholds"), None)
+            for o in p["fieldConfig"]["overrides"]})
+            for p in sections(overview).get("Databases now: up, CPU, memory, disk, connections", [])):
+        cap = LIMITS[env]["max_connections"].get(name)
+        want = {"B": [SQL_POLICIES["cpu-high"]["value"], SQL_POLICIES["cpu-saturated"]["value"]],
+                "C": [SQL_POLICIES["memory-high"]["value"]],
+                "E": [math.floor(SQL_POLICIES[n]["share"] * cap) for n in ("connections-high", "connections-saturated")]
+                if cap else []}
+        for ref, values in want.items():
+            got = [s["value"] for s in steps[ref] if s["value"] is not None and s["color"] != "transparent"]
+            if got != values:
+                problems.append(f"{env} overview: {name}'s {ref} tile colours at {got}, not the module's {values}")
     return problems
 
 
@@ -238,30 +493,85 @@ def check_jobs(dashboard: dict, projects=JOB_PROJECTS) -> list[str]:
 NOTE = "Cloud Run services have no disk"
 
 
+def area_pages(env: str):
+    return [page for page in AREAS if page in RENDERED[env]]
+
+
+def service_pages(env: str):
+    return [(page, s) for page, (_r, ss) in AREAS.items() for s in sorted(ss) if f"service-{s}" in RENDERED[env]]
+
+
+class SourceTest(unittest.TestCase):
+    """The generator's copies of tpa-platform's limits and module policies are tpa-platform's own."""
+
+    def setUp(self):
+        if INFRA is None:
+            self.skipTest(f"SKIPPED LOUDLY: {INFRA_SOURCE}; the generator's limits are not checked against "
+                          "tpa-platform")
+
+    def test_each_environments_limits_are_its_terraforms(self):
+        self.assertEqual(gen.LIMITS, INFRA.limits(), f"scripts/cloud_dashboards.py LIMITS differs from {INFRA_SOURCE}")
+
+    def test_the_module_policies_are_the_modules(self):
+        self.assertEqual(gen.SQL_POLICIES, INFRA.sql_policies())
+        self.assertEqual(gen.CEILING_POLICY, INFRA.ceiling_policy())
+
+    def test_the_reader_reads_what_it_should(self):
+        # Known facts at the pinned commit, so a reader that silently reads nothing fails here.
+        self.assertEqual(INFRA.services("beta")["svc-voice"], (1, 20))
+        self.assertEqual(INFRA.services("production")["records"], (DEFAULT_MAX_INSTANCES, 80))
+        self.assertIn("records", INFRA.ceilings("beta"))
+        self.assertNotIn("records", INFRA.ceilings("production"))
+        self.assertEqual(INFRA.max_connections("beta")["auth-db"], 100)
+
+
 class ResourcesTest(unittest.TestCase):
     def test_the_areas_cover_every_cloud_run_service(self):
         covered = set().union(*(services for _role, services in AREAS.values()))
         self.assertEqual(covered, set().union(*(n["service_name"] for n in NAMES.values())))
+        self.assertEqual(covered, set(gen.SERVICES))
         for page, (role, services) in AREAS.items():
             self.assertLessEqual(services, NAMES[role]["service_name"], page)
 
-    def test_every_area_page_has_each_services_resources(self):
-        for page in AREAS:
-            self.assertEqual(check_resources(page, load(page)), [], page)
+    def test_both_environments_render(self):
+        self.assertIn("service-svc-voice", RENDERED["beta"])
+        self.assertNotIn("service-svc-voice", RENDERED["production"])
+        for env, pages in RENDERED.items():
+            self.assertNotIn("@@", json.dumps(pages), env)
 
-    def test_every_area_page_says_a_service_has_no_disk(self):
-        for page in [*AREAS, *(f"service-{s}" for _r, ss in AREAS.values() for s in ss)]:
-            self.assertIn(NOTE, json.dumps(load(page)), page)
+    def test_every_area_page_has_each_services_resources(self):
+        for env in RENDERED:
+            for page in area_pages(env):
+                self.assertEqual(check_resources(page, RENDERED[env][page], env), [], (env, page))
+
+    def test_production_draws_no_line_from_betas_terraform(self):
+        # records: beta's ceiling (16 instances for ten minutes) and max_instances 20; production keeps Cloud Run's
+        # default and has no `ceiling-records`, so nothing is drawn there.
+        for env, red, grey in (("beta", [15.5], [20]), ("production", [], [])):
+            row = resource_rows(RENDERED[env]["service-records"])["records"]
+            panel = next(p for p in row if reads(p, INSTANCES))
+            self.assertEqual((lines(panel), lines(panel, GREY)), (red, grey), env)
+        # auth's ceiling is the same in both.
+        for env in RENDERED:
+            panel = next(p for p in resource_rows(RENDERED[env]["service-auth"])["auth"] if reads(p, INSTANCES))
+            self.assertEqual((lines(panel), lines(panel, GREY)), ([15.5], [20]), env)
+
+    def test_every_page_says_a_service_has_no_disk(self):
+        for env in RENDERED:
+            for page in [*area_pages(env), *(f"service-{s}" for _p, s in service_pages(env))]:
+                self.assertIn(NOTE, json.dumps(RENDERED[env][page]), (env, page))
 
     def test_projects_quota_and_cloud_nat(self):
-        for page in ("portal-api", "records", "callcentre", "crm"):
-            self.assertEqual(check_project(page, load(page)), [], page)
+        for env in RENDERED:
+            for page in ("portal-api", "records", "callcentre", "crm"):
+                if page in RENDERED[env]:
+                    self.assertEqual(check_project(page, RENDERED[env][page]), [], (env, page))
 
     def test_the_nat_condition_reads_the_reason_the_dashboard_filters(self):
         self.assertIn('metric.labels.reason = "OUT_OF_RESOURCES"', CATALOGUE.text)
 
     def test_the_phi_projects_buckets(self):
-        panels = [p for p in lint.panels(load("records")) if any(
+        panels = [p for p in lint.panels(RENDERED["beta"]["records"]) if any(
             metric(t).startswith("storage.googleapis.com/") for t in p.get("targets") or [])]
         self.assertEqual({metric(t) for p in panels for t in p["targets"]},
                          {"storage.googleapis.com/storage/total_bytes", "storage.googleapis.com/storage/object_count"})
@@ -270,99 +580,156 @@ class ResourcesTest(unittest.TestCase):
                 self.assertEqual(t["timeSeriesList"]["groupBys"], ["resource.label.bucket_name"])
 
     def test_every_database_on_the_databases_page_and_its_owners(self):
-        for name, (_role, owner) in DATABASE_PAGES.items():
-            for page in ("databases", owner):
-                self.assertEqual(check_database(name, page, load(page)), [], (name, page))
-        no_cc = json.loads((DASHBOARDS / "no-cc" / "databases.json").read_text())
-        for name in ("auth-db", "tpa-db", "crm-db"):
-            self.assertEqual(check_database(name, "no-cc/databases", no_cc), [], name)
+        for env, pages in RENDERED.items():
+            for name, (_role, owner) in DATABASE_PAGES.items():
+                for page in ("databases", owner):
+                    if owner in pages and f"{name} (" in json.dumps([p["title"] for p in pages[page]["panels"]]):
+                        self.assertEqual(check_database(name, page, pages[page], env), [], (env, name, page))
+            self.assertEqual(check_overview_databases(pages["overview"], env), [], env)
+        self.assertNotIn("cc-db (", json.dumps(RENDERED["production"]["databases"]))
 
     def test_the_jobs_page_shows_each_projects_task_resources(self):
-        self.assertEqual(check_jobs(load("jobs")), [])
-        no_cc = json.loads((DASHBOARDS / "no-cc" / "jobs.json").read_text())
-        self.assertEqual(check_jobs(no_cc, ("cloud-app", "cloud-phi", "cloud-crm")), [])
+        self.assertEqual(check_jobs(RENDERED["beta"]["jobs"]), [])
+        self.assertEqual(check_jobs(RENDERED["production"]["jobs"], ("cloud-app", "cloud-phi", "cloud-crm")), [])
 
     def test_every_service_has_its_own_page_with_the_same_resources_row(self):
-        for page, (_role, services) in AREAS.items():
-            area = resource_rows(load(page))
-            for service in services:
-                own = load(f"service-{service}")
+        strip = lambda ps: [{k: v for k, v in p.items() if k not in ("links", "gridPos", "id")} for p in ps]
+        for env in RENDERED:
+            for page, service in service_pages(env):
+                own = RENDERED[env][f"service-{service}"]
                 self.assertEqual(own["uid"], f"tw-cloud-service-{service}")
                 self.assertIn("cloud-service", own["tags"])
                 self.assertNotIn("cloud", own["tags"], "the Pages menu lists the area pages alone")
-                self.assertEqual(check_resources(f"service-{service}", own), [])
+                self.assertEqual(check_resources(f"service-{service}", own, env), [])
                 self.assertEqual(list(resource_rows(own)), [service])
-                strip = lambda ps: [{k: v for k, v in p.items() if k not in ("links", "gridPos", "id")} for p in ps]
-                self.assertEqual(strip(resource_rows(own)[service]), strip(area[service]), service)
+                self.assertEqual(strip(resource_rows(own)[service]),
+                                 strip(resource_rows(RENDERED[env][page])[service]), (env, service))
                 # The way back: the area's page, by the menu and by the row's first panel.
                 self.assertIn(f"/d/tw-cloud-{page}", json.dumps(own["links"]))
         self.assertEqual(sorted(p.stem for p in DASHBOARDS.glob("service-*.json")),
-                         sorted(f"service-{s}" for _r, ss in AREAS.values() for s in ss))
+                         sorted(f"service-{s}" for s in gen.SERVICES))
 
     def test_every_service_page_is_linked(self):
-        overview = json.dumps([p.get("links", []) for p in lint.panels(load("overview"))])
-        no_cc = json.dumps([p.get("links", []) for p in lint.panels(
-            json.loads((DASHBOARDS / "no-cc" / "overview.json").read_text()))])
-        for page, (role, services) in AREAS.items():
-            area = resource_rows(load(page))
-            for service in services:
+        for env, pages in RENDERED.items():
+            overview = json.dumps([p.get("links", []) for p in lint.panels(pages["overview"])])
+            for page, service in service_pages(env):
                 url = f"/d/tw-cloud-service-{service}?"
-                self.assertIn(url, overview, f"the overview does not link {service}'s page")
-                self.assertEqual(url in no_cc, role != "cc", service)
-                self.assertIn(url, json.dumps(area[service][0].get("links")), (page, service))
-        for path in [*DASHBOARDS.glob("*.json"), *DASHBOARDS.glob("no-cc/*.json")]:
-            menus = [link for link in json.loads(path.read_text())["links"] if link["title"] == "Services"]
-            self.assertEqual([(m["type"], m["tags"], m["asDropdown"]) for m in menus],
-                             [("dashboards", ["cloud-service"], True)], path)
+                self.assertIn(url, overview, f"{env}: the overview does not link {service}'s page")
+                self.assertIn(url, json.dumps(resource_rows(pages[page])[service][0].get("links")), (env, service))
+            for name, dashboard in pages.items():
+                menus = [link for link in dashboard["links"] if link["title"] == "Services"]
+                self.assertEqual([(m["type"], m["tags"], m["asDropdown"]) for m in menus],
+                                 [("dashboards", ["cloud-service"], True)], (env, name))
+        self.assertNotIn("/d/tw-cloud-service-svc-voice?", json.dumps(RENDERED["production"]["overview"]))
 
 
 class MutationTest(unittest.TestCase):
-    """The checks catch a page that loses a service's row, a line moved off the catalogue's, or a window that is not
-    the policy's."""
+    """The checks catch a page that loses a service's row or its instances' total, a line moved off its source, or a
+    window that is not the policy's."""
+
+    def page(self, name, env="beta"):
+        return copy.deepcopy(RENDERED[env][name])
+
+    @staticmethod
+    def steps(panel):
+        return panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
 
     def test_a_missing_resources_row(self):
-        page = load("portal-api")
-        title = next(p["title"] for p in page["panels"] if p["title"].startswith("Resources · tpa-api"))
-        start = next(i for i, p in enumerate(page["panels"]) if p["title"] == title)
-        end = next(i for i, p in enumerate(page["panels"]) if i > start and p["type"] == "row")
-        del page["panels"][start:end]
-        self.assertIn("portal-api: Resources rows for ['model-gateway', 'tpa-jobs-drains', 'web'], not "
-                      "['model-gateway', 'tpa-api', 'tpa-jobs-drains', 'web']", check_resources("portal-api", page))
+        page = self.page("portal-api")
+        page["panels"] = [p for p in page["panels"] if not p["title"].startswith("Resources · tpa-api")]
+        self.assertIn("portal-api: Resources rows for ['model-gateway', 'tpa-jobs-drains', 'watchtower', 'web'], not "
+                      "['model-gateway', 'tpa-api', 'tpa-jobs-drains', 'watchtower', 'web']",
+                      check_resources("portal-api", page, "beta"))
+
+    def test_an_open_row_on_an_area_page(self):
+        page = self.page("sign-in")
+        next(p for p in page["panels"] if p["title"].startswith("Resources · auth:"))["collapsed"] = False
+        self.assertTrue(any("is open" in p for p in check_resources("sign-in", page, "beta")))
 
     def test_a_cpu_line_off_the_catalogue(self):
-        page = load("sign-in")
+        page = self.page("sign-in")
         cpu = next(p for p in resource_rows(page)["auth"] if reads(p, CPU))
-        cpu["fieldConfig"]["defaults"]["thresholds"]["steps"][1]["value"] = 0.8
-        self.assertEqual(check_resources("sign-in", page),
-                         ["sign-in: Resources · auth: CPU (p99, p95, p50) draws red at [0.8], not `run-cpu-high`'s 0.9"])
+        self.steps(cpu)[1]["value"] = 0.8
+        self.assertEqual(check_resources("sign-in", page, "beta"),
+                         ["beta sign-in: Resources · auth: CPU (p99, p95, p50) draws red at [0.8], not "
+                          "`run-cpu-high`'s 0.9"])
 
     def test_a_memory_window_that_is_not_the_policys(self):
-        page = load("records")
+        page = self.page("records")
         memory = next(p for p in resource_rows(page)["records"] if reads(p, MEMORY))
         memory["targets"][0]["timeSeriesList"]["alignmentPeriod"] = "grafana-auto"
-        self.assertEqual(check_resources("records", page),
-                         ["records: Resources · records: Memory (p99, p95, p50): alignmentPeriod grafana-auto is not "
-                          "the policy's +300s"])
+        self.assertEqual(check_resources("records", page, "beta"),
+                         ["beta records: Resources · records: Memory (p99, p95, p50): alignmentPeriod grafana-auto "
+                          "is not the policy's +300s"])
 
     def test_a_query_reading_another_service(self):
-        page = load("crm")
-        row = resource_rows(page)["engine"]
-        row[2]["targets"][0]["timeSeriesList"]["filters"][-1] = "crm-web"
-        self.assertTrue(any("does not read engine alone" in p for p in check_resources("crm", page)))
+        page = self.page("crm")
+        resource_rows(page)["engine"][2]["targets"][0]["timeSeriesList"]["filters"][-1] = "crm-web"
+        self.assertTrue(any("does not read engine alone" in p for p in check_resources("crm", page, "beta")))
+
+    def test_the_ceiling_line_drawn_at_max_instances(self):
+        page = self.page("service-records")
+        panel = next(p for p in resource_rows(page)["records"] if reads(p, INSTANCES))
+        next(s for s in self.steps(panel) if s["color"] == "red")["value"] = 20
+        self.assertTrue(any("instances draw red [20]" in p for p in check_resources("service-records", page, "beta")))
+
+    def test_instances_without_the_total_the_ceiling_reads(self):
+        page = self.page("service-auth", "production")
+        panel = next(p for p in resource_rows(page)["auth"] if reads(p, INSTANCES))
+        panel["targets"] = [t for t in panel["targets"] if t["aliasBy"] != "total"]
+        self.assertTrue(any("0 total series" in p for p in check_resources("service-auth", page, "production")))
+
+    def test_the_total_aggregated_otherwise(self):
+        page = self.page("service-auth")
+        panel = next(p for p in resource_rows(page)["auth"] if reads(p, INSTANCES))
+        next(t for t in panel["targets"] if t["aliasBy"] == "total")["timeSeriesList"]["alignmentPeriod"] = "grafana-auto"
+        self.assertTrue(any("instances' total: alignmentPeriod grafana-auto" in p
+                            for p in check_resources("service-auth", page, "beta")))
+
+    def test_betas_ceiling_in_production(self):
+        page = self.page("service-records", "production")
+        panel = next(p for p in resource_rows(page)["records"] if reads(p, INSTANCES))
+        panel["fieldConfig"]["defaults"]["custom"]["thresholdsStyle"]["mode"] = "line"
+        self.steps(panel)[1].update(color="red", value=15.5)
+        self.assertTrue(any("instances draw red [15.5]" in p
+                            for p in check_resources("service-records", page, "production")))
 
     def test_a_disk_line_off_the_catalogue(self):
-        page = copy.deepcopy(load("databases"))
-        for p in page["panels"]:
-            if p["title"] == "Disk space used (%)" and "tpa-db" in json.dumps(p["targets"]):
-                p["fieldConfig"]["defaults"]["thresholds"]["steps"][1]["value"] = 0.9
-        self.assertEqual(check_database("tpa-db", "databases", page),
-                         ["databases: tpa-db: disk space (%) does not draw `tpa-db-disk`'s 0.85"])
+        page = self.page("databases")
+        for p in sections(page)[next(t for t in sections(page) if t.startswith("tpa-db ("))]:
+            if p["title"] == "Disk space used (%)":
+                self.steps(p)[1]["value"] = 0.9
+        self.assertEqual(check_database("tpa-db", "databases", page, "beta"),
+                         ["beta databases: tpa-db: disk space (%) does not draw `tpa-db-disk`'s 0.85"])
+
+    def test_a_database_cpu_line_off_the_module(self):
+        page = self.page("sign-in")
+        cpu = next(p for p in sections(page)[next(t for t in sections(page) if t.startswith("auth-db ("))]
+                   if p["title"] == "CPU")
+        self.steps(cpu)[1]["value"] = 0.7
+        self.assertTrue(any("CPU draws red [0.7, 0.95]" in p for p in check_database("auth-db", "sign-in", page, "beta")))
+
+    def test_connections_at_75_percent(self):
+        page = self.page("databases", "production")
+        panel = next(p for p in sections(page)[next(t for t in sections(page) if t.startswith("auth-db ("))]
+                     if p["title"] == "Connections")
+        self.steps(panel)[1]["value"] = 375
+        self.assertTrue(any("Connections draws red [375, 475]" in p
+                            for p in check_database("auth-db", "databases", page, "production")))
+
+    def test_connections_on_grafanas_window(self):
+        page = self.page("crm")
+        panel = next(p for p in sections(page)[next(t for t in sections(page) if t.startswith("crm-db ("))]
+                     if p["title"] == "Connections")
+        panel["targets"][0]["timeSeriesList"]["alignmentPeriod"] = "grafana-auto"
+        self.assertTrue(any("Connections: alignmentPeriod grafana-auto is not the policy's +60s" in p
+                            for p in check_database("crm-db", "crm", page, "beta")))
 
     def test_a_nat_drop_line_off_the_catalogue(self):
-        page = load("portal-api")
+        page = self.page("portal-api")
         for p in page["panels"]:
             if p["title"] == "NAT dropped packets":
-                p["fieldConfig"]["defaults"]["thresholds"]["steps"][1]["value"] = 100
+                self.steps(p)[1]["value"] = 100
         self.assertEqual(check_project("portal-api", page),
                          ["portal-api: NAT dropped packets draws red at [100], not `nat-port-exhaustion`'s 10.0"])
 

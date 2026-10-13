@@ -808,8 +808,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Instances (active, idle)",
-      "description": "svc-voice's Cloud Run instances, the most in each interval: active (serving or starting) and idle (kept warm, or waiting to be shut down). The grey line is max_instances, 1 on beta (too few for a `ceiling-` policy): at it new requests wait or fail with 429.",
+      "title": "Instances (total, active, idle)",
+      "description": "svc-voice's Cloud Run instances: the total, the most in each minute summed over active and idle, as the `ceiling-` policies read it, and active (serving or starting) and idle (kept warm, or waiting to be shut down) apart. @@E@@This environment's Terraform does not build it, so no limit is drawn.@@The grey line is max_instances, 1 (too few for a `ceiling-` policy): at it new requests wait or fail with 429.@@",
       "gridPos": {
         "h": 7,
         "w": 6,
@@ -823,6 +823,39 @@
       "targets": [
         {
           "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-cc"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CC_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "svc-voice"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "total"
+        },
+        {
+          "refId": "B",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-cc"
@@ -870,7 +903,7 @@
                 "value": null
               },
               {
-                "color": "#8c8c8c",
+                "color": "@@E@@transparent@@#8c8c8c@@",
                 "value": 1
               }
             ]
@@ -889,9 +922,9 @@
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "line"
+              "mode": "@@E@@off@@line@@"
             },
-            "axisSoftMax": 1
+            "axisSoftMax": "@@N@@null@@1@@"
           }
         },
         "overrides": []
@@ -916,7 +949,7 @@
     {
       "type": "timeseries",
       "title": "Concurrent requests, busiest instance (p99, p50)",
-      "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. The grey line is its concurrency setting, 20 (one call each): past it a call waits for a new instance. `run-concurrency-high` opens above 71.5, beyond that setting, so it never opens for svc-voice.",
+      "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. @@E@@The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. This environment's Terraform does not build it.@@`run-concurrency-high` opens above 71.5, beyond this service's setting, so it never opens for it. The grey line is the concurrency setting, 20: past it a request waits for a slot or a new instance.@@",
       "gridPos": {
         "h": 7,
         "w": 6,
@@ -1006,8 +1039,8 @@
                 "value": null
               },
               {
-                "color": "#8c8c8c",
-                "value": 20
+                "color": "@@E@@red@@#8c8c8c@@",
+                "value": "@@N@@71.5@@20@@"
               }
             ]
           },
@@ -1026,7 +1059,7 @@
             "thresholdsStyle": {
               "mode": "line"
             },
-            "axisSoftMax": 20
+            "axisSoftMax": "@@N@@71.5@@20@@"
           }
         },
         "overrides": []
