@@ -335,8 +335,8 @@
     },
     {
       "type": "timeseries",
-      "title": "p95 latency (Cloud Run)",
-      "description": "web's p95 request latency from Cloud Run. Beta's `canary-latency` leaves it out: it holds streams or calls open by design, so its p95 climbs while one is open.",
+      "title": "p95 latency (Cloud Run, with its streams)",
+      "description": "@@E@@web's p95 request latency from Cloud Run. It relays the desk's event streams, held open about 40 s by design, and Cloud Run's p95 counts a stream's whole life. The red line is `canary-latency`'s: above 2 s for ten minutes pages.@@web's Cloud Run p95 includes its streams. It relays the desk's event streams, held open about 40 s by design, and Cloud Run's p95 counts a stream's whole life. `canary-latency` leaves it out here.@@",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -393,8 +393,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "transparent",
                 "value": null
+              },
+              {
+                "color": "@@E@@red@@transparent@@",
+                "value": 2000
               }
             ]
           },
@@ -411,7 +415,7 @@
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "@@E@@line@@off@@"
             }
           }
         },

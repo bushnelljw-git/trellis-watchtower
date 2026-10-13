@@ -133,7 +133,7 @@
       "description": "Requests Cloud Run answered for engine per interval. None: it serves no requests (a worker) or none came.",
       "gridPos": {
         "h": 7,
-        "w": 8,
+        "w": 6,
         "x": 0,
         "y": 1
       },
@@ -234,8 +234,8 @@
       "description": "engine's 5xx answers per interval. `canary-5xx` opens above 0.1% of its requests over five minutes (and five).",
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 8,
+        "w": 6,
+        "x": 6,
         "y": 1
       },
       "datasource": {
@@ -335,12 +335,12 @@
     },
     {
       "type": "timeseries",
-      "title": "p95 latency (Cloud Run)",
-      "description": "engine's p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
+      "title": "p95 latency (Cloud Run, with its streams)",
+      "description": "engine's Cloud Run p95 includes its streams. It holds the CRM's ledger stream (SSE) open until Cloud Run's 300 s request timeout by design, while any tab shows the CRM, and Cloud Run's p95 counts a stream's whole life. `canary-latency` leaves it out here. Its own latency, without them, is `engine-latency`'s panel.",
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 16,
+        "w": 6,
+        "x": 12,
         "y": 1
       },
       "datasource": {
@@ -393,12 +393,134 @@
             "mode": "absolute",
             "steps": [
               {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "engine p50 and p95 (its own request line)",
+      "description": "The time the CRM's engine took to finish each answer, from its own request line, without its long-lived streams (the ledger's, a teammate run's), the model's streams, its file transfers and its health probe (`engine_latency`), the p95 and p50 of each 5 minutes. The red line is `engine-latency`'s: the p95 above 2000 ms for 10 minutes pages.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/engine_latency",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_95",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "p95"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/engine_latency",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_50",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "p50"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
                 "color": "transparent",
                 "value": null
               },
               {
                 "color": "red",
-                "value": 2000
+                "value": 2000.0
               }
             ]
           },
@@ -436,7 +558,7 @@
           "sort": "desc"
         }
       },
-      "id": 4
+      "id": 5
     },
     {
       "type": "text",
@@ -456,7 +578,7 @@
           "showMiniMap": false
         }
       },
-      "id": 5
+      "id": 6
     },
     {
       "type": "row",
@@ -469,7 +591,7 @@
         "x": 0,
         "y": 11
       },
-      "id": 6
+      "id": 7
     },
     {
       "type": "timeseries",
@@ -642,7 +764,7 @@
           "sort": "desc"
         }
       },
-      "id": 7
+      "id": 8
     },
     {
       "type": "timeseries",
@@ -808,7 +930,7 @@
           "sort": "desc"
         }
       },
-      "id": 8
+      "id": 9
     },
     {
       "type": "timeseries",
@@ -948,7 +1070,7 @@
           "sort": "desc"
         }
       },
-      "id": 9
+      "id": 10
     },
     {
       "type": "timeseries",
@@ -1087,7 +1209,7 @@
           "sort": "desc"
         }
       },
-      "id": 10
+      "id": 11
     },
     {
       "type": "timeseries",
@@ -1218,7 +1340,7 @@
           "sort": "desc"
         }
       },
-      "id": 11
+      "id": 12
     },
     {
       "type": "timeseries",
@@ -1318,7 +1440,7 @@
           "sort": "desc"
         }
       },
-      "id": 12
+      "id": 13
     },
     {
       "type": "timeseries",
@@ -1479,7 +1601,7 @@
           "sort": "desc"
         }
       },
-      "id": 13
+      "id": 14
     }
   ]
 }

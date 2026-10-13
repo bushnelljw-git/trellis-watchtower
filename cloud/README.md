@@ -41,11 +41,11 @@ call-centre parts (68, 16, 33 and 43 panels).
 | Sign-in (`tw-cloud-sign-in`) | 48 | auth's requests, p95, refused sign-ins and lockouts, not-ready by check, unhandled by class, auth-db, 5xx; **Resources** for auth and auth-outbox-publisher; **auth-db** (disk space in % and in bytes against its size, up, CPU, memory, connections, disk I/O, restarts and backups); the sign-in messages' lag, the vendor's refusals by lane and reason, and the messenger's instances, credential tags, the membership reconcile, audit verify, auth's jobs and schedules. |
 | Member records (`tw-cloud-records`), `cloud-phi` only | 62 | records' requests, p95, refusals by gate and code (and operation), audit flush failed or database unreachable, rate limits, the mirror, SQLSTATE 08 and proxy errors, instances, tpa-db, 5xx; **Resources** for records and connectors; **tpa-db** as on Sign-in; the PHI project's instances and **Cloud NAT** (phi-net-nat: connectors); **Storage**, its buckets' size and object count (never an object's name); the chain head, connectors' heartbeat, deliveries, dead letters and refusals, perimeter violations, changes to alert policies, snoozes and log counters, the protected jobs. |
 | Call centre (`tw-cloud-callcentre`) | 52 | svc-voice, svc-ops and the relay: requests, 5xx, the relay's p95, instances, errors by class, start-up and proxy failures; **Resources** for each; **cc-db** as on Sign-in; the project's instances and **Cloud NAT** (cc-net-nat: the relay, svc-voice's model calls); cc-db's tile, migrate-cc. |
-| CRM (`tw-cloud-crm`) | 41 | The CRM host's uptime check, crm-web and engine: requests, 5xx, p95, instances, errors by class, start-up and proxy failures; **Resources** for each; **crm-db** as on Sign-in; the project's instances (in beta the app project's); crm-db's tile, its jobs. |
+| CRM (`tw-cloud-crm`) | 42 | The CRM host's uptime check, crm-web and engine: requests, 5xx, Cloud Run's p95 (engine's includes its ledger stream, held to Cloud Run's 300 s timeout by design) and the engine's own p50/p95 from its request line (`engine_latency`, with `engine-latency`'s 2 s line), instances, errors by class, start-up and proxy failures; **Resources** for each; **crm-db** as on Sign-in; the project's instances (in beta the app project's); crm-db's tile, its jobs. |
 | Errors (`tw-cloud-errors`) | 20 | Every error counter's groups in the time range (service or job, then the counter's labels: class, operation or event, code, SQLSTATE), and ERROR lines by service or job; per project, crashes, out-of-memory kills and Secret Manager or KMS key versions disabled or destroyed. |
 | Databases (`tw-cloud-databases`) | 44 | auth-db, tpa-db, crm-db and cc-db, each: now, **disk space** used (%, with `<instance>-disk`'s 85% line) and used against the disk's size in bytes (a size that steps up is automatic storage increase), up over time, CPU, memory, connections against max_connections, disk operations and throughput, restarts and failed backups. |
 | Jobs (`tw-cloud-jobs`) | 50 | The scheduled runs within their deadlines, successful and failed executions by job, schedules that failed, run summaries, alerts raised, open reconciliations, the PHI project's, the call centre's and the CRM's jobs; then **Job resources** per project: task attempts by result, tasks running (a run's bar is as long as it ran), tasks killed for memory or failing to start, CPU and memory by job. |
-| A service's own page (`tw-cloud-service-<service>`), fourteen (watchtower, this site, among them) | 13 each | One Cloud Run service: its requests by status class, 5xx and p95, the note that a service has no disk, and its Resources row. Reached from the Services menu, from the link by each service's title on the overview, and from its Resources row on its area's page; it links back to that page. |
+| A service's own page (`tw-cloud-service-<service>`), fourteen (watchtower, this site, among them) | 13 each (14 for tpa-api and engine) | One Cloud Run service: its requests by status class, 5xx and Cloud Run's p95 (and, for tpa-api and engine, their own p50/p95 from the request line), the note that a service has no disk, and its Resources row. Reached from the Services menu, from the link by each service's title on the overview, and from its Resources row on its area's page; it links back to that page. |
 
 ### Resources: each service's primitives
 
@@ -88,8 +88,10 @@ max_connections is 500 where beta's is 100. A service an environment does not bu
 
 `tests/cloud/test_resources.py` renders the pages for beta and for production and holds every line and every
 aggregation to its source: the catalogue, and tpa-platform's Terraform read at the catalogue's pinned commit from the
-tpa-platform checkout beside this repository (`TPA_PLATFORM_CHECKOUT` names another). Without that checkout, or that
-commit in it, those pins are skipped and the run says so; re-vendoring the catalogue moves both together.
+tpa-platform checkout beside this repository (`TPA_PLATFORM_CHECKOUT` names another), with each root's
+`latency_excluded_services`. With no checkout at all those pins are skipped and the run says so; a checkout without
+the pinned commit fails them, naming the `git fetch` to run, since a stale checkout would otherwise prove nothing.
+Re-vendoring the catalogue moves both together.
 
 **Why a page per service, not one page with a `$service` picker:** a cloud page declares no template variable and
 puts no Grafana variable in a query (the rules below), so that no panel takes a viewer's input. Thirteen generated
@@ -114,7 +116,15 @@ not MQL, for what Grafana 12.4 (12.4.11, and 12.4.12 by the image check) actuall
 - MQL is deprecated by Google.
 
 Cloud Run's p95 merges each service's revisions before taking the percentile (`ALIGN_DELTA`, then
-`REDUCE_PERCENTILE_95` by service), as `canary-latency` does; tpa-api's own p95 is read as `tpa-api-latency` reads it.
+`REDUCE_PERCENTILE_95` by service), as `canary-latency` does. A service that holds streams or calls open by design
+(web and tpa-api the desk's, model-gateway the model's, engine the CRM's ledger stream until Cloud Run's 300 s
+timeout, svc-voice a call, svc-ops the desk's) has a Cloud Run p95 that counts each stream's whole life, so each
+environment's `canary-latency` leaves it out (`latency_excluded_services`: beta all six, production-full the engine),
+and its page draws `canary-latency`'s 2 s line only where that policy reads it (`LATENCY_LEFT_OUT`, pinned to the
+roots). tpa-api's and the engine's own p95 and p50 come from their request lines (`tpa_api_latency`,
+`engine_latency`), read as `tpa-api-latency` and `engine-latency` read them (p95 over five minutes, the catalogue's
+2 s line), on their area's page and their own; the overview's CRM p95 is crm-web's from Cloud Run and the engine's
+from its own line.
 
 What the filter form cannot say is said another way:
 

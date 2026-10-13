@@ -867,7 +867,27 @@ AREA_TITLES = {"portal-api": "Portal & API", "sign-in": "Sign-in", "records": "M
                "callcentre": "Call centre", "crm": "CRM"}
 WHAT = {"watchtower": "this monitoring site"}   # a service whose name does not say what it is
 # The services whose Cloud Run latency beta's `canary-latency` leaves out: they hold a stream or a call open.
-LATENCY_LEFT_OUT = ("web", "tpa-api", "svc-voice", "svc-ops")
+# Each environment's `latency_excluded_services` (its roots' monitoring calls): the services `canary-latency` leaves out
+# because they hold streams or calls open by design, so their Cloud Run p95 counts a stream's whole life.
+LATENCY_LEFT_OUT = {"beta": ("web", "tpa-api", "model-gateway", "engine", "svc-voice", "svc-ops"),
+                    "production": ("engine",)}
+# A service whose own request line times each answer without its streams and file transfers: its log metric, the
+# policy that reads it, the role whose project holds both, and what the line leaves out.
+OWN_LATENCY = {
+    "tpa-api": ("tpa_api_latency", "tpa-api-latency", "app",
+                "Time to the first byte from tpa-api's request line, without the live lane, the Ask lanes, uploads, "
+                "downloads and the model-backed document rows"),
+    "engine": ("engine_latency", "engine-latency", "crm",
+               "The time the CRM's engine took to finish each answer, from its own request line, without its "
+               "long-lived streams (the ledger's, a teammate run's), the model's streams, its file transfers and its "
+               "health probe"),
+}
+STREAMS = {"web": "relays the desk's event streams, held open about 40 s by design",
+           "tpa-api": "relays the desk's event streams, held open about 40 s by design",
+           "model-gateway": "streams the model's answers",
+           "engine": "holds the CRM's ledger stream (SSE) open until Cloud Run's 300 s request timeout by design, "
+                     "while any tab shows the CRM",
+           "svc-voice": "holds a call's socket open, up to an hour", "svc-ops": "holds the desk's event streams open"}
 # The pager's lines, read from the vendored catalogue. Each panel aggregates as the policy's condition does (its
 # aligner, window and reducer), so its red line is the very threshold that condition compares.
 CPU_POLICY, MEMORY_POLICY, CONCURRENCY_POLICY, QUOTA_POLICY = (
@@ -1220,22 +1240,48 @@ def job_resources(ds: str, where: str, jobs: str | None = None) -> list[dict]:
     ]
 
 
+def own_latency(service: str, *, w: int = 12, h: int = 8, period=None) -> dict:
+    """A service's p95 and p50 from its own request line, aggregated as its policy (`tpa-api-latency`,
+    `engine-latency`) reads it, with the policy's line from the catalogue."""
+    metric, name, role, what = OWN_LATENCY[service]
+    policy = CATALOGUE.threshold(name, role)
+    assert policy["per_series_aligner"] == "ALIGN_PERCENTILE_95", policy
+    return series(f"{service} p50 and p95 (its own request line)", SERVICES[service][0],
+                  [q(log(metric), REV, align=f"ALIGN_PERCENTILE_{n}", period=period or window(policy),
+                     reduce=policy["cross_series_reducer"], name=f"p{n}") for n in (95, 50)],
+                  f"{what} (`{metric}`), the p95 and p50 of each {minutes(policy)} minutes. The red line is `{name}`'s: "
+                  f"the p95 above {policy['threshold_value']:g} ms for {minutes(policy, 'duration')} minutes pages.",
+                  unit="ms", line=policy["threshold_value"], w=w, h=h)
+
+
+def cloud_run_p95_words(service: str) -> dict:
+    """Each environment's words for a service's Cloud Run p95: its streams, and whether `canary-latency` reads it."""
+    own = f" Its own latency, without them, is `{OWN_LATENCY[service][1]}`'s panel." if service in OWN_LATENCY else ""
+    streams = f" It {STREAMS[service]}, and Cloud Run's p95 counts a stream's whole life." if service in STREAMS else ""
+    return {env: (f"{service}'s Cloud Run p95 includes its streams.{streams} `canary-latency` leaves it out here.{own}"
+                  if service in LATENCY_LEFT_OUT[env] else
+                  f"{service}'s p95 request latency from Cloud Run.{streams} The red line is `canary-latency`'s: above "
+                  f"2 s for ten minutes pages.{own}")
+            for env in ENVIRONMENTS}
+
+
 def service_page(service: str) -> dict:
-    """A service's own page: its requests, then its Resources row."""
+    """A service's own page: its requests (and its own latency, where it writes a request line), then its Resources
+    row."""
     ds, page = SERVICES[service]
-    left_out = service in LATENCY_LEFT_OUT
+    words = cloud_run_p95_words(service)
+    width = 6 if service in OWN_LATENCY else 8
     items = [
         row(f"{service}: requests"),
         series("Requests, by status class", ds, requests(service, by=("response_code_class",)),
                f"Requests Cloud Run answered for {service} per interval. None: it serves no requests (a worker) or "
-               "none came.", w=8, h=7, bars=True),
+               "none came.", w=width, h=7, bars=True),
         series("5xx", ds, five_xx(service), f"{service}'s 5xx answers per interval. `canary-5xx` opens above 0.1% of "
-               "its requests over five minutes (and five).", w=8, h=7, bars=True),
-        series("p95 latency (Cloud Run)", ds, p95(service),
-               f"{service}'s p95 request latency from Cloud Run. " +
-               ("Beta's `canary-latency` leaves it out: it holds streams or calls open by design, so its p95 climbs "
-                "while one is open." if left_out else "`canary-latency` opens above 2 s for ten minutes."),
-               w=8, h=7, unit="ms", **({} if left_out else {"line": 2000})),
+               "its requests over five minutes (and five).", w=width, h=7, bars=True),
+        series("p95 latency (Cloud Run" + (", with its streams)" if service in STREAMS else ")"), ds, p95(service),
+               per_environment(*(words[env] for env in ENVIRONMENTS)), w=width, h=7, unit="ms",
+               lines={env: [] if service in LATENCY_LEFT_OUT[env] else [(2000, "red")] for env in ENVIRONMENTS}),
+        *([own_latency(service, w=width, h=7)] if service in OWN_LATENCY else []),
         text("No disk on a Cloud Run service", NO_DISK, w=24, h=3),
         *resources(service, own_page=True),
     ]
@@ -1359,8 +1405,13 @@ def overview(cc: bool = True) -> dict:
                           "errors", ("cc-db",)),
               db_stat("cc-db", CC, "cc-db"),
               jobs_stat("migrate-cc (24 h)", CC, "migrate-cc", None, ("cc-db",))) if cc else []),
-        *area("CRM (crm-web, engine)", CRM, CRM_SERVICES, ("crm-db",), p95(CRM_SERVICES, "+3600s"),
-              "The CRM's p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
+        *area("CRM (crm-web, engine)", CRM, CRM_SERVICES, ("crm-db",),
+              [p95("crm-web", "+3600s"),
+               q(log("engine_latency"), REV, align="ALIGN_PERCENTILE_95", period="+3600s", reduce="REDUCE_MAX",
+                 name="engine (own line)")],
+              "crm-web's p95 from Cloud Run (`canary-latency` opens above 2 s for ten minutes) and engine's from its "
+              "own request line (`engine-latency`, the same bar): Cloud Run's p95 for engine counts its ledger "
+              "stream, held open until the 300 s timeout by design.",
               groups_stat("Error groups (24 h)", CRM, crm_errors("+86400s", groups=True),
                           "crm_errors (beta) or errors", ("crm-db",)),
               db_stat("crm-db", CRM, "crm-db"),
@@ -1397,12 +1448,7 @@ def portal_api() -> dict:
                "Cloud Run's p95 request latency. web and tpa-api relay the desk's event streams, held open about "
                "40 s by design, so theirs climbs whenever a desk page is open; beta's `canary-latency` leaves both "
                "out. tpa-api's real latency is the next panel.", unit="ms", line=2000),
-        series("tpa-api p50 and p95 (its own request line)", APP,
-               [q(log("tpa_api_latency"), REV, align="ALIGN_PERCENTILE_95", reduce="REDUCE_MAX", name="p95"),
-                q(log("tpa_api_latency"), REV, align="ALIGN_PERCENTILE_50", reduce="REDUCE_MAX", name="p50")],
-               "Time to the first byte from tpa-api's request line, without the live lane, the Ask lanes, uploads, "
-               "downloads and the model-backed document rows (`tpa_api_latency`). `tpa-api-latency` opens above 2 s "
-               "for ten minutes.", unit="ms", line=2000),
+        own_latency("tpa-api"),
         table("tpa-api calls, by operation and outcome", APP,
               q(log("tpa_api_requests"), REV, by=("operation", "outcome", "status_class")),
               "tpa-api's request lines in the time range, by the operation the route called, its outcome and "
@@ -1656,9 +1702,12 @@ def crm() -> dict:
                requests(CRM_SERVICES, by=("service_name", "response_code_class")),
                "Requests Cloud Run answered per interval.", bars=True),
         series("5xx, by service", CRM, five_xx(CRM_SERVICES), "5xx answers per interval.", bars=True),
-        series("p95 latency, by service", CRM, p95(CRM_SERVICES),
-               "Cloud Run's p95 request latency. `canary-latency` opens above 2 s for ten minutes.", unit="ms",
-               line=2000),
+        series("p95 latency, by service (Cloud Run; engine's with its streams)", CRM, p95(CRM_SERVICES),
+               "Cloud Run's p95 request latency. The red line is `canary-latency`'s, for crm-web: above 2 s for ten "
+               f"minutes pages. engine's includes its streams: it {STREAMS['engine']}, and Cloud Run's p95 counts a "
+               "stream's whole life, so engine's sits near 300 s while one is open. `canary-latency` leaves engine "
+               "out; its own latency is the next panel (`engine-latency`).", unit="ms", line=2000),
+        own_latency("engine"),
         series("Instances, by service", CRM, instances(CRM_SERVICES), "Cloud Run instances."),
         series("Errors, by class" if CRM_CLASS else "Errors, by service", CRM, crm_errors(),
                "The CRM's lines at ERROR. Beta counts them as `crm_errors` (the CRM shares the app project); a CRM "

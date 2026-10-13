@@ -133,7 +133,7 @@
       "description": "Requests Cloud Run answered for tpa-api per interval. None: it serves no requests (a worker) or none came.",
       "gridPos": {
         "h": 7,
-        "w": 8,
+        "w": 6,
         "x": 0,
         "y": 1
       },
@@ -234,8 +234,8 @@
       "description": "tpa-api's 5xx answers per interval. `canary-5xx` opens above 0.1% of its requests over five minutes (and five).",
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 8,
+        "w": 6,
+        "x": 6,
         "y": 1
       },
       "datasource": {
@@ -335,12 +335,12 @@
     },
     {
       "type": "timeseries",
-      "title": "p95 latency (Cloud Run)",
-      "description": "tpa-api's p95 request latency from Cloud Run. Beta's `canary-latency` leaves it out: it holds streams or calls open by design, so its p95 climbs while one is open.",
+      "title": "p95 latency (Cloud Run, with its streams)",
+      "description": "@@E@@tpa-api's p95 request latency from Cloud Run. It relays the desk's event streams, held open about 40 s by design, and Cloud Run's p95 counts a stream's whole life. The red line is `canary-latency`'s: above 2 s for ten minutes pages. Its own latency, without them, is `tpa-api-latency`'s panel.@@tpa-api's Cloud Run p95 includes its streams. It relays the desk's event streams, held open about 40 s by design, and Cloud Run's p95 counts a stream's whole life. `canary-latency` leaves it out here. Its own latency, without them, is `tpa-api-latency`'s panel.@@",
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 16,
+        "w": 6,
+        "x": 12,
         "y": 1
       },
       "datasource": {
@@ -393,8 +393,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "transparent",
                 "value": null
+              },
+              {
+                "color": "@@E@@red@@transparent@@",
+                "value": 2000
               }
             ]
           },
@@ -411,7 +415,7 @@
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "@@E@@line@@off@@"
             }
           }
         },
@@ -435,6 +439,132 @@
       "id": 4
     },
     {
+      "type": "timeseries",
+      "title": "tpa-api p50 and p95 (its own request line)",
+      "description": "Time to the first byte from tpa-api's request line, without the live lane, the Ask lanes, uploads, downloads and the model-backed document rows (`tpa_api_latency`), the p95 and p50 of each 5 minutes. The red line is `tpa-api-latency`'s: the p95 above 2000 ms for 10 minutes pages.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/tpa_api_latency",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_95",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "p95"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/tpa_api_latency",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_50",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "p50"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 2000.0
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 5
+    },
+    {
       "type": "text",
       "title": "No disk on a Cloud Run service",
       "gridPos": {
@@ -452,7 +582,7 @@
           "showMiniMap": false
         }
       },
-      "id": 5
+      "id": 6
     },
     {
       "type": "row",
@@ -465,7 +595,7 @@
         "x": 0,
         "y": 11
       },
-      "id": 6
+      "id": 7
     },
     {
       "type": "timeseries",
@@ -638,7 +768,7 @@
           "sort": "desc"
         }
       },
-      "id": 7
+      "id": 8
     },
     {
       "type": "timeseries",
@@ -804,7 +934,7 @@
           "sort": "desc"
         }
       },
-      "id": 8
+      "id": 9
     },
     {
       "type": "timeseries",
@@ -939,7 +1069,7 @@
           "sort": "desc"
         }
       },
-      "id": 9
+      "id": 10
     },
     {
       "type": "timeseries",
@@ -1078,7 +1208,7 @@
           "sort": "desc"
         }
       },
-      "id": 10
+      "id": 11
     },
     {
       "type": "timeseries",
@@ -1209,7 +1339,7 @@
           "sort": "desc"
         }
       },
-      "id": 11
+      "id": 12
     },
     {
       "type": "timeseries",
@@ -1309,7 +1439,7 @@
           "sort": "desc"
         }
       },
-      "id": 12
+      "id": 13
     },
     {
       "type": "timeseries",
@@ -1470,7 +1600,7 @@
           "sort": "desc"
         }
       },
-      "id": 13
+      "id": 14
     }
   ]
 }

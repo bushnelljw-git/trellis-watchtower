@@ -335,8 +335,8 @@
     },
     {
       "type": "timeseries",
-      "title": "p95 latency (Cloud Run)",
-      "description": "model-gateway's p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
+      "title": "p95 latency (Cloud Run, with its streams)",
+      "description": "@@E@@model-gateway's p95 request latency from Cloud Run. It streams the model's answers, and Cloud Run's p95 counts a stream's whole life. The red line is `canary-latency`'s: above 2 s for ten minutes pages.@@model-gateway's Cloud Run p95 includes its streams. It streams the model's answers, and Cloud Run's p95 counts a stream's whole life. `canary-latency` leaves it out here.@@",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -397,7 +397,7 @@
                 "value": null
               },
               {
-                "color": "red",
+                "color": "@@E@@red@@transparent@@",
                 "value": 2000
               }
             ]
@@ -415,7 +415,7 @@
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "line"
+              "mode": "@@E@@line@@off@@"
             }
           }
         },

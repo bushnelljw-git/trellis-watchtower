@@ -666,7 +666,7 @@
     {
       "type": "timeseries",
       "title": "tpa-api p50 and p95 (its own request line)",
-      "description": "Time to the first byte from tpa-api's request line, without the live lane, the Ask lanes, uploads, downloads and the model-backed document rows (`tpa_api_latency`). `tpa-api-latency` opens above 2 s for ten minutes.",
+      "description": "Time to the first byte from tpa-api's request line, without the live lane, the Ask lanes, uploads, downloads and the model-backed document rows (`tpa_api_latency`), the p95 and p50 of each 5 minutes. The red line is `tpa-api-latency`'s: the p95 above 2000 ms for 10 minutes pages.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -699,7 +699,7 @@
             "groupBys": [],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_PERCENTILE_95",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -726,7 +726,7 @@
             "groupBys": [],
             "crossSeriesReducer": "REDUCE_MAX",
             "perSeriesAligner": "ALIGN_PERCENTILE_50",
-            "alignmentPeriod": "grafana-auto",
+            "alignmentPeriod": "+300s",
             "view": "FULL",
             "preprocessor": "none"
           },
@@ -749,7 +749,7 @@
               },
               {
                 "color": "red",
-                "value": 2000
+                "value": 2000.0
               }
             ]
           },

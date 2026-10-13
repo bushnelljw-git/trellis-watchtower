@@ -15,8 +15,9 @@ the source of every line:
 - tpa-platform's Terraform, at the catalogue's pinned commit (cloud/catalogue/SOURCE), read from the tpa-platform
   checkout beside this repository (or $TPA_PLATFORM_CHECKOUT): each root's max_instances, concurrency, instance
   ceilings and max_connections (infra/envs/beta and infra/envs/production-full), and the monitoring module's own
-  per-instance and per-ceiling policies (infra/modules/monitoring/main.tf). Without that checkout (or that commit in
-  it) the pins are skipped, said loudly, and the pages are checked against the generator's own copy only.
+  per-instance and per-ceiling policies (infra/modules/monitoring/main.tf). With no checkout at all the pins are
+  skipped, said loudly, and the pages are checked against the generator's own copy only; a checkout that lacks the
+  pinned commit fails them (fetch it), since a stale checkout would otherwise pass anything.
 The line and the aggregation are both checked, so a line means what the pager means.
 
 The checks are functions returning problems, run on the rendered pages and, in MutationTest, on broken copies.
@@ -89,16 +90,18 @@ class Infra:
         self.checkout, self.commit = checkout, commit
 
     @classmethod
-    def find(cls) -> tuple["Infra | None", str]:
-        checkout = Path(os.environ.get("TPA_PLATFORM_CHECKOUT", ROOT.parent / "tpa-platform"))
+    def find(cls, checkout: Path | None = None) -> tuple["Infra | None", str, bool]:
+        """(the reader, what it reads or why there is none, whether a checkout is there at all)."""
+        checkout = checkout or Path(os.environ.get("TPA_PLATFORM_CHECKOUT", ROOT.parent / "tpa-platform"))
         commit = cat.source()["commit"]
         if not (checkout / ".git").exists():
-            return None, f"no tpa-platform checkout at {checkout} (set TPA_PLATFORM_CHECKOUT)"
+            return None, f"no tpa-platform checkout at {checkout} (set TPA_PLATFORM_CHECKOUT)", False
         found = subprocess.run(["git", "-C", str(checkout), "cat-file", "-e", f"{commit}^{{commit}}"],
                                capture_output=True)
         if found.returncode:
-            return None, f"{checkout} lacks the catalogue's pinned commit {commit[:8]} (git fetch there)"
-        return cls(checkout, commit), f"tpa-platform at {commit[:8]} ({checkout})"
+            return None, (f"the tpa-platform checkout at {checkout} lacks the catalogue's pinned commit {commit[:8]}: "
+                          f"run `git -C {checkout} fetch origin`"), True
+        return cls(checkout, commit), f"tpa-platform at {commit[:8]} ({checkout})", True
 
     def show(self, path: str) -> str:
         return subprocess.run(["git", "-C", str(self.checkout), "show", f"{self.commit}:{path}"],
@@ -203,6 +206,11 @@ class Infra:
                 "share": float(share.group(1)), "period": get("alignment_period").strip('"'),
                 "aligner": get("per_series_aligner").strip('"'), "reducer": get("cross_series_reducer").strip('"')}
 
+    def latency_left_out(self, env: str) -> set[str]:
+        """The services the root's monitoring calls leave out of `canary-latency` (latency_excluded_services)."""
+        return {name for line in re.findall(r"\blatency_excluded_services\s*=\s*(.+)$", self.root_text(env), re.M)
+                for name in re.findall(r'"([a-z0-9-]+)"', line)}
+
     def limits(self) -> dict:
         """LIMITS as tpa-platform's roots set them, for the services and instances the dashboards chart."""
         out = {}
@@ -216,12 +224,14 @@ class Infra:
         return out
 
 
-INFRA, INFRA_SOURCE = Infra.find()
-if INFRA is None:
+INFRA, INFRA_SOURCE, CHECKOUT_PRESENT = Infra.find()
+if INFRA is None and not CHECKOUT_PRESENT:
     print(f"\ntest_resources: SKIPPING the tpa-platform pins: {INFRA_SOURCE}. The lines are checked against the "
           "generator's own copy only.", file=sys.stderr)
 # What the lines must be: tpa-platform's own where it can be read, else the generator's.
 LIMITS = INFRA.limits() if INFRA else gen.LIMITS
+LATENCY_LEFT_OUT = {env: INFRA.latency_left_out(env) for env in ROOTS} if INFRA else \
+    {env: set(names) for env, names in gen.LATENCY_LEFT_OUT.items()}
 SQL_POLICIES = INFRA.sql_policies() if INFRA else gen.SQL_POLICIES
 CEILING_POLICY = INFRA.ceiling_policy() if INFRA else gen.CEILING_POLICY
 
@@ -490,6 +500,48 @@ def check_jobs(dashboard: dict, projects=JOB_PROJECTS) -> list[str]:
     return problems
 
 
+# A service's own request line: its log metric and the catalogue policy (and role) that reads it. The pages that chart
+# it: its area's page and its own.
+OWN_LATENCY = {"tpa-api": ("tpa_api_latency", "tpa-api-latency", "app", "portal-api"),
+               "engine": ("engine_latency", "engine-latency", "crm", "crm")}
+
+
+def check_own_latency(page: str, dashboard: dict, service: str) -> list[str]:
+    """The service's p95 and p50 from its own request line, on its project's datasource, aggregated as its policy
+    reads it, with the policy's line."""
+    metric_name, name, role, _area = OWN_LATENCY[service]
+    policy = CATALOGUE.threshold(name, role)
+    panels = [p for p in lint.panels(dashboard) if reads(p, LOG + metric_name)]
+    if len(panels) != 1:
+        return [f"{page}: {len(panels)} panels read `{metric_name}`"]
+    panel, problems = panels[0], []
+    by_alias = {t["aliasBy"]: t for t in panel["targets"]}
+    if set(by_alias) != {"p95", "p50"}:
+        problems.append(f"{page}: {service}'s own latency shows {sorted(by_alias)}, not p95 and p50")
+    if lines(panel) != [policy["threshold_value"]]:
+        problems.append(f"{page}: {service}'s own latency draws red at {lines(panel)}, not `{name}`'s "
+                        f"{policy['threshold_value']}")
+    if "p95" in by_alias:
+        problems += [f"{page}: {service}'s own p95: {d}" for d in aggregated_as(by_alias["p95"], policy)]
+    if {t["datasource"]["uid"] for t in panel["targets"]} != {DATASOURCE[role]}:
+        problems.append(f"{page}: {service}'s own latency is not on {DATASOURCE[role]}")
+    return problems
+
+
+def check_cloud_run_p95(page: str, dashboard: dict, service: str, env: str) -> list[str]:
+    """A service page's Cloud Run p95: `canary-latency`'s line where it reads the service, none where the root leaves
+    it out, and, for a service holding streams open, a title that says the p95 includes them."""
+    panel = next((p for p in dashboard["panels"] if p["title"].startswith("p95 latency (Cloud Run")), None)
+    if panel is None:
+        return [f"{page}: no Cloud Run p95"]
+    want = [] if service in LATENCY_LEFT_OUT[env] else [2000]
+    problems = [] if lines(panel) == want else [f"{env} {page}: Cloud Run p95 draws red at {lines(panel)}, not {want}"]
+    if service in LATENCY_LEFT_OUT[env] and ("with its streams" not in panel["title"]
+                                             or "includes its streams" not in panel["description"]):
+        problems.append(f"{env} {page}: the Cloud Run p95 does not say it includes {service}'s streams")
+    return problems
+
+
 NOTE = "Cloud Run services have no disk"
 
 
@@ -505,12 +557,18 @@ class SourceTest(unittest.TestCase):
     """The generator's copies of tpa-platform's limits and module policies are tpa-platform's own."""
 
     def setUp(self):
+        if INFRA is None and CHECKOUT_PRESENT:
+            self.fail(INFRA_SOURCE)
         if INFRA is None:
             self.skipTest(f"SKIPPED LOUDLY: {INFRA_SOURCE}; the generator's limits are not checked against "
                           "tpa-platform")
 
     def test_each_environments_limits_are_its_terraforms(self):
         self.assertEqual(gen.LIMITS, INFRA.limits(), f"scripts/cloud_dashboards.py LIMITS differs from {INFRA_SOURCE}")
+
+    def test_the_latency_exclusions_are_each_roots(self):
+        for env in ROOTS:
+            self.assertEqual(set(gen.LATENCY_LEFT_OUT[env]), INFRA.latency_left_out(env), env)
 
     def test_the_module_policies_are_the_modules(self):
         self.assertEqual(gen.SQL_POLICIES, INFRA.sql_policies())
@@ -523,6 +581,23 @@ class SourceTest(unittest.TestCase):
         self.assertIn("records", INFRA.ceilings("beta"))
         self.assertNotIn("records", INFRA.ceilings("production"))
         self.assertEqual(INFRA.max_connections("beta")["auth-db"], 100)
+
+
+class PinGateTest(unittest.TestCase):
+    """No checkout: the pins skip. A checkout without the pinned commit: the pins fail, with the fetch to run."""
+
+    def test_no_checkout_is_a_skip(self):
+        infra, why, present = Infra.find(Path(tempfile.gettempdir()) / "no-such-tpa-platform")
+        self.assertEqual((infra, present), (None, False))
+        self.assertIn("no tpa-platform checkout", why)
+
+    def test_a_checkout_without_the_pinned_commit_is_a_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            infra, why, present = Infra.find(Path(tmp))
+        self.assertEqual((infra, present), (None, True))
+        self.assertIn(f"lacks the catalogue's pinned commit {cat.source()['commit'][:8]}", why)
+        self.assertIn("fetch origin", why)
 
 
 class ResourcesTest(unittest.TestCase):
@@ -555,6 +630,28 @@ class ResourcesTest(unittest.TestCase):
         for env in RENDERED:
             panel = next(p for p in resource_rows(RENDERED[env]["service-auth"])["auth"] if reads(p, INSTANCES))
             self.assertEqual((lines(panel), lines(panel, GREY)), ([15.5], [20]), env)
+
+    def test_each_own_request_line_on_its_area_and_its_own_page(self):
+        for env in RENDERED:
+            for service, (_m, _n, _r, area) in OWN_LATENCY.items():
+                for page in (area, f"service-{service}"):
+                    self.assertEqual(check_own_latency(page, RENDERED[env][page], service), [], (env, page))
+
+    def test_the_engines_cloud_run_p95_says_it_includes_its_streams(self):
+        crm = next(p for p in RENDERED["beta"]["crm"]["panels"] if p["title"].startswith("p95 latency, by service"))
+        self.assertIn("with its streams", crm["title"])
+        self.assertIn("300 s", crm["description"])
+        for env in RENDERED:
+            own = RENDERED[env]["service-engine"]
+            panel = next(p for p in own["panels"] if p["title"].startswith("p95 latency (Cloud Run"))
+            self.assertIn("300 s", panel["description"], env)
+            self.assertEqual(panel["title"], "p95 latency (Cloud Run, with its streams)")
+
+    def test_each_service_pages_cloud_run_p95(self):
+        for env in RENDERED:
+            for _page, service in service_pages(env):
+                self.assertEqual(check_cloud_run_p95(f"service-{service}", RENDERED[env][f"service-{service}"],
+                                                     service, env), [], (env, service))
 
     def test_every_page_says_a_service_has_no_disk(self):
         for env in RENDERED:
@@ -724,6 +821,28 @@ class MutationTest(unittest.TestCase):
         panel["targets"][0]["timeSeriesList"]["alignmentPeriod"] = "grafana-auto"
         self.assertTrue(any("Connections: alignmentPeriod grafana-auto is not the policy's +60s" in p
                             for p in check_database("crm-db", "crm", page, "beta")))
+
+    def test_the_engines_own_line_off_the_catalogue(self):
+        page = self.page("crm")
+        panel = next(p for p in page["panels"] if p["title"] == "engine p50 and p95 (its own request line)")
+        self.steps(panel)[1]["value"] = 4000
+        self.assertEqual(check_own_latency("crm", page, "engine"),
+                         ["crm: engine's own latency draws red at [4000], not `engine-latency`'s 2000.0"])
+
+    def test_the_engines_own_p95_on_grafanas_window(self):
+        page = self.page("service-engine", "production")
+        panel = next(p for p in page["panels"] if p["title"] == "engine p50 and p95 (its own request line)")
+        next(t for t in panel["targets"] if t["aliasBy"] == "p95")["timeSeriesList"]["alignmentPeriod"] = "grafana-auto"
+        self.assertEqual(check_own_latency("service-engine", page, "engine"),
+                         ["service-engine: engine's own p95: alignmentPeriod grafana-auto is not the policy's +300s"])
+
+    def test_a_canary_line_on_a_service_it_leaves_out(self):
+        page = self.page("service-engine")
+        panel = next(p for p in page["panels"] if p["title"].startswith("p95 latency (Cloud Run"))
+        panel["fieldConfig"]["defaults"]["custom"]["thresholdsStyle"]["mode"] = "line"
+        self.steps(panel).append({"color": "red", "value": 2000})
+        self.assertEqual(check_cloud_run_p95("service-engine", page, "engine", "beta"),
+                         ["beta service-engine: Cloud Run p95 draws red at [2000], not []"])
 
     def test_a_nat_drop_line_off_the_catalogue(self):
         page = self.page("portal-api")

@@ -2052,6 +2052,49 @@ projects:
           # dashboards.
           class: 'REGEXP_EXTRACT(jsonPayload.exc, "(?:^|\\n)([A-Za-z_][A-Za-z0-9_.]*)(?::[^\\n]*)?$")'
 
+      # 2026-10-12 (the owner, paged seven times in an evening: "Figure out why
+      # i keep getting paged this"): `canary-latency` opened on the engine every
+      # time, at about 323 000 ms. Its ledger stream (`GET /api/v1/ledger/stream`)
+      # stays open while a tab shows the CRM, until Cloud Run's 300 s request
+      # timeout, and Cloud Run's request metric cannot tell a stream from a slow
+      # request. Beta leaves the engine out of that query while the CRM copy is
+      # built (main.tf, latency_excluded_services), as it does web, tpa-api and
+      # model-gateway, and reads its latency here instead, from its own request
+      # line: logger `network.request` (the CRM's engine/app/middleware.py: one
+      # line per request, `method`, `path`, `status`, `duration_ms`, timed to the
+      # last byte of the answer, so a stream's whole life and a file's whole
+      # transfer are in it). Left out by path, matched and never read into a
+      # label: every route that answers with a StreamingResponse in the CRM's
+      # engine/app/routers, each held to that source by
+      # tests/infra/test_engine_latency.py. The long-lived streams: the ledger's
+      # and a teammate run's. The model's own streams: Jarvis's answer and
+      # voice, the teammate's answer, the Coach's live assist. The file
+      # transfers: a document's content and its PDF preview, a mail attachment, a proposal's
+      # preview, the public proposal and signing documents, a feedback
+      # screenshot and its public image. And `/api/v1/health` (the review,
+      # 2026-10-12): Cloud Run's probes and the CRM host's uptime check read it,
+      # about three lines in four, and their quick answers watered the p95 down.
+      engine_latency:
+        description: >-
+          The time the CRM's engine took to finish each answer (`duration_ms`
+          on its `request` line, logger `network.request`), as a distribution
+          in milliseconds, without its long-lived streams (the ledger's, a
+          teammate run's), the model's own streams (Jarvis, the teammate's
+          answer, the Coach's live assist), its file transfers and its health
+          probe (`/api/v1/health`). No label: the path selects and is never
+          read into a series.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="engine"
+          AND jsonPayload.logger="network.request"
+          AND jsonPayload.duration_ms:*
+          AND NOT jsonPayload.path="/api/v1/health"
+          AND NOT jsonPayload.path=~"^/api/v1/(ledger/stream|teammate/runs/[^/]+/stream|teammate/answer|jarvis/say|jarvis/speak|coach/live/sessions/[^/]+/assist/stream)$"
+          AND NOT jsonPayload.path=~"^/api/v1/(documents/[^/]+/(content|preview)|mail/attachments/[^/]+|proposals/[^/]+/preview|public/proposals/[^/]+/document|public/sign/[^/]+/document|reviewer-feedback/[^/]+/screenshot|public/reviewer-feedback/images/[^/]+)$"
+        value_extractor: 'EXTRACT(jsonPayload.duration_ms)'
+        unit: "ms"
+        bounds: [25, 50, 100, 250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]
+
     error_metrics:
       errors:
         group_by: [class]
@@ -2078,6 +2121,34 @@ projects:
                 AND metric.labels.result = "failed"
                 AND resource.labels.job_name = one_of("migrate-crm", "seed-crm")
               group_by_fields: ["resource.label.job_name"]
+
+      # 2026-10-12: the engine's own p95 from its request line, without its
+      # streams and file transfers (`engine_latency` above), beside the
+      # generic `canary-latency`, which leaves the engine out in beta while
+      # the CRM copy is built. Beta makes both only with the copy
+      # (crm_enabled); routed as `tpa-api-latency` is (normal).
+      engine-latency:
+        display_name: "engine p95 latency above 2 s (its own request line)"
+        documentation: >-
+          The CRM engine's 95th percentile time to answer stayed above two
+          seconds for ten minutes, read from its own request line without its
+          streams (the ledger's, a teammate run's, the model's), and its file
+          transfers (`engine_latency`). `canary-latency` cannot see the engine
+          in beta, which leaves it out for its ledger stream, held open until
+          Cloud Run's 300 s timeout by every tab that shows the CRM. Check
+          crm-db first (`crm-db-down`, its CPU and connections), then the
+          engine's instances and its ERROR lines.
+        conditions:
+          - name: "p95 above 2000 ms for ten minutes"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/engine_latency" AND resource.type = "cloud_run_revision"
+              threshold_value: 2000
+              duration: "600s"
+              alignment_period: "300s"
+              per_series_aligner: "ALIGN_PERCENTILE_95"
+              cross_series_reducer: "REDUCE_MAX"
+              group_by_fields: ["resource.label.service_name"]
 
       # crm-db exists whatever beta's crm_enabled says (main.tf, sql_crm), so
       # its signals are read whether or not the copy runs. Beta drops the

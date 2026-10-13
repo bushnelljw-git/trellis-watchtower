@@ -336,7 +336,7 @@
     {
       "type": "timeseries",
       "title": "p95 latency (Cloud Run)",
-      "description": "watchtower's p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
+      "description": "watchtower's p95 request latency from Cloud Run. The red line is `canary-latency`'s: above 2 s for ten minutes pages.",
       "gridPos": {
         "h": 7,
         "w": 8,
