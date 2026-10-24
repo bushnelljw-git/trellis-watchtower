@@ -8,6 +8,8 @@
 #   make lint          dashboard lint, the cloud dashboards against the vendored
 #                      catalogue, the render script, the PagerDuty scripts
 #   make cloud-dashboards  regenerate cloud/dashboards/*.json
+#   make cloud-catalogue [CATALOGUE_REF=origin/master] re-vendor tpa-platform's catalogue from ../tpa-platform's
+#                      committed CATALOGUE_REF (fetch there first), regenerate the dashboards, run make lint
 #   make cloud-image-check build cloud/ under a throwaway tag, run it with no
 #                      network, check it, send every dashboard query, remove it
 #   make probe-check   probe_success per stack/service/probe
@@ -44,10 +46,10 @@ MIN_BUILD_FREE_MB ?= 12288
 # The pinned image of a compose service, read from compose.yml (one source).
 img = $$($(CHECK_ENV) $(COMPOSE) -f compose.yml --profile db --profile test config --format json | jq -r '.services["$(1)"].image')
 
-.PHONY: help up down check lint probe-check scrub-check stub-test disk-guard build-guard pagerduty-test pagerduty-plan cloud-dashboards cloud-image-check synthetics-test synthetics-image-check
+.PHONY: help up down check lint probe-check scrub-check stub-test disk-guard build-guard pagerduty-test pagerduty-plan cloud-dashboards cloud-catalogue cloud-image-check synthetics-test synthetics-image-check
 
 help:
-	@sed -n '3,21p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,23p' Makefile | sed 's/^# \{0,1\}//'
 
 disk-guard:
 	@free=$$(docker run --rm $(call img,stub) df -Pm / | awk 'NR==2{print $$4}'); \
@@ -103,6 +105,15 @@ lint:
 
 cloud-dashboards:
 	@python3 scripts/cloud_dashboards.py
+
+# The catalogue the cloud dashboards are checked against, from a tpa-platform checkout's committed CATALOGUE_REF
+# (never its working tree): vendor it, write the dashboards it moves (its lines, its names), then every check.
+TPA_PLATFORM ?= ../tpa-platform
+CATALOGUE_REF ?= origin/master
+cloud-catalogue:
+	@./scripts/vendor_catalogue.sh "$(TPA_PLATFORM)" "$(CATALOGUE_REF)"
+	@python3 scripts/cloud_dashboards.py
+	@$(MAKE) --no-print-directory lint
 
 cloud-image-check: disk-guard build-guard
 	@./scripts/cloud_image_check.sh

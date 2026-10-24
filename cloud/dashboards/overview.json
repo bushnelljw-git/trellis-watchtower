@@ -20101,7 +20101,7 @@
         {
           "type": "stat",
           "title": "tpa-jobs (24 h)",
-          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`: in the app and CRM projects on the second in a row, R380; in the PHI and call-centre projects on one), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 5,
             "w": 4,
@@ -20884,7 +20884,7 @@
         {
           "type": "stat",
           "title": "auth jobs (24 h)",
-          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`: in the app and CRM projects on the second in a row, R380; in the PHI and call-centre projects on one), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 5,
             "w": 4,
@@ -21671,7 +21671,7 @@
         {
           "type": "stat",
           "title": "Jobs (24 h)",
-          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`: in the app and CRM projects on the second in a row, R380; in the PHI and call-centre projects on one), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 5,
             "w": 4,
@@ -22450,7 +22450,7 @@
         {
           "type": "stat",
           "title": "migrate-cc (24 h)",
-          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`: in the app and CRM projects on the second in a row, R380; in the PHI and call-centre projects on one). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 5,
             "w": 4,
@@ -23229,7 +23229,7 @@
         {
           "type": "stat",
           "title": "CRM jobs (24 h)",
-          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`: in the app and CRM projects on the second in a row, R380; in the PHI and call-centre projects on one). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 5,
             "w": 4,

@@ -4660,7 +4660,7 @@
     {
       "type": "timeseries",
       "title": "CRM job executions",
-      "description": "The CRM's migration and made-up data seed, each run by a person. A failure opens `jobs-failed` (`crm-jobs-failed` in beta).",
+      "description": "The CRM's migration and made-up data seed, each run by a person. Two failures in a row open `jobs-failed` (`crm-jobs-failed` in beta; R380).",
       "gridPos": {
         "h": 7,
         "w": 18,
