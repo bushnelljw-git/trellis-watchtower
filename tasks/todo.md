@@ -194,6 +194,28 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     `crm-lane-comp` (R430, R441, switched off) are names of the CRM's project. Not charted: the catalogue's optional
     sections (`beta_text_codes`, `crm_lane_*`, `perimeter_dry_run`), which the reader does not read.
   - [x] `make cloud-catalogue [CATALOGUE_REF=...]`: vendor, regenerate, `make lint`, in one step.
+- [x] BK (2026-10-24, the owner: "1. Make the window 7 days for all foour 2. Update the trellis-watchtower as a check
+  and it should be on all the main dashboards and we should have alerting 3. I dont need to test restore") backups and
+  point-in-time recovery as a check on every main page, branch `backups/check`. The alerting is tpa-platform's D-173
+  (branch `backups/pitr-7d-and-alerts`, `f5e7f991`, vendored); the pages read the same counters:
+  - [x] Each database: a backups tile (successful automated backups over 30 hours; ✕ none, red, once it has reported 29
+    of them with none; ✕ a backup failed, red) and a point-in-time logs tile (archives shipped over 30 minutes; ✕
+    stalled, red, once it has reported 20 of them with none; ✕ archive failed in the latest 15 minutes, red). On the
+    overview under each database tile and again in What's wrong now; on Databases and on its area's page in a backups
+    and point-in-time recovery row with the logs per hour, the failed archives per 15 minutes and the backups taken and
+    failed per hour.
+  - [x] The coordinator's tpa-platform review (2026-10-24): 30 hours, not 25 (beta's successful backups land up to
+    26.1 hours apart; the backup-missing policy is being rebuilt to open after the day's window); failures their own
+    red values. Re-vendor once tpa-platform lands: `make cloud-catalogue` (CATALOGUE_REF=origin/master by default).
+  - [x] A failed backup and a failed archive are problem rows of their area (the area tile counts them, What's wrong
+    now names them). A missing backup or stalled logs cannot be read in fifteen minutes (a log counter's series comes
+    back only with a point in the range), so those are the tiles; `tests/cloud/test_overview.py`'s database-tile pin
+    moved on purpose for the two tiles under each database.
+  - [x] `tests/cloud/test_backups.py`: the module's policies pinned at the catalogue's commit, every tile's window,
+    reducers, guard and colours, the rows on every page, a stopped database neutral; 8 mutants killed. Pixels: a
+    throwaway localhost Grafana 12.4.11 fed 14 scenarios through testdata (every status word and colour as designed),
+    and the overview and Databases rendered for beta (each query reaches Cloud Monitoring and stops at the missing
+    credentials).
 - [x] NF (2026-10-11, the owner: "There will be NO systems in fly ONLY the gcp project") every Fly piece removed,
   branch `remove-fly`:
   - [x] `prometheus/targets/fly.yml` (the `fly` stack's two laptop probes), the Fly production dashboard, and the

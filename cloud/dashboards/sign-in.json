@@ -4066,8 +4066,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Restarts and failed backups",
-      "description": "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
+      "title": "Restarts",
+      "description": "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart), counted from Cloud SQL's own logs. Failed backups are in the backups row below.",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -4109,37 +4109,6 @@
             "preprocessor": "none"
           },
           "aliasBy": "restarts"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/sql_backup_failures",
-              "AND",
-              "resource.type",
-              "=",
-              "cloudsql_database",
-              "AND",
-              "resource.label.database_id",
-              "=",
-              "*:auth-db"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "backup failed"
         }
       ],
       "interval": "1m",
@@ -4196,7 +4165,7 @@
     },
     {
       "type": "row",
-      "title": "Sign-in messages",
+      "title": "auth-db: backups and point-in-time recovery (seven days of logs)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -4208,6 +4177,1526 @@
       "id": 37
     },
     {
+      "type": "stat",
+      "title": "Backups in the last 30 hours",
+      "description": "auth-db's successful automated backups in the last 30 hours (`sql_automated_backups`) and its backups or restores that failed (`sql_backup_failures`, a failed automated backup included). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while auth-db reported for 29 of the 30 hours or more (the urgent `auth-db-backup-missing` opens once the day's backup window has passed with none); an instance started since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red: `auth-db-backup-failed`. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 51
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/up",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "minutes reported"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_automated_backups",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "backups"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_backup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "30h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,@@text@@text@@",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "@@R,auth-db,@@not reporting@@",
+          "displayName": "@@R,auth-db,@@@@"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,auth-db,@@status@@"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "no backup yet",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "✓ backed up",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "✕ a backup failed",
+                        "index": 2
+                      },
+                      "4": {
+                        "text": "✕ none in 30 h",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#14b8a6@@",
+                      "value": 1
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                      "value": 2
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "backups or none"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,auth-db,@@backups@@"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,@@text@@text@@",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed or none"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,auth-db,@@failed@@"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {
+          "valueSize": 18
+        },
+        "orientation": "horizontal",
+        "textMode": "@@F,auth-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "sum"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "concatenate",
+          "options": {
+            "frameNameMode": "drop"
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "backups or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "backups"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "failed or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "failed"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "ran the window /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "minutes reported"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "1740"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "ran the window",
+            "replaceFields": false,
+            "unary": {
+              "operator": "floor",
+              "fieldName": "ran the window /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "backed up +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "backups or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "backed up /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "backups or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "backed up +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "backed up",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "backed up /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failed or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failed or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "a failure +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "a failure",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "a failure /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no backup",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "backed up"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "missing",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ran the window"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "no backup"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "missing ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "missing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure ×2",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "a failure"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "status",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "max",
+              "include": [
+                "backed up",
+                "a failure ×2",
+                "missing ×4"
+              ]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "status": true,
+              "backups or none": true,
+              "failed or none": true
+            },
+            "indexByName": {
+              "status": 0,
+              "backups or none": 1,
+              "failed or none": 2
+            }
+          }
+        }
+      ],
+      "id": 38
+    },
+    {
+      "type": "stat",
+      "title": "Point-in-time logs (30 min)",
+      "description": "Cloud SQL's point-in-time logs for auth-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while auth-db reported for 20 of the 30 minutes or more, as the urgent `auth-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `auth-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 51
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/up",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "minutes reported"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/replication/log_archive_success_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "shipped"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/replication/log_archive_failure_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "30m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,@@text@@text@@",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "@@R,auth-db,@@not reporting@@",
+          "displayName": "@@R,auth-db,@@@@"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,auth-db,@@status@@"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "no logs yet",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "✓ shipping",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "✕ archive failed",
+                        "index": 2
+                      },
+                      "4": {
+                        "text": "✕ stalled",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#14b8a6@@",
+                      "value": 1
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                      "value": 2
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "shipped or none"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,auth-db,@@shipped (30 m)@@"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,@@text@@text@@",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed or none"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,auth-db,@@failed (15 m)@@"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {
+          "valueSize": 18
+        },
+        "orientation": "horizontal",
+        "textMode": "@@F,auth-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "A"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "sum"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "B"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "sum"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "C"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "lastNotNull"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "concatenate",
+          "options": {
+            "frameNameMode": "drop"
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "shipped or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "shipped"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "failed or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "failed"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "minutes reported"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "20"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "floor",
+              "fieldName": "ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "shipping +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "shipped or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "shipping /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "shipped or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "shipping +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "shipping",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "shipping /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failed or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failed or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "a failure +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "a failure",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "a failure /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "none shipped",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "shipping"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "stalled",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ran"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "none shipped"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "stalled ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "stalled"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure ×2",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "a failure"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "status",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "max",
+              "include": [
+                "shipping",
+                "a failure ×2",
+                "stalled ×4"
+              ]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "status": true,
+              "shipped or none": true,
+              "failed or none": true
+            },
+            "indexByName": {
+              "status": 0,
+              "shipped or none": 1,
+              "failed or none": 2
+            }
+          }
+        }
+      ],
+      "id": 39
+    },
+    {
+      "type": "timeseries",
+      "title": "Point-in-time logs shipped, per hour",
+      "description": "Write-ahead log archives Cloud SQL shipped for auth-db in each hour (`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. An hour with none is a stall: `auth-db-pitr-logs-stalled` (urgent) opens after 30 minutes with none. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 51
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/replication/log_archive_success_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "shipped"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 40
+    },
+    {
+      "type": "timeseries",
+      "title": "Log archives that failed (15 min)",
+      "description": "Failed attempts to archive auth-db's write-ahead logs in each 15 minutes (`log_archive_failure_count`), as `auth-db-pitr-log-archive-failed` reads them: any bar opens it. One Cloud SQL retries and recovers from closes it by itself; one that persists stalls the logs.",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 56
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/replication/log_archive_failure_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 41
+    },
+    {
+      "type": "timeseries",
+      "title": "Backups taken, and backups that failed",
+      "description": "auth-db's successful automated backups, one bar a night in the hour it was counted (`sql_automated_backups`), and backups or restores that failed (`sql_backup_failures`, a failed automated backup included: `auth-db-backup-failed`), per hour. `auth-db-backup-missing` (urgent) opens once a day's backup window has passed with none.",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 56
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_automated_backups",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "taken"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_backup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 42
+    },
+    {
+      "type": "row",
+      "title": "Sign-in messages",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      },
+      "id": 43
+    },
+    {
       "type": "timeseries",
       "title": "Oldest unsent message (p99, seconds)",
       "description": "How long the oldest unsent sign-in text or email has waited, as the messenger reads it every five seconds while one waits (`auth-messages-lag` opens above 30 s for two minutes). It counts emails too, so one email on its retry ladder opens it. Empty until auth-notary's messenger writes JSON (docs/infra/monitoring.md §6).",
@@ -4215,7 +5704,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 51
+        "y": 63
       },
       "datasource": {
         "type": "stackdriver",
@@ -4304,7 +5793,7 @@
           "sort": "desc"
         }
       },
-      "id": 38
+      "id": 44
     },
     {
       "type": "timeseries",
@@ -4314,7 +5803,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 51
+        "y": 63
       },
       "datasource": {
         "type": "stackdriver",
@@ -4402,7 +5891,7 @@
           "sort": "desc"
         }
       },
-      "id": 39
+      "id": 45
     },
     {
       "type": "timeseries",
@@ -4412,7 +5901,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 59
+        "y": 71
       },
       "datasource": {
         "type": "stackdriver",
@@ -4503,7 +5992,7 @@
           "sort": "desc"
         }
       },
-      "id": 40
+      "id": 46
     },
     {
       "type": "row",
@@ -4514,9 +6003,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 67
+        "y": 79
       },
-      "id": 41
+      "id": 47
     },
     {
       "type": "timeseries",
@@ -4526,7 +6015,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 68
+        "y": 80
       },
       "datasource": {
         "type": "stackdriver",
@@ -4610,7 +6099,7 @@
           "sort": "desc"
         }
       },
-      "id": 42
+      "id": 48
     },
     {
       "type": "timeseries",
@@ -4620,7 +6109,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 68
+        "y": 80
       },
       "datasource": {
         "type": "stackdriver",
@@ -4734,7 +6223,7 @@
           "sort": "desc"
         }
       },
-      "id": 43
+      "id": 49
     },
     {
       "type": "timeseries",
@@ -4744,7 +6233,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 76
+        "y": 88
       },
       "datasource": {
         "type": "stackdriver",
@@ -4860,7 +6349,7 @@
           "sort": "desc"
         }
       },
-      "id": 44
+      "id": 50
     },
     {
       "type": "timeseries",
@@ -4870,7 +6359,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 76
+        "y": 88
       },
       "datasource": {
         "type": "stackdriver",
@@ -4957,7 +6446,7 @@
           "sort": "desc"
         }
       },
-      "id": 45
+      "id": 51
     },
     {
       "type": "row",
@@ -4968,9 +6457,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 84
+        "y": 96
       },
-      "id": 46
+      "id": 52
     },
     {
       "type": "timeseries",
@@ -4980,7 +6469,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 85
+        "y": 97
       },
       "datasource": {
         "type": "stackdriver",
@@ -5072,7 +6561,7 @@
           "sort": "desc"
         }
       },
-      "id": 47
+      "id": 53
     },
     {
       "type": "timeseries",
@@ -5082,7 +6571,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 85
+        "y": 97
       },
       "datasource": {
         "type": "stackdriver",
@@ -5174,7 +6663,7 @@
           "sort": "desc"
         }
       },
-      "id": 48
+      "id": 54
     }
   ]
 }

@@ -46,6 +46,15 @@ The research found five constraints that shape the design:
   laptop probes of the Fly apps (the `fly` stack), the Fly production dashboard, the Fly Prometheus datasource
   (`FLY_ORG`, `FLY_PROM_TOKEN`) and the Fly uptime-check script for `bodyf1rst-prod`. Phase F is dropped.
 
+## Owner decisions (2026-10-24)
+- **Backups and point-in-time recovery** (tpa-platform D-173): *"1. Make the window 7 days for all foour 2. Update the
+  trellis-watchtower as a check and it should be on all the main dashboards and we should have alerting 3. I dont need
+  to test restore"*. tpa-platform sets seven days of point-in-time recovery on every Cloud SQL instance and its four
+  alert policies (backup missing, logs stalled, a failed archive, a failed backup); the cloud pages read the same
+  counters: each database's backups (30 h) and point-in-time logs (30 min) on the overview, Databases and its area's
+  page, failures as problems of their area ([cloud/README.md](../cloud/README.md#backups-and-point-in-time-recovery)).
+  No restore test.
+
 ## Design decisions (stated, not asked)
 - **Clone with history** as asked. Rename `origin` to `upstream` with push disabled, and stop tracking `.env`. Put the new GitHub remote under `bushnelljw-git`, with the other TPA repos, created only on the owner's OK after a secret scan of history. The old watchtower is untouched and keeps watching BodyF1rst.
 - **One pinned image per process.** This replaces the supervisord bundles, which hide crash loops.
