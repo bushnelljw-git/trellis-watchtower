@@ -364,12 +364,22 @@ class OverviewTest(unittest.TestCase):
             self.assertEqual(check_uptime_now(pages["overview"]), [], env)
 
     def test_a_database_tile_each(self):
+        # Moved on purpose (D-173, 2026-10-24): each database's status is its tile and, under it, its backups (30 h)
+        # and its point-in-time logs (30 min). A stat reads one time range, and a log counter's series comes back only
+        # with a point inside it, so a backup a day old cannot be read in the database tile's fifteen minutes: the
+        # row holds three tiles per database, in the same columns, each linking to Databases.
         for env, pages in RENDERED.items():
-            tiles = sections(pages["overview"])["Databases: up, CPU, memory, disk"]
-            want = ["auth-db", "tpa-db", "cc-db", "crm-db"] if env == "beta" else ["auth-db", "tpa-db", "crm-db"]
+            tiles = sections(pages["overview"])[gen.DATABASES_ROW]
+            dbs = ["auth-db", "tpa-db", "cc-db", "crm-db"] if env == "beta" else ["auth-db", "tpa-db", "crm-db"]
+            want = dbs + [f"{db} backups ({gen.BACKUP_HOURS} h)" for db in dbs] + [
+                f"{db} point-in-time logs" for db in dbs]
             self.assertEqual([p["title"] for p in tiles], want, env)
             for p in tiles:
                 self.assertIn("/d/tw-cloud-databases?", json.dumps(p["links"]))
+            # The columns: each database's three tiles one above the other.
+            for db in dbs:
+                column = {p["gridPos"]["x"] for p in tiles if p["title"].split(" ")[0] == db}
+                self.assertEqual(len(column), 1, (env, db))
 
     def test_explanations_are_descriptions_not_text(self):
         # The one text panel left on the overview is the incidents link; its explanation is its description.

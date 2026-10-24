@@ -558,8 +558,8 @@ def jobs_stat(title: str, ds: str, jobs: str, schedules: str | None, deps) -> di
     queries = [executions(jobs, "failed", "+3600s", by=(), name="failed")]
     if schedules:
         queries.append(schedule_failures(schedules, "+3600s", by=(), name="schedule failed"))
-    return stat(title, ds, queries, "Last 24 h: executions that failed after their retries (`jobs-failed`: in the app and CRM projects on the "
-                "second in a row, R380; in the PHI and call-centre projects on one)" +
+    return stat(title, ds, queries, "Last 24 h: executions that failed after their retries (`jobs-failed`: in the "
+                "app and CRM projects on the second in a row, R380; in the PHI and call-centre projects on one)" +
                 (", and schedules that could not start their job (`scheduler-failed`)" if schedules else "") +
                 ". A missed run is the Scheduled runs row above.", time_from="24h", no_value="0",
                 text_mode="value_and_name", steps=thresholds(NEUTRAL, (1, "red")), deps=deps)
@@ -640,6 +640,12 @@ def area_queries(ds: str, services: str, jobs: str | None, db: str, *, checks: b
                 *[q(RUN_INSTANCES, REV, align=NO_INSTANCE_POLICY["aligner"], period="+" + NO_INSTANCE_POLICY["period"],
                     reduce=NO_INSTANCE_POLICY["reducer"], by=("service_name",), name=f"{service} instances",
                     service_name=service) for service in warm]]
+    # D-173: a failed backup and a failed point-in-time log archive, as `<db>-backup-failed` and
+    # `<db>-pitr-log-archive-failed` open on any. No backup in 30 hours or no log shipped in 30 minutes cannot be
+    # read in fifteen minutes: they are the instance's two status tiles (backups_status, pitr_status).
+    out += [q(BACKUP_POLICIES["backup-failed"]["metric"], SQL, period=NOW, name=f"✕ backup failed · {db}",
+              database_id=f"*:{db}"),
+            q(PITR_FAILED, SQL, period=NOW, name=f"✕ point-in-time log archive failed · {db}", database_id=f"*:{db}")]
     # The database as `<db>-down` reads it (its aligner, window and reducer, below one), and the minutes it wrote a
     # point at all: that policy has no absence condition, so a minute with no point is not down.
     down = CATALOGUE.threshold(f"{db}-down", DB_ROLE[db])
@@ -765,7 +771,7 @@ AREAS = [
 ]
 AREA_WORDS = ("5xx answers, uptime and inside checks failing (beta's checks pass on IAP's sign-in page), synthetic "
               "journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the database was "
-              "down")
+              "down, its failed backups and failed point-in-time log archives")
 
 
 
@@ -897,6 +903,46 @@ SQL_POLICIES = {
 # `ceiling-<service>`: the service's instances, summed (active and idle), above ceil(share * max_instances) - 0.5.
 CEILING_POLICY = {"metric": RUN_INSTANCES, "share": 0.8, "period": "60s", "aligner": "ALIGN_MAX",
                   "reducer": "REDUCE_SUM"}
+# D-173 (the owner, 2026-10-24: "Make the window 7 days for all foour" and "Update the trellis-watchtower as a check and
+# it should be on all the main dashboards and we should have alerting"): each Cloud SQL instance's backups and
+# point-in-time logs, read from the counters the monitoring module's four per-instance policies read
+# (local.sql_thresholds; pinned by tests/cloud/test_backups.py):
+# - `<db>-backup-missing` (urgent) reads `sql_automated_backups` (successful automated backups). tpa-platform's review
+#   (the coordinator, 2026-10-24) rebuilds it to open only after the day's backup window, because beta's successful
+#   backups land up to 26.1 hours apart (starts 09:27 to 11:54 UTC): so the pages read a window a healthy instance
+#   always has one in, 30 hours, and never 25;
+# - `<db>-pitr-logs-stalled` (urgent): the archives' ten-minute sums below one, held twenty minutes, or no count
+#   reported for thirty: none shipped in thirty minutes;
+# - `<db>-pitr-log-archive-failed`: a failed archive in fifteen minutes;
+# - `<db>-backup-failed`: a failed backup (or restore) operation in five minutes; `sql_backup_failures` also counts a
+#   failed automated backup (beta had one on all four instances on 2026-10-09).
+# Every one of the four reads red on the pages (the coordinator: a failure is "its own red stat").
+PITR_SHIPPED = "cloudsql.googleapis.com/database/replication/log_archive_success_count"
+PITR_FAILED = "cloudsql.googleapis.com/database/replication/log_archive_failure_count"
+BACKUP_POLICIES = {
+    "backup-missing": {"metric": log("sql_automated_backups")},
+    "pitr-logs-stalled": {"metric": PITR_SHIPPED, "period": "600s", "aligner": "ALIGN_DELTA", "reducer": "REDUCE_SUM",
+                          "below": 1, "duration": "1200s", "absent": "1800s"},
+    "pitr-log-archive-failed": {"metric": PITR_FAILED, "period": "900s", "aligner": "ALIGN_DELTA",
+                                "reducer": "REDUCE_SUM", "above": 0},
+    "backup-failed": {"metric": log("sql_backup_failures"), "period": "300s", "aligner": "ALIGN_DELTA",
+                      "reducer": "REDUCE_SUM", "above": 0},
+}
+
+
+def seconds(value: str) -> int:
+    return int(value.removesuffix("s"))
+
+
+# The windows the tiles read: a successful backup in 30 hours (above beta's longest healthy gap, 26.14 hours), red
+# only once the instance has reported 29 of them (so one started since its last backup reads "no backup yet", and
+# points that arrive minutes late still count it whole); a log shipped in 30 minutes (the absence's), red only once
+# the instance has reported 20 of them (the threshold's hold; Cloud SQL's points arrive up to three minutes late).
+BACKUP_HOURS = 30
+BACKUP_RAN_MINUTES = (BACKUP_HOURS - 1) * 60
+PITR_MINUTES = seconds(BACKUP_POLICIES["pitr-logs-stalled"]["absent"]) // 60
+PITR_RAN_MINUTES = seconds(BACKUP_POLICIES["pitr-logs-stalled"]["duration"]) // 60
+PITR_FAILED_MINUTES = seconds(BACKUP_POLICIES["pitr-log-archive-failed"]["period"]) // 60
 
 
 def connections_lines(cap: int | None) -> list[tuple[float, str]]:
@@ -975,12 +1021,14 @@ def area_status(key, title, ds, services, jobs, db, reporting, checks, w=3, env=
     warm = warm_in(services, env)
     p = stat(name, ds, area_queries(ds, services, jobs, db, checks=checks, warm=warm),
              f"The last 15 minutes in this project: how many problems, of "
-             f"{AREA_WORDS if checks else 'its 5xx answers, crashes, out-of-memory kills, failed job runs and the minutes ' + db + ' was down'}"
+             f"{AREA_WORDS if checks else 'its 5xx answers, crashes, out-of-memory kills, failed job runs, the minutes ' + db + ' was down, and its failed backups and point-in-time log archives'}"
              + (f", and five minutes or more with no instance for a service kept warm ({', '.join(warm)}: "
                 "`<service> has no instance` pages, urgent)" if warm else "") + ". "
              "Each one, named with its count, is in the shut row What's wrong now (details) below, and on "
-             f"{' and '.join(t for t, _u in pages)}. Amber: something to look at; whether it paged is PagerDuty's "
-             "(the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed.",
+             f"{' and '.join(t for t, _u in pages)}. No backup in {BACKUP_HOURS} hours or point-in-time logs stalled for "
+             f"30 minutes cannot be read in fifteen minutes: {db}'s backups and logs tiles (Databases, and What's wrong "
+             "now) show them. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). "
+             "\"? Can't tell\": nothing arrived, or the query failed.",
              w=w, h=5, calc="sum", text_mode="value", time_from="15m", no_value="? Can't tell",
              steps=thresholds(AMBER, (-0.5, TEAL), (0.5, AMBER)), deps=(db,), unit="suffix:problems", decimals=0,
              mappings=[{"type": "value", "options": {"0": {"text": "✓ All good", "index": 0},
@@ -1173,9 +1221,166 @@ def db_status(instance, ds, w=6) -> dict:
     p["description"] = (f"Cloud SQL's own signals for {instance}, now: up (its `{instance}-down` pages, urgent), CPU "
                         "(amber at the module's 80%, red at its urgent 95%), memory (red at 90%), disk used (amber at "
                         f"75%, red at `{instance}-disk`'s 85%). Its disk space in bytes against its size, connections "
-                        "and disk I/O are on Databases (the link by the title). " + STOPPED_DB)
+                        "and disk I/O are on Databases (the link by the title). Its backups and point-in-time logs are "
+                        "the two tiles under it. " + STOPPED_DB)
     p["links"] = page_links((("Databases", "databases"),))
     return p
+
+
+# ---- Backups and point-in-time recovery: a status per instance (D-173) ---------------------------------------------
+# A stat reads one time range, and a log counter's series is returned only with a point inside it, so a backup a day
+# old cannot be read in the overview's fifteen minutes: each instance has two status tiles, its backups over 30 hours
+# and its point-in-time logs over 30 minutes, each read as its policies read them. The same two tiles are on the
+# overview (Databases, and What's wrong now), on Databases and on the page of the area that owns the instance.
+BACKUP_STATUS = {0: ("no backup yet", NEUTRAL), 1: ("✓ backed up", TEAL), 2: ("✕ a backup failed", RED),
+                 4: (f"✕ none in {BACKUP_HOURS} h", RED)}
+STATUS_VALUE_SIZE = 18   # three values and the no-value words in a tile four rows high
+PITR_STATUS = {0: ("no logs yet", NEUTRAL), 1: ("✓ shipping", TEAL), 2: ("✕ archive failed", RED),
+               4: ("✕ stalled", RED)}
+
+
+def status_overrides(codes: dict, counts: dict[str, tuple[str, dict]]) -> list[dict]:
+    """The status field's words and colours, then each count's name and colour."""
+    return [{"matcher": {"id": "byName", "options": "status"}, "properties": [
+                {"id": "displayName", "value": "status"},
+                {"id": "mappings", "value": [{"type": "value", "options": {
+                    str(code): {"text": word, "index": i} for i, (code, (word, _c)) in enumerate(codes.items())}}]},
+                {"id": "thresholds", "value": thresholds(codes[0][1], *[(code, colour) for code, (_w, colour)
+                                                                        in codes.items() if code])}]},
+            *[{"matcher": {"id": "byName", "options": field}, "properties": [
+                {"id": "displayName", "value": shown}, {"id": "thresholds", "value": steps}]}
+              for field, (shown, steps) in counts.items()]]
+
+
+def backups_status(db: str, ds: str, title: str, *, w: int = 6, h: int = 4, link: bool = False) -> dict:
+    """An instance's successful automated backups in the last 30 hours and its failed ones: ✕ none in 30 h (red)
+    once it has reported 29 of them with none; ✕ a backup failed (red, and the count red on its own); ✓ backed
+    up."""
+    missing, failed = BACKUP_POLICIES["backup-missing"], BACKUP_POLICIES["backup-failed"]
+    where = {"database_id": f"*:{db}"}
+    p = stat(title, ds,
+             [q(SQL_UP, SQL, align="ALIGN_COUNT", period="+3600s", name="minutes reported", **where),
+              q(missing["metric"], SQL, period="+3600s", name="backups", **where),
+              q(failed["metric"], SQL, period="+3600s", name="failed", **where)],
+             f"{db}'s successful automated backups in the last {BACKUP_HOURS} hours (`sql_automated_backups`) and "
+             "its backups or restores that failed (`sql_backup_failures`, a failed automated backup included). One "
+             "backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours "
+             f"apart, so a healthy instance always has one in {BACKUP_HOURS} hours. ✕ none in {BACKUP_HOURS} h, red: "
+             f"none while {db} reported for {BACKUP_RAN_MINUTES // 60} of the {BACKUP_HOURS} hours or more (the urgent "
+             f"`{db}-backup-missing` opens once the day's backup window has passed with none); an instance started "
+             "since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red: "
+             f"`{db}-backup-failed`. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup "
+             "taken before the minute chosen. " + STOPPED_DB,
+             w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from=f"{BACKUP_HOURS}h", decimals=0,
+             value_size=STATUS_VALUE_SIZE,
+             no_value="not reporting", deps=(db,),
+             links=page_links((("Databases", "databases"),)) if link else None,
+             transformations=[
+                 {"id": "reduce", "options": {"mode": "reduceFields", "reducers": ["sum"], "includeTimeField": False}},
+                 {"id": "concatenate", "options": {"frameNameMode": "drop"}},
+                 # Summed over what arrived: a counter that wrote nothing counts as none.
+                 reduce_row("backups or none", "sum", ["backups"]),
+                 reduce_row("failed or none", "sum", ["failed"]),
+                 calc("ran the window /", "minutes reported", "/", BACKUP_RAN_MINUTES),
+                 unary("ran the window", "floor", "ran the window /"),
+                 *at_least_one("backups or none", "backed up"), *at_least_one("failed or none", "a failure"),
+                 calc("no backup", 1, "-", "backed up"), calc("missing", "ran the window", "*", "no backup"),
+                 calc("missing ×4", "missing", "*", 4), calc("a failure ×2", "a failure", "*", 2),
+                 reduce_row("status", "max", ["backed up", "a failure ×2", "missing ×4"]),
+                 {"id": "organize", "options": {"includeByName": {"status": True, "backups or none": True,
+                                                                  "failed or none": True},
+                                                "indexByName": {"status": 0, "backups or none": 1,
+                                                                "failed or none": 2}}}],
+             overrides=status_overrides(BACKUP_STATUS, {
+                 "backups or none": ("backups", thresholds(NEUTRAL)),
+                 "failed or none": ("failed", thresholds(NEUTRAL, (1, RED)))}))
+    p["options"]["orientation"] = "horizontal"
+    return p
+
+
+def pitr_status(db: str, ds: str, title: str, *, w: int = 6, h: int = 4, link: bool = False) -> dict:
+    """An instance's point-in-time logs: archives shipped in the last 30 minutes and failed in the last 15. ✕ stalled
+    (red) once it has reported 20 of the 30 minutes with none shipped, as `<db>-pitr-logs-stalled` opens; ✕ archive
+    failed (red, and the count red on its own), as `<db>-pitr-log-archive-failed`; ✓ shipping."""
+    failed = BACKUP_POLICIES["pitr-log-archive-failed"]
+    where = {"database_id": f"*:{db}"}
+    p = stat(title, ds,
+             [q(SQL_UP, SQL, align="ALIGN_COUNT", period="+60s", name="minutes reported", **where),
+              q(PITR_SHIPPED, SQL, period="+60s", name="shipped", **where),
+              q(PITR_FAILED, SQL, align=failed["aligner"], period="+" + failed["period"], reduce=failed["reducer"],
+                name="failed", **where)],
+             f"Cloud SQL's point-in-time logs for {db}: write-ahead log archives shipped in the last {PITR_MINUTES} "
+             "minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) "
+             f"and archives that failed in the last {PITR_FAILED_MINUTES} minutes (`log_archive_failure_count`). ✕ stalled, "
+             f"red: none shipped while {db} reported for {PITR_RAN_MINUTES} of the {PITR_MINUTES} minutes or more, as the "
+             f"urgent `{db}-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing "
+             "reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, "
+             f"and the failed count red: `{db}-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps "
+             "seven days of logs. "
+             + STOPPED_DB,
+             w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from=f"{PITR_MINUTES}m", decimals=0,
+             value_size=STATUS_VALUE_SIZE,
+             no_value="not reporting", deps=(db,),
+             links=page_links((("Databases", "databases"),)) if link else None,
+             transformations=[
+                 # Over the range: the minutes reported and the archives shipped; the failures' latest fifteen
+                 # minutes, as the policy reads them.
+                 {"id": "reduce", "filter": {"id": "byRefId", "options": "A"},
+                  "options": {"mode": "reduceFields", "reducers": ["sum"], "includeTimeField": False}},
+                 {"id": "reduce", "filter": {"id": "byRefId", "options": "B"},
+                  "options": {"mode": "reduceFields", "reducers": ["sum"], "includeTimeField": False}},
+                 {"id": "reduce", "filter": {"id": "byRefId", "options": "C"},
+                  "options": {"mode": "reduceFields", "reducers": ["lastNotNull"], "includeTimeField": False}},
+                 {"id": "concatenate", "options": {"frameNameMode": "drop"}},
+                 reduce_row("shipped or none", "sum", ["shipped"]),
+                 reduce_row("failed or none", "sum", ["failed"]),
+                 calc("ran /", "minutes reported", "/", PITR_RAN_MINUTES), unary("ran", "floor", "ran /"),
+                 *at_least_one("shipped or none", "shipping"), *at_least_one("failed or none", "a failure"),
+                 calc("none shipped", 1, "-", "shipping"), calc("stalled", "ran", "*", "none shipped"),
+                 calc("stalled ×4", "stalled", "*", 4), calc("a failure ×2", "a failure", "*", 2),
+                 reduce_row("status", "max", ["shipping", "a failure ×2", "stalled ×4"]),
+                 {"id": "organize", "options": {"includeByName": {"status": True, "shipped or none": True,
+                                                                  "failed or none": True},
+                                                "indexByName": {"status": 0, "shipped or none": 1,
+                                                                "failed or none": 2}}}],
+             overrides=status_overrides(PITR_STATUS, {
+                 "shipped or none": (f"shipped ({PITR_MINUTES} m)", thresholds(NEUTRAL)),
+                 "failed or none": (f"failed ({PITR_FAILED_MINUTES} m)", thresholds(NEUTRAL, (1, RED)))}))
+    p["options"]["orientation"] = "horizontal"
+    return p
+
+
+def backup_rows(name: str, ds: str) -> list[dict]:
+    """An instance's backups and point-in-time recovery: its two status tiles, the logs shipped per hour, the failed
+    archives in each fifteen minutes, and the backups taken and failed. On Databases and on its area's page."""
+    where = {"database_id": f"*:{name}"}
+    failed = BACKUP_POLICIES["pitr-log-archive-failed"]
+    return [
+        row(f"{name}: backups and point-in-time recovery (seven days of logs)"),
+        backups_status(name, ds, f"Backups in the last {BACKUP_HOURS} hours", w=6, h=5),
+        pitr_status(name, ds, f"Point-in-time logs ({PITR_MINUTES} min)", w=6, h=5),
+        series("Point-in-time logs shipped, per hour", ds, q(PITR_SHIPPED, SQL, period="+3600s", name="shipped",
+                                                              **where),
+               f"Write-ahead log archives Cloud SQL shipped for {name} in each hour "
+               "(`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. "
+               f"An hour with none is a stall: `{name}-pitr-logs-stalled` (urgent) opens after "
+               f"{PITR_MINUTES} minutes with none. " + STOPPED_DB, w=12, h=5, bars=True, decimals=0),
+        series(f"Log archives that failed ({PITR_FAILED_MINUTES} min)", ds,
+               q(PITR_FAILED, SQL, align=failed["aligner"], period="+" + failed["period"], reduce=failed["reducer"],
+                 name="failed", **where),
+               f"Failed attempts to archive {name}'s write-ahead logs in each {PITR_FAILED_MINUTES} minutes "
+               f"(`log_archive_failure_count`), as `{name}-pitr-log-archive-failed` reads them: any bar opens it. One "
+               f"Cloud SQL retries and recovers from closes it by itself; one that persists stalls the logs.", w=12,
+               h=6, bars=True, decimals=0),
+        series("Backups taken, and backups that failed", ds,
+               [q(log("sql_automated_backups"), SQL, period="+3600s", name="taken", **where),
+                q(log("sql_backup_failures"), SQL, period="+3600s", name="failed", **where)],
+               f"{name}'s successful automated backups, one bar a night in the hour it was counted "
+               "(`sql_automated_backups`), and backups or restores that failed (`sql_backup_failures`, a failed "
+               f"automated backup included: `{name}-backup-failed`), per hour. `{name}-backup-missing` (urgent) opens "
+               "once a day's backup window has passed with none.",
+               w=12, h=6, bars=True, decimals=0),
+    ]
 
 # ---- Resources: every Cloud Run service's primitives ---------------------------------------------------------------
 # The owner (2026-10-13): "Where are all the primitives for each service?" Each Cloud Run service's CPU, memory,
@@ -1458,8 +1663,8 @@ def storage(ds: str, where: str) -> list[dict]:
 
 def database_rows(name: str, ds: str, who: str, *, now: bool = True) -> list[dict]:
     """One Cloud SQL instance's primitives: disk space (in use, and used against its size, with the `<name>-disk`
-    line), up, CPU, memory, connections, disk operations and throughput, restarts and failed backups. On the Databases
-    page (with the "Now" tile) and on the page of the area that owns it."""
+    line), up, CPU, memory, connections, disk operations and throughput, restarts; then its backups and point-in-time
+    recovery (backup_rows). On the Databases page (with the "Now" tile) and on the page of the area that owns it."""
     disk = CATALOGUE.threshold(f"{name}-disk", DB_ROLE[name])
     full = disk["threshold_value"]
     caps = limit("max_connections", name)
@@ -1527,12 +1732,10 @@ def database_rows(name: str, ds: str, who: str, *, now: bool = True) -> list[dic
                 q(SQL_WRITE_BYTES, SQL, align="ALIGN_RATE", by=(), name="write", **where)],
                f"Bytes {name} read from and wrote to its disk per second (`database/disk/read_bytes_count`, "
                "`write_bytes_count`).", w=6, h=6, unit="Bps"),
-        series("Restarts and failed backups", ds,
-               [q(log("sql_restarts"), SQL, by=(), name="restarts", **where),
-                q(log("sql_backup_failures"), SQL, by=(), name="backup failed", **where)],
-               "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated "
-               "backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
-               w=6, h=6, bars=True),
+        series("Restarts", ds, q(log("sql_restarts"), SQL, by=(), name="restarts", **where),
+               "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart), counted from Cloud "
+               "SQL's own logs. Failed backups are in the backups row below.", w=6, h=6, bars=True),
+        *backup_rows(name, ds),
     ]
 
 
@@ -1625,6 +1828,8 @@ def service_page(service: str) -> dict:
 
 
 # ---- The pages -----------------------------------------------------------------------------------------------------
+DATABASES_ROW = (f"Databases: up, CPU, memory, disk; backups ({BACKUP_HOURS} h) and point-in-time logs "
+                 f"({PITR_MINUTES} min)")
 UPTIME_WORDING = per_environment(
     "Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.",
     "Beta's hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.")
@@ -1660,10 +1865,16 @@ def overview(cc: bool = True, env: str = "beta") -> dict:
         row("Services: " + ", ".join(dict.fromkeys(AREA_SHORT[SERVICES[s_][1]] for s_ in running)) +
             " (status, instances now, 5xx in 15 minutes)"),
         *[service_status(s_, deps[SERVICES[s_][1]] if s_ != "watchtower" else (), env) for s_ in running],
-        row("Databases: up, CPU, memory, disk"),
+        row(DATABASES_ROW),
         *[db_status(db, ds, w=span) for db, ds in dbs],
-        *collapsed([row("What's wrong now (details): each problem of the last 15 minutes, named, by project"),
-                    *[whats_wrong(*a, w=span, env=env) for a in areas]]),
+        *[backups_status(db, ds, f"{db} backups ({BACKUP_HOURS} h)", w=span, link=True) for db, ds in dbs],
+        *[pitr_status(db, ds, f"{db} point-in-time logs", w=span, link=True) for db, ds in dbs],
+        *collapsed([row("What's wrong now (details): each problem of the last 15 minutes, named, by project; each "
+                        f"database's backups ({BACKUP_HOURS} h) and point-in-time logs ({PITR_MINUTES} min)"),
+                    *[whats_wrong(*a, w=span, env=env) for a in areas],
+                    *[backups_status(db, ds, f"{db} backups ({BACKUP_HOURS} h)", w=span, link=True) for db, ds in dbs],
+                    *[pitr_status(db, ds, f"{db} point-in-time logs", w=span, link=True)
+                      for db, ds in dbs]]),
         *collapsed([row("Right now (details): uptime by host"),
                     stat("Uptime by host (24 h)", APP,
                          q(UPTIME, URL, align="ALIGN_FRACTION_TRUE", period="+3600s", reduce="REDUCE_MEAN",
@@ -1725,9 +1936,9 @@ def overview(cc: bool = True, env: str = "beta") -> dict:
               jobs_stat("CRM jobs (24 h)", CRM, CRM_JOBS, None, ("crm-db",))),
     ]
     return dashboard("tw-cloud-overview", "TPA overview (cloud)",
-                     "Home: is anything wrong now, by area, service and database, read from Cloud Monitoring; the "
-                     "detail (each problem by name, uptime by host, the scheduled runs, each area's numbers) in the "
-                     "rows shut below. " + NOTHING_BUT_METRICS, ["overview"], items)
+                     "Home: is anything wrong now, by area, service and database (its backups and point-in-time logs "
+                     "too), read from Cloud Monitoring; the detail (each problem by name, uptime by host, the scheduled "
+                     "runs, each area's numbers) in the rows shut below. " + NOTHING_BUT_METRICS, ["overview"], items)
 
 
 def portal_api() -> dict:
@@ -2153,8 +2364,9 @@ def databases(cc: bool = True) -> dict:
         items += database_rows(name, ds, who)
     return dashboard("tw-cloud-databases", "Databases (cloud)",
                      f"The {'four' if cc else 'three'} Cloud SQL instances: disk space (used, and used against the "
-                     "disk's size), up, CPU, memory, connections, disk operations and throughput, restarts and failed "
-                     "backups. " + STOPPED_DB, ["databases"], items, time="now-24h")
+                     "disk's size), up, CPU, memory, connections, disk operations and throughput, restarts, and each "
+                     "one's backups and point-in-time logs (D-173), read as their alert policies read them. "
+                     + STOPPED_DB, ["databases"], items, time="now-24h")
 
 
 def jobs(cc: bool = True) -> dict:

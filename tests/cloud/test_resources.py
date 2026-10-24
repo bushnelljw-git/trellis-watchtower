@@ -567,7 +567,8 @@ def check_overview_databases(overview: dict, env: str) -> list[str]:
     """The overview's Databases tiles, one per instance the environment has, colour CPU and memory at the module's
     lines (connections are on Databases)."""
     problems = []
-    tiles = sections(overview).get("Databases: up, CPU, memory, disk", [])
+    # The database tiles of the row (the backups and point-in-time logs tiles under them: tests/cloud/test_backups.py).
+    tiles = [p for p in sections(overview).get(gen.DATABASES_ROW, []) if p["title"] in gen.DATABASES]
     want_names = [db for db in gen.DATABASES if db in LIMITS[env]["max_connections"] or db == "cc-db" and env == "beta"]
     if sorted(p["title"] for p in tiles) != sorted(want_names):
         problems.append(f"{env} overview: database tiles {sorted(p['title'] for p in tiles)}, not {sorted(want_names)}")

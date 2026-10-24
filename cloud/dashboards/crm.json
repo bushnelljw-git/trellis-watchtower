@@ -4182,8 +4182,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Restarts and failed backups",
-      "description": "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart) and an automated backup whose run ended in error (`sql_backup_failures`), counted from Cloud SQL's own logs.",
+      "title": "Restarts",
+      "description": "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart), counted from Cloud SQL's own logs. Failed backups are in the backups row below.",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -4225,37 +4225,6 @@
             "preprocessor": "none"
           },
           "aliasBy": "restarts"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-crm"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_CRM_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/sql_backup_failures",
-              "AND",
-              "resource.type",
-              "=",
-              "cloudsql_database",
-              "AND",
-              "resource.label.database_id",
-              "=",
-              "*:crm-db"
-            ],
-            "groupBys": [],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "backup failed"
         }
       ],
       "interval": "1m",
@@ -4312,7 +4281,7 @@
     },
     {
       "type": "row",
-      "title": "The CRM's project: instances against the regional quota",
+      "title": "crm-db: backups and point-in-time recovery (seven days of logs)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -4324,6 +4293,1526 @@
       "id": 38
     },
     {
+      "type": "stat",
+      "title": "Backups in the last 30 hours",
+      "description": "crm-db's successful automated backups in the last 30 hours (`sql_automated_backups`) and its backups or restores that failed (`sql_backup_failures`, a failed automated backup included). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while crm-db reported for 29 of the 30 hours or more (the urgent `crm-db-backup-missing` opens once the day's backup window has passed with none); an instance started since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red: `crm-db-backup-failed`. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 59
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/up",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "minutes reported"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_automated_backups",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "backups"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_backup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "30h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,crm-db,@@text@@text@@",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "@@R,crm-db,@@not reporting@@",
+          "displayName": "@@R,crm-db,@@@@"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,crm-db,@@status@@"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "no backup yet",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "✓ backed up",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "✕ a backup failed",
+                        "index": 2
+                      },
+                      "4": {
+                        "text": "✕ none in 30 h",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,crm-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,crm-db,@@text@@#14b8a6@@",
+                      "value": 1
+                    },
+                    {
+                      "color": "@@F,crm-db,@@text@@#d03b3b@@",
+                      "value": 2
+                    },
+                    {
+                      "color": "@@F,crm-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "backups or none"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,crm-db,@@backups@@"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,crm-db,@@text@@text@@",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed or none"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,crm-db,@@failed@@"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,crm-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,crm-db,@@text@@#d03b3b@@",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {
+          "valueSize": 18
+        },
+        "orientation": "horizontal",
+        "textMode": "@@F,crm-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "sum"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "concatenate",
+          "options": {
+            "frameNameMode": "drop"
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "backups or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "backups"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "failed or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "failed"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "ran the window /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "minutes reported"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "1740"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "ran the window",
+            "replaceFields": false,
+            "unary": {
+              "operator": "floor",
+              "fieldName": "ran the window /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "backed up +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "backups or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "backed up /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "backups or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "backed up +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "backed up",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "backed up /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failed or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failed or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "a failure +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "a failure",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "a failure /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no backup",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "backed up"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "missing",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ran the window"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "no backup"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "missing ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "missing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure ×2",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "a failure"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "status",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "max",
+              "include": [
+                "backed up",
+                "a failure ×2",
+                "missing ×4"
+              ]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "status": true,
+              "backups or none": true,
+              "failed or none": true
+            },
+            "indexByName": {
+              "status": 0,
+              "backups or none": 1,
+              "failed or none": 2
+            }
+          }
+        }
+      ],
+      "id": 39
+    },
+    {
+      "type": "stat",
+      "title": "Point-in-time logs (30 min)",
+      "description": "Cloud SQL's point-in-time logs for crm-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while crm-db reported for 20 of the 30 minutes or more, as the urgent `crm-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `crm-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 59
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/up",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "minutes reported"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/replication/log_archive_success_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "shipped"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/replication/log_archive_failure_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "30m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,crm-db,@@text@@text@@",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "@@R,crm-db,@@not reporting@@",
+          "displayName": "@@R,crm-db,@@@@"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,crm-db,@@status@@"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "no logs yet",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "✓ shipping",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "✕ archive failed",
+                        "index": 2
+                      },
+                      "4": {
+                        "text": "✕ stalled",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,crm-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,crm-db,@@text@@#14b8a6@@",
+                      "value": 1
+                    },
+                    {
+                      "color": "@@F,crm-db,@@text@@#d03b3b@@",
+                      "value": 2
+                    },
+                    {
+                      "color": "@@F,crm-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "shipped or none"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,crm-db,@@shipped (30 m)@@"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,crm-db,@@text@@text@@",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed or none"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,crm-db,@@failed (15 m)@@"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,crm-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,crm-db,@@text@@#d03b3b@@",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {
+          "valueSize": 18
+        },
+        "orientation": "horizontal",
+        "textMode": "@@F,crm-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "A"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "sum"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "B"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "sum"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "C"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "lastNotNull"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "concatenate",
+          "options": {
+            "frameNameMode": "drop"
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "shipped or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "shipped"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "failed or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "failed"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "minutes reported"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "20"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "floor",
+              "fieldName": "ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "shipping +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "shipped or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "shipping /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "shipped or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "shipping +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "shipping",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "shipping /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failed or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failed or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "a failure +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "a failure",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "a failure /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "none shipped",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "shipping"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "stalled",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ran"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "none shipped"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "stalled ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "stalled"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure ×2",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "a failure"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "status",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "max",
+              "include": [
+                "shipping",
+                "a failure ×2",
+                "stalled ×4"
+              ]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "status": true,
+              "shipped or none": true,
+              "failed or none": true
+            },
+            "indexByName": {
+              "status": 0,
+              "shipped or none": 1,
+              "failed or none": 2
+            }
+          }
+        }
+      ],
+      "id": 40
+    },
+    {
+      "type": "timeseries",
+      "title": "Point-in-time logs shipped, per hour",
+      "description": "Write-ahead log archives Cloud SQL shipped for crm-db in each hour (`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. An hour with none is a stall: `crm-db-pitr-logs-stalled` (urgent) opens after 30 minutes with none. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 59
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/replication/log_archive_success_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "shipped"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 41
+    },
+    {
+      "type": "timeseries",
+      "title": "Log archives that failed (15 min)",
+      "description": "Failed attempts to archive crm-db's write-ahead logs in each 15 minutes (`log_archive_failure_count`), as `crm-db-pitr-log-archive-failed` reads them: any bar opens it. One Cloud SQL retries and recovers from closes it by itself; one that persists stalls the logs.",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 64
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "cloudsql.googleapis.com/database/replication/log_archive_failure_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 42
+    },
+    {
+      "type": "timeseries",
+      "title": "Backups taken, and backups that failed",
+      "description": "crm-db's successful automated backups, one bar a night in the hour it was counted (`sql_automated_backups`), and backups or restores that failed (`sql_backup_failures`, a failed automated backup included: `crm-db-backup-failed`), per hour. `crm-db-backup-missing` (urgent) opens once a day's backup window has passed with none.",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 64
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_automated_backups",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "taken"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_backup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 43
+    },
+    {
+      "type": "row",
+      "title": "The CRM's project: instances against the regional quota",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 70
+      },
+      "id": 44
+    },
+    {
       "type": "timeseries",
       "title": "Instances, every service",
       "description": "Every Cloud Run instance in the CRM's project, summed. The red line is `run-instances-near-quota`'s: above 68 for 10 minutes pages. The grey line is the regional quota, 85: at it no service can start another instance, whatever its own ceiling. In beta the CRM runs in the app project, so every app service counts here too.",
@@ -4331,7 +5820,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 71
       },
       "datasource": {
         "type": "stackdriver",
@@ -4426,7 +5915,7 @@
           "sort": "desc"
         }
       },
-      "id": 39
+      "id": 45
     },
     {
       "type": "row",
@@ -4437,9 +5926,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 66
+        "y": 78
       },
-      "id": 40
+      "id": 46
     },
     {
       "type": "stat",
@@ -4449,7 +5938,7 @@
         "h": 7,
         "w": 6,
         "x": 0,
-        "y": 67
+        "y": 79
       },
       "datasource": {
         "type": "stackdriver",
@@ -4655,7 +6144,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 41
+      "id": 47
     },
     {
       "type": "timeseries",
@@ -4665,7 +6154,7 @@
         "h": 7,
         "w": 18,
         "x": 6,
-        "y": 67
+        "y": 79
       },
       "datasource": {
         "type": "stackdriver",
@@ -4757,7 +6246,7 @@
           "sort": "desc"
         }
       },
-      "id": 42
+      "id": 48
     }
   ]
 }

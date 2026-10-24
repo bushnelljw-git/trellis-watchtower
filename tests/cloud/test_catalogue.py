@@ -57,6 +57,10 @@ BUILTIN = {
     "cloudsql.googleapis.com/database/cpu/utilization": (set(), "gauge"),
     "cloudsql.googleapis.com/database/memory/utilization": (set(), "gauge"),
     "cloudsql.googleapis.com/database/postgresql/num_backends": (set(), "gauge"),
+    # D-173: Cloud SQL's point-in-time log archives, DELTA INT64 on cloudsql_database, one sample a minute ("Google
+    # Cloud metrics: API prefix is C", read by tpa-platform's module 2026-10-24): counters, with no metric label read.
+    "cloudsql.googleapis.com/database/replication/log_archive_success_count": (set(), "counter"),
+    "cloudsql.googleapis.com/database/replication/log_archive_failure_count": (set(), "counter"),
     "monitoring.googleapis.com/uptime_check/check_passed": (set(), "bool"),
     "router.googleapis.com/nat/allocated_ports": (set(), "gauge"),
     "router.googleapis.com/nat/port_usage": (set(), "gauge"),
@@ -76,7 +80,10 @@ BUILTIN_FROM_THE_MODULE = {"monitoring.googleapis.com/uptime_check/check_passed"
                            "cloudsql.googleapis.com/database/memory/utilization",
                            "cloudsql.googleapis.com/database/postgresql/num_backends",
                            # each job's `job-timeout-<job>` policy (the module's, at 80% of its timeout)
-                           "run.googleapis.com/job/running_task_attempts"}
+                           "run.googleapis.com/job/running_task_attempts",
+                           # each instance's `-pitr-logs-stalled` and `-pitr-log-archive-failed` (D-173)
+                           "cloudsql.googleapis.com/database/replication/log_archive_success_count",
+                           "cloudsql.googleapis.com/database/replication/log_archive_failure_count"}
 # Read by no policy: charted beside the signals the policies page on, so a page shows why (the owner, 2026-10-13:
 # "Where are all the primitives for each service?"). A Cloud Run service's start-up time and billed instances, a
 # job's task attempts, a database's disk in bytes, its size and its disk I/O, a Cloud NAT gateway's ports,
@@ -184,9 +191,11 @@ class CatalogueTest(unittest.TestCase):
     def test_the_reader_finds_the_catalogue(self):
         # Known facts of the catalogue, so a reader that silently reads nothing fails here.
         self.assertEqual(set(self.catalogue.roles), {"app", "phi", "crm", "cc"})
+        # sql_automated_backups since D-173 (2026-10-24): `<db>-backup-missing` reads its absence.
         self.assertEqual(set(self.catalogue.shared), {"run_system_errors", "sql_proxy_errors", "sql_restarts",
-                                                      "sql_backup_failures", "run_oom_kills", "run_crash_exits",
-                                                      "secret_version_changes", "kms_version_changes"})
+                                                      "sql_backup_failures", "sql_automated_backups", "run_oom_kills",
+                                                      "run_crash_exits", "secret_version_changes",
+                                                      "kms_version_changes"})
         # The synthetic journeys' section is read, as the app role's (their result lines land in the app project).
         self.assertEqual(set(self.catalogue.synthetics), {"synthetic_results"})
         self.assertEqual(self.catalogue.roles["app"]["synthetic_results"]["labels"],
