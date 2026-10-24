@@ -105,47 +105,63 @@ shared:
 
     # Every instance takes an automated backup each night (modules/cloud-sql,
     # backup_configuration.enabled, true by default and in every root). Cloud
-    # SQL's audit entry for a backup run ends with the operation's status; one
-    # with a non-zero code failed. Observed (live beta, read-only, 2026-10-11
-    # and again 2026-10-24): an automated backup's entry is in the system
-    # event audit log, `cloudaudit.googleapis.com/system_event`, methodName
-    # `cloudsql.instances.automatedBackup`, with no status code on success
-    # (tpa-db's at 2026-10-23T09:52Z and 2026-10-24T10:10Z). A failed
-    # automated backup's status code has not been observed yet; the filter
-    # names no log, so it also counts an on-demand backup's or a restore's
-    # failure wherever its entry lands.
+    # SQL writes one system event audit entry per automated backup attempt
+    # (`cloudaudit.googleapis.com/system_event`, methodName
+    # `cloudsql.instances.automatedBackup`), and its outcome is the entry's
+    # `protoPayload.metadata.windowStatus`, never its status: every entry read
+    # on beta carries `status: {message: "OK"}`, no code, severity INFO,
+    # failed or not (the review's read of all three projects, 2026-10-09 to
+    # 2026-10-24: 63 `STATUS_SUCCEEDED` and four `STATUS_ATTEMPT_FAILED`, one
+    # on each instance on 2026-10-09, which this counter, reading a status
+    # code alone, never counted, so `<db>-backup-failed` never opened; TP-237).
+    # Google's values (Cloud SQL's "View audit logs for automated backups",
+    # last updated 2026-10-22): STATUS_SUCCEEDED; STATUS_ATTEMPT_FAILED (an
+    # attempt that did not start or failed); STATUS_FAILED (no backup could be
+    # made in the window, written after the failed attempts); STATUS_SKIPPED
+    # (the instance stopped running since its last successful backup). Counted
+    # as failures: STATUS_ATTEMPT_FAILED and STATUS_FAILED, each the final
+    # word on what it names (an attempt, a window) and each one Google says to
+    # act on; never STATUS_SKIPPED (a stopped instance: beta's B8 on purpose,
+    # anything else `<db>-down`), and never a value Google has not listed. An
+    # on-demand backup's or a restore's failure still counts by its status
+    # code, wherever its entry lands.
     sql_backup_failures:
       description: >-
-        A Cloud SQL backup or restore operation that ended in an error: Cloud
-        SQL's audit entry for it with a non-zero status code. By the instance;
-        nothing of the entry is read.
+        A Cloud SQL backup or restore that failed: an automated backup's
+        system event audit entry whose windowStatus is STATUS_ATTEMPT_FAILED
+        or STATUS_FAILED, or any backup or restore operation's audit entry
+        with a non-zero status code. By the instance; nothing of the entry is
+        read.
       filter: |
         resource.type="cloudsql_database"
         AND protoPayload.serviceName="cloudsql.googleapis.com"
-        AND protoPayload.methodName=~"[Bb]ackup"
-        AND protoPayload.status.code>0
+        AND (
+          (protoPayload.methodName=~"[Bb]ackup" AND protoPayload.status.code>0)
+          OR (log_id("cloudaudit.googleapis.com/system_event")
+            AND protoPayload.methodName="cloudsql.instances.automatedBackup"
+            AND (protoPayload.metadata.windowStatus="STATUS_ATTEMPT_FAILED"
+              OR protoPayload.metadata.windowStatus="STATUS_FAILED"))
+        )
 
     # D-173 (the owner, 2026-10-24: "Update the trellis-watchtower as a check
     # and it should be on all the main dashboards and we should have
-    # alerting"): each automated backup that did not fail, by the instance.
-    # The module's per-instance `-backup-missing` opens when an instance has
-    # none counted for 25 hours, the most Google lets an alert read of a
-    # user log-based metric (modules/monitoring, main.tf). The entry is the
-    # one observed above; a status code of 0, or none, is a success. Its
-    # absence is the signal, so a filter that matches nothing pages rather
-    # than passes.
+    # alerting"): each automated backup that succeeded, by the instance,
+    # counted positively by its windowStatus (above). The module's
+    # per-instance `-backup-missing` opens when a backup window has closed
+    # with none counted (modules/monitoring, main.tf). Its absence is the
+    # signal, so a filter that matches nothing pages rather than passes.
     sql_automated_backups:
       description: >-
-        A Cloud SQL automated backup that ended without an error: Cloud SQL's
-        system event audit entry for cloudsql.instances.automatedBackup with
-        no non-zero status code. By the instance (the resource's own
-        database_id); nothing of the entry is read.
+        A Cloud SQL automated backup that succeeded: Cloud SQL's system event
+        audit entry for cloudsql.instances.automatedBackup whose windowStatus
+        is STATUS_SUCCEEDED. By the instance (the resource's own database_id);
+        nothing of the entry is read.
       filter: |
         resource.type="cloudsql_database"
         AND log_id("cloudaudit.googleapis.com/system_event")
         AND protoPayload.serviceName="cloudsql.googleapis.com"
         AND protoPayload.methodName="cloudsql.instances.automatedBackup"
-        AND NOT protoPayload.status.code>0
+        AND protoPayload.metadata.windowStatus="STATUS_SUCCEEDED"
 
     # Cloud Run's system log, by the service or job alone (the resource):
     # a container killed for exceeding its memory limit, and a container that

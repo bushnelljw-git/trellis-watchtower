@@ -206,7 +206,13 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     failed per hour.
   - [x] The coordinator's tpa-platform review (2026-10-24): 30 hours, not 25 (beta's successful backups land up to
     26.1 hours apart; the backup-missing policy is being rebuilt to open after the day's window); failures their own
-    red values. Re-vendor once tpa-platform lands: `make cloud-catalogue` (CATALOGUE_REF=origin/master by default).
+    red values.
+  - [x] Re-vendored at tpa-platform master `df912877` with `make cloud-catalogue` (the review landed: both counters read
+    windowStatus; `<db>-backup-missing` judges today's backup from 14:00 UTC, with the instance reporting 1,380 of the
+    last 1,440 minutes and never down). `test_backups.py` pins its clock, margin, range, uptime clauses, hold and every
+    root's one start time; every backups description says the alert judges "today's backup, from 14:00 UTC" and the
+    tile "a successful backup in the last 30 hours" (a missed night turns it red about two hours after the page), and
+    that a failed count is entries, not nights.
   - [x] A failed backup and a failed archive are problem rows of their area (the area tile counts them, What's wrong
     now names them). A missing backup or stalled logs cannot be read in fifteen minutes (a log counter's series comes
     back only with a point in the range), so those are the tiles; `tests/cloud/test_overview.py`'s database-tile pin

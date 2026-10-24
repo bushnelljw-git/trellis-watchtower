@@ -3,14 +3,16 @@ for all foour", "Update the trellis-watchtower as a check and it should be on al
 have alerting"). The alerting is tpa-platform's monitoring module, four policies per Cloud SQL instance; these pages
 read the same counters, each red when its condition holds:
 
-- `<db>-backup-missing` (urgent) reads `sql_automated_backups`, successful automated backups. tpa-platform's review
-  (the coordinator, 2026-10-24) rebuilds it to open only after the day's backup window: beta's successful backups land
-  up to 26.1 hours apart, so a 25-hour window would read 0 on a healthy day. The pages read 30 hours, red when none
-  came while the instance reported (nearly) all of them;
+- `<db>-backup-missing` (urgent) judges today's backup: from 14:00 UTC (the 09:00 window's four hours and an hour),
+  no `sql_automated_backups` (windowStatus STATUS_SUCCEEDED) in 24 hours, the instance reporting 1,380 of the last
+  1,440 minutes and never down. Beta's successful backups land up to 26.1 hours apart, so the pages read 30 hours, red
+  when none came while the instance reported 29 of them, and every backups description says the two clocks apart (a
+  missed night turns the tile red about two hours after the page);
 - `<db>-pitr-logs-stalled` (urgent): no `log_archive_success_count` in 30 minutes (ten-minute sums below one held
   twenty minutes, or none reported for thirty);
 - `<db>-pitr-log-archive-failed`: a `log_archive_failure_count` in fifteen minutes;
-- `<db>-backup-failed`: a `sql_backup_failures` in five minutes (a failed automated backup included).
+- `<db>-backup-failed`: a `sql_backup_failures` in five minutes (an automated backup's STATUS_ATTEMPT_FAILED or
+  STATUS_FAILED entry, or a backup or restore operation's error: one bad night writes several).
 
 A failure is its own red value on each tile, and turns the tile's status red (the coordinator's ruling).
 
@@ -60,8 +62,7 @@ AREA = {"auth-db": "Portal & sign-in", "tpa-db": "Member records", "crm-db": "CR
 
 def module_backup_policies(infra: Infra) -> dict:
     """The monitoring module's four per-instance policies (infra/modules/monitoring/main.tf), as BACKUP_POLICIES
-    holds them: what each reads, and the windows of the three the pages read as the policy does (backup-missing is
-    being rebuilt, so only its counter is held)."""
+    holds them: what each reads and its windows, backup-missing's clock and uptime clauses included."""
     text = infra.show("infra/modules/monitoring/main.tf")
     local = lambda name: re.search(rf'^\s*{name}\s*=\s*"([^"]+)"', text, re.M).group(1)
 
@@ -77,8 +78,28 @@ def module_backup_policies(infra: Infra) -> dict:
 
     out = {}
     missing = body("backup-missing")
-    assert "user_sql_automated_backups" in missing or 'user/sql_automated_backups' in missing, missing[:300]
-    out["backup-missing"] = {"metric": BACKUPS}
+    assert get(missing, "query") == "local.backup_missing_query[db]", get(missing, "query")
+    assert get(missing, "duration") == "local.backup_missing_hold", get(missing, "duration")
+    query = infra.block(text, "backup_missing_query = ")
+    rng = local("backup_missing_range")
+    for clause in (f"absent_over_time(logging_googleapis_com:user_sql_automated_backups{{${{local.sql_promql[db]}}}}"
+                   "[${local.backup_missing_range}])",
+                   "min_over_time(cloudsql_googleapis_com:database_up{${local.sql_promql[db]}}"
+                   "[${local.backup_missing_range}]) >= 1",
+                   "count_over_time(cloudsql_googleapis_com:database_up{${local.sql_promql[db]}}"
+                   "[${local.backup_missing_range}]) >= ${local.backup_up_points}", "local.backup_gate[db]"):
+        assert clause in query, clause
+    number = lambda name: int(re.search(rf"^\s*{name}\s*=\s*(\d+)\s*$", text, re.M).group(1))
+    variables = infra.show("infra/modules/monitoring/variables.tf")
+    start = re.search(r'backup_start_time\s*=\s*optional\(string,\s*"([0-9:]+)"\)', variables).group(1)
+    # Every root passes one start, its instances' own, which the clock reads.
+    for env in ("beta", "production"):
+        root = infra.root_text(env)
+        assert re.search(rf'^\s*sql_backup_start_time\s*=\s*"{start}"', root, re.M), (env, start)
+        assert root.count("start_time                     = local.sql_backup_start_time") >= 3, env
+    out["backup-missing"] = {"metric": BACKUPS, "start": start, "window_minutes": number("backup_window_minutes"),
+                             "margin_minutes": number("backup_gate_margin"), "range": rng,
+                             "up_points": number("backup_up_points"), "hold": local("backup_missing_hold")}
     stalled = body("pitr-logs-stalled")
     threshold, absent = infra.block(stalled, "threshold = "), infra.block(stalled, "absent = ")
     assert get(threshold, "comparison") == "COMPARISON_LT", get(threshold, "comparison")
@@ -317,6 +338,21 @@ class SourceTest(unittest.TestCase):
 
 
 class BackupsTest(unittest.TestCase):
+    def test_the_page_time(self):
+        self.assertEqual(gen.BACKUP_PAGE_TIME, "14:00")
+        for env, pages in RENDERED.items():
+            for db in dbs(env):
+                for page in ("overview", "databases", OWNER[db]):
+                    texts = [p.get("description", "") for p in lint.panels(pages[page])
+                             if p["title"] in (f"{db} backups (30 h)", "Backups in the last 30 hours",
+                                               "Backups taken, and backups that failed")
+                             and any(f"*:{db}" in json.dumps(t) for t in p.get("targets") or [])]
+                    self.assertTrue(texts, (env, db, page))
+                    for text in texts:
+                        self.assertIn("judges today's backup, from 14:00 UTC", text, (env, db, page))
+                        self.assertIn("a successful backup in the last 30 hours", text, (env, db, page))
+                        self.assertIn("about two hours after the page", text, (env, db, page))
+
     def test_the_windows(self):
         self.assertEqual((gen.BACKUP_HOURS, gen.BACKUP_RAN_MINUTES, gen.PITR_MINUTES, gen.PITR_RAN_MINUTES,
                           gen.PITR_FAILED_MINUTES), (30, 1740, 30, 20, 15))

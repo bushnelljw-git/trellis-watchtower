@@ -641,7 +641,7 @@ def area_queries(ds: str, services: str, jobs: str | None, db: str, *, checks: b
                     reduce=NO_INSTANCE_POLICY["reducer"], by=("service_name",), name=f"{service} instances",
                     service_name=service) for service in warm]]
     # D-173: a failed backup and a failed point-in-time log archive, as `<db>-backup-failed` and
-    # `<db>-pitr-log-archive-failed` open on any. No backup in 30 hours or no log shipped in 30 minutes cannot be
+    # `<db>-pitr-log-archive-failed` open on any. No backup today or no log shipped in 30 minutes cannot be
     # read in fifteen minutes: they are the instance's two status tiles (backups_status, pitr_status).
     out += [q(BACKUP_POLICIES["backup-failed"]["metric"], SQL, period=NOW, name=f"✕ backup failed · {db}",
               database_id=f"*:{db}"),
@@ -907,20 +907,25 @@ CEILING_POLICY = {"metric": RUN_INSTANCES, "share": 0.8, "period": "60s", "align
 # it should be on all the main dashboards and we should have alerting"): each Cloud SQL instance's backups and
 # point-in-time logs, read from the counters the monitoring module's four per-instance policies read
 # (local.sql_thresholds; pinned by tests/cloud/test_backups.py):
-# - `<db>-backup-missing` (urgent) reads `sql_automated_backups` (successful automated backups). tpa-platform's review
-#   (the coordinator, 2026-10-24) rebuilds it to open only after the day's backup window, because beta's successful
-#   backups land up to 26.1 hours apart (starts 09:27 to 11:54 UTC): so the pages read a window a healthy instance
-#   always has one in, 30 hours, and never 25;
+# - `<db>-backup-missing` (urgent) judges today's backup: from the window's end plus an hour (09:00 UTC + 4 h + 1 h,
+#   14:00 UTC) until the next window's start, no `sql_automated_backups` (windowStatus STATUS_SUCCEEDED) in the last 24
+#   hours, the instance reporting at least 1,380 of the last 1,440 minutes and never down in them, held ten minutes. It
+#   is tied to the window, not to the last backup, because two successful backups land up to 26.1 hours apart on beta
+#   (starts 09:07 to 11:52 UTC). So the pages read a window a healthy instance always has one in, 30 hours, and never
+#   25: a missed night turns the tile red about two hours after the page (30 hours after the night before's backup);
 # - `<db>-pitr-logs-stalled` (urgent): the archives' ten-minute sums below one, held twenty minutes, or no count
 #   reported for thirty: none shipped in thirty minutes;
 # - `<db>-pitr-log-archive-failed`: a failed archive in fifteen minutes;
-# - `<db>-backup-failed`: a failed backup (or restore) operation in five minutes; `sql_backup_failures` also counts a
-#   failed automated backup (beta had one on all four instances on 2026-10-09).
+# - `<db>-backup-failed`: a failed backup in five minutes; `sql_backup_failures` counts an automated backup's
+#   STATUS_ATTEMPT_FAILED and STATUS_FAILED entries (beta had one on all four instances on 2026-10-09) and a backup or
+#   restore operation's error. One bad night writes several failed attempts and a final failure, so the count is
+#   entries, never nights: the pages say "a backup failed".
 # Every one of the four reads red on the pages (the coordinator: a failure is "its own red stat").
 PITR_SHIPPED = "cloudsql.googleapis.com/database/replication/log_archive_success_count"
 PITR_FAILED = "cloudsql.googleapis.com/database/replication/log_archive_failure_count"
 BACKUP_POLICIES = {
-    "backup-missing": {"metric": log("sql_automated_backups")},
+    "backup-missing": {"metric": log("sql_automated_backups"), "start": "09:00", "window_minutes": 240,
+                       "margin_minutes": 60, "range": "24h", "up_points": 1380, "hold": "600s"},
     "pitr-logs-stalled": {"metric": PITR_SHIPPED, "period": "600s", "aligner": "ALIGN_DELTA", "reducer": "REDUCE_SUM",
                           "below": 1, "duration": "1200s", "absent": "1800s"},
     "pitr-log-archive-failed": {"metric": PITR_FAILED, "period": "900s", "aligner": "ALIGN_DELTA",
@@ -940,6 +945,24 @@ def seconds(value: str) -> int:
 # the instance has reported 20 of them (the threshold's hold; Cloud SQL's points arrive up to three minutes late).
 BACKUP_HOURS = 30
 BACKUP_RAN_MINUTES = (BACKUP_HOURS - 1) * 60
+
+
+def backup_page_time() -> str:
+    """When `<db>-backup-missing` starts judging the day's backup: the window's start, its four hours and the
+    hour's margin, in UTC ("14:00" for a 09:00 start)."""
+    m = BACKUP_POLICIES["backup-missing"]
+    start = sum(int(x) * f for x, f in zip(m["start"].split(":"), (60, 1)))
+    at = (start + m["window_minutes"] + m["margin_minutes"]) % 1440
+    return f"{at // 60:02d}:{at % 60:02d}"
+
+
+BACKUP_PAGE_TIME = backup_page_time()
+# Said on every backups tile and chart: the alert and the tile judge the same counter on two clocks.
+BACKUP_TWO_CLOCKS = (f"The alert, `{{db}}-backup-missing` (urgent), judges today's backup, from {BACKUP_PAGE_TIME} UTC: "
+                     f"the window from {BACKUP_POLICIES['backup-missing']['start']} UTC closed an hour before with no "
+                     "successful backup while the instance was up all day. This tile shows a successful backup in the "
+                     f"last {BACKUP_HOURS} hours, so a missed night turns it red about two hours after the page ("
+                     f"{BACKUP_HOURS} hours after the night before's backup).")
 PITR_MINUTES = seconds(BACKUP_POLICIES["pitr-logs-stalled"]["absent"]) // 60
 PITR_RAN_MINUTES = seconds(BACKUP_POLICIES["pitr-logs-stalled"]["duration"]) // 60
 PITR_FAILED_MINUTES = seconds(BACKUP_POLICIES["pitr-log-archive-failed"]["period"]) // 60
@@ -1025,9 +1048,9 @@ def area_status(key, title, ds, services, jobs, db, reporting, checks, w=3, env=
              + (f", and five minutes or more with no instance for a service kept warm ({', '.join(warm)}: "
                 "`<service> has no instance` pages, urgent)" if warm else "") + ". "
              "Each one, named with its count, is in the shut row What's wrong now (details) below, and on "
-             f"{' and '.join(t for t, _u in pages)}. No backup in {BACKUP_HOURS} hours or point-in-time logs stalled for "
-             f"30 minutes cannot be read in fifteen minutes: {db}'s backups and logs tiles (Databases, and What's wrong "
-             "now) show them. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). "
+             f"{' and '.join(t for t, _u in pages)}. A backup missing (its alert judges today's backup from "
+             f"{BACKUP_PAGE_TIME} UTC) or point-in-time logs stalled for 30 minutes cannot be read in fifteen minutes: "
+             f"{db}'s backups and logs tiles (Databases, and What's wrong now) show them. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). "
              "\"? Can't tell\": nothing arrived, or the query failed.",
              w=w, h=5, calc="sum", text_mode="value", time_from="15m", no_value="? Can't tell",
              steps=thresholds(AMBER, (-0.5, TEAL), (0.5, AMBER)), deps=(db,), unit="suffix:problems", decimals=0,
@@ -1262,15 +1285,16 @@ def backups_status(db: str, ds: str, title: str, *, w: int = 6, h: int = 4, link
              [q(SQL_UP, SQL, align="ALIGN_COUNT", period="+3600s", name="minutes reported", **where),
               q(missing["metric"], SQL, period="+3600s", name="backups", **where),
               q(failed["metric"], SQL, period="+3600s", name="failed", **where)],
-             f"{db}'s successful automated backups in the last {BACKUP_HOURS} hours (`sql_automated_backups`) and "
-             "its backups or restores that failed (`sql_backup_failures`, a failed automated backup included). One "
-             "backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours "
-             f"apart, so a healthy instance always has one in {BACKUP_HOURS} hours. ✕ none in {BACKUP_HOURS} h, red: "
-             f"none while {db} reported for {BACKUP_RAN_MINUTES // 60} of the {BACKUP_HOURS} hours or more (the urgent "
-             f"`{db}-backup-missing` opens once the day's backup window has passed with none); an instance started "
-             "since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red: "
-             f"`{db}-backup-failed`. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup "
-             "taken before the minute chosen. " + STOPPED_DB,
+             f"{db}'s successful automated backups in the last {BACKUP_HOURS} hours (`sql_automated_backups`, "
+             "windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). " +
+             BACKUP_TWO_CLOCKS.replace("{db}", db) + " One backup a night, starting in a four-hour window from "
+             f"{BACKUP_POLICIES['backup-missing']['start']} UTC: on beta two land up to 26.1 hours apart, so a healthy "
+             f"instance always has one in {BACKUP_HOURS} hours. ✕ none in {BACKUP_HOURS} h, red: none while {db} "
+             f"reported for {BACKUP_RAN_MINUTES // 60} of the {BACKUP_HOURS} hours or more; an instance started since "
+             "reads \"no backup yet\". ✕ a backup failed, red, and the failed count red (`" + db + "-backup-failed`): "
+             "one bad night writes several failed attempts and a final failure, so the count is entries, not nights. "
+             "✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute "
+             "chosen. " + STOPPED_DB,
              w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from=f"{BACKUP_HOURS}h", decimals=0,
              value_size=STATUS_VALUE_SIZE,
              no_value="not reporting", deps=(db,),
@@ -1376,9 +1400,10 @@ def backup_rows(name: str, ds: str) -> list[dict]:
                [q(log("sql_automated_backups"), SQL, period="+3600s", name="taken", **where),
                 q(log("sql_backup_failures"), SQL, period="+3600s", name="failed", **where)],
                f"{name}'s successful automated backups, one bar a night in the hour it was counted "
-               "(`sql_automated_backups`), and backups or restores that failed (`sql_backup_failures`, a failed "
-               f"automated backup included: `{name}-backup-failed`), per hour. `{name}-backup-missing` (urgent) opens "
-               "once a day's backup window has passed with none.",
+               "(`sql_automated_backups`), and failed backup entries (`sql_backup_failures`: "
+               f"`{name}-backup-failed`; one bad night writes several failed attempts and a final failure, so a bar "
+               "above 1 is still a backup that failed, not several nights), per hour. "
+               + BACKUP_TWO_CLOCKS.replace("{db}", name).replace("This tile shows", "The backups tile beside it shows"),
                w=12, h=6, bars=True, decimals=0),
     ]
 
