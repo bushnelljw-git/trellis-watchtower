@@ -4,7 +4,9 @@
 #
 #  0. The image's configured user is exactly 10001:10001 (tpa-platform's shared builder refuses any other); every
 #     base is pinned by digest, and the image's stage is the official Grafana's; Grafana's three Go binaries were
-#     rebuilt with Go 1.26.9 (read from each binary's own build information); and its zlib is 1.3.2-r1.
+#     rebuilt with Go 1.26.9, and grafana's kin-openapi is v0.149.0 and its jsonschema/v6 v6.0.3 (each read from the
+#     binary's own build information); and every installed package of the origins zlib, musl and brotli is the fixed
+#     one (zlib 1.3.2-r1, musl and musl-utils 1.2.6-r3, brotli-libs 1.2.1-r0).
 #  1. As it ships, set up as production-full (no call-centre project): Grafana starts, render-dashboards writes the
 #     eight production pages, the four datasources are inserted, /api/search answers 401 without an IAP assertion,
 #     Grafana (PID 1) runs as uid 10001 and gid 10001, the config, IAP's pinned keys, provisioning, dashboards and
@@ -88,31 +90,47 @@ for b in grafana grafana-server grafana-cli; do
   docker cp "$name:/usr/share/grafana/bin/$b" "$work/bin/$b" >/dev/null
 done
 docker rm "$name" >/dev/null
-# Each binary's Go, from its build information (Go 1.18's format: the magic, then, with flag 2, the version as a
-# varint-length string 32 bytes in), so the check needs no Go of its own.
-python3 - "$work/bin" <<'EOF' || fail "Grafana's binaries are not all built with go1.26.9"
+# Each binary's Go and modules, from its build information (Go 1.18's format: the magic, then, with flag 2, the
+# version and the module list as varint-length strings 32 bytes in, the list between two 16-byte sentinels), so the
+# check needs no Go of its own.
+python3 - "$work/bin" <<'EOF' || fail "Grafana's binaries are not all go1.26.9 builds, with grafana's two raised modules"
 import os, sys
-for name in ("grafana", "grafana-server", "grafana-cli"):
-    data = open(os.path.join(sys.argv[1], name), "rb").read()
-    at = data.find(b"\xff Go buildinf:")
-    if at < 0 or not data[at + 15] & 2:
-        sys.exit(f"{name}: no readable Go build information")
-    at, length, shift = at + 32, 0, 0
+
+def string(data, at):
+    length, shift = 0, 0
     while True:
         byte = data[at]
         at += 1
         length |= (byte & 0x7F) << shift
         shift += 7
         if byte < 0x80:
-            break
-    version = data[at:at + length].decode()
+            return data[at:at + length], at + length
+
+RAISED = {"github.com/getkin/kin-openapi": "v0.149.0", "github.com/santhosh-tekuri/jsonschema/v6": "v6.0.3"}
+for name in ("grafana", "grafana-server", "grafana-cli"):
+    data = open(os.path.join(sys.argv[1], name), "rb").read()
+    at = data.find(b"\xff Go buildinf:")
+    if at < 0 or not data[at + 15] & 2:
+        sys.exit(f"{name}: no readable Go build information")
+    version, at = string(data, at + 32)
+    version = version.decode()
     print(f"   {name}: {version}")
     if version != "go1.26.9":
         sys.exit(f"{name} is built with {version}")
+    if name == "grafana":
+        deps = dict(line.split("\t")[1:3] for line in string(data, at)[0][16:-16].decode().splitlines()
+                    if line.startswith("dep\t"))
+        for path, want in RAISED.items():
+            if deps.get(path) != want:
+                sys.exit(f"grafana's {path} is {deps.get(path)}, not {want}")
+            print(f"   grafana: {path} {want}")
 EOF
-zlib="$(docker run --rm --network none --entrypoint apk "$tag" info -v 2>/dev/null | grep '^zlib-' || true)"
-[ "$zlib" = zlib-1.3.2-r1 ] || fail "the image's zlib is '$zlib', not zlib-1.3.2-r1"
-echo "   $zlib"
+packages="$(docker run --rm --network none --entrypoint awk "$tag" -F: \
+  '/^P:/ { p = $2 }; /^V:/ { v = $2 }; /^o:(brotli|musl|zlib)$/ { print p "-" v }' /lib/apk/db/installed \
+  | sort | tr '\n' ' ' || true)"
+[ "$packages" = "brotli-libs-1.2.1-r0 musl-1.2.6-r3 musl-utils-1.2.6-r3 zlib-1.3.2-r1 " ] ||
+  fail "the image's zlib, musl and brotli packages are '$packages', not the fixed ones"
+echo "   $packages"
 
 # A throwaway ES256 key ("good", whose set replaces the baked one in part 2), another ("other"), and the signer.
 mkdir -p "$work/check"

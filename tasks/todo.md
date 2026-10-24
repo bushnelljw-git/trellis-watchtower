@@ -181,6 +181,53 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     (e2-highcpu-8) or a longer step. Its start check (`image_start_check.sh`, plain `docker build`) compiles it in
     this Mac's Docker VM too, which has too little memory now.
 
+- [x] IMG3 (2026-10-24, for the orchestrating session) the cloud image through the builder's scan policy again,
+  branch `image/cve-2026-10-24`. tpa-platform's build b5453d1f of fe9302a (pipeline 0a03db5f, project
+  trellistpa-tpa-build) built, pushed (untagged, `watchtower@sha256:ad46b81b2450312d...`) and scanned the image; its
+  policy step refused five findings, and only the two Tempo entries matched. Fixed, not excepted:
+  - [x] What carries each, from the image's Container Analysis occurrences (read only): github.com/getkin/kin-openapi
+    v0.147.0 in `/usr/share/grafana/bin/grafana` alone (grafana-server and grafana-cli carry none of it):
+    CVE-2026-100352 (HIGH, fixed in v0.148.0), CVE-2026-100353 and CVE-2026-100354 (HIGH, fixed in v0.149.0); musl
+    1.2.6-r2 (packages musl and musl-utils; CVE-2026-107891, no severity, fixed in 1.2.6-r3) and brotli 1.2.0-r1
+    (package brotli-libs, which libcurl links; CVE-2026-111497, no severity, fixed in 1.2.1-r0), both read by origin
+    from `/lib/apk/db/installed`. The Go module andybalholm/brotli v1.2.2 in grafana is another package, not reported.
+  - [x] kin-openapi v0.149.0, the first release with all three fixes (its advisories GHSA-rj39-cv6w-8wv7,
+    GHSA-vrcc-3ch7-hppw, GHSA-g8cf-rcjf-c8cf), and with it jsonschema/v6 v6.0.2 to v6.0.3, which v0.149.0 requires
+    (the move is part of CVE-2026-100352's fix; without it -mod=readonly refuses the build): `go mod edit -require` on
+    the fetched v12.4.12 source and their four go.sum lines pinned as sum.golang.org lists them, so -mod=readonly and
+    every checksum stay. grafana's module list must be the official one's but for exactly those two lines (the
+    official list rewritten by an awk keyed on path and version, then `cmp`). Not Grafana 12.4.13 (published
+    2026-10-13, Go 1.26.9): it still pins v0.147.0, so the rebuild would stay and a whole release would move with it.
+    Grafana's release-12.4.14 branch (unreleased) makes the same two moves, to v0.151.0 (80927128); v0.149.0 is nine
+    commits over v0.147.0 (+364/-13 outside the tests), v0.151.0 some ninety, with a schema-validator rewrite and
+    removed globals, so the smaller move is taken.
+  - [x] musl and musl-utils 1.2.6-r3 (Alpine 3.24 main, 2026-10-21) and brotli-libs 1.2.1-r0 (2026-10-22), by sha256
+    per architecture, in the zlib stage beside zlib (the stage keeps its name: tpa-platform's
+    `image_start_check.sh` holds the Dockerfile to exactly its five stages by name); each file's size and control
+    hash match Alpine's signed APKINDEX. The one apk step installs all four with no repository and no network, then
+    requires every installed package of the origins zlib, musl and brotli to be the fixed one.
+  - [x] Proved on this Mac. The zlib stage built by BuildKit from the Dockerfile itself (`--target zlib`, exported,
+    every checksum held). The image's apk RUN, taken from the Dockerfile, run offline as root in the pinned base:
+    four upgrades, its check passes, curl then links brotli 1.2.1, and apk and Grafana still run. A tampered musl
+    package is refused (exit 1), and leaving musl-utils out fails the check. The grafana-build RUN's steps run on the
+    host with Go 1.26.9 (the Docker VM's disk is too full for the 8 GB of caches): the raise resolves to v0.149.0 and
+    v6.0.3 under -mod=readonly in workspace mode, the three binaries build for linux/amd64 and linux/arm64, and each
+    module list equals the official one, rewritten by the Dockerfile's own awk, which gives the same output under
+    Alpine 3.24's busybox. On both architectures (the official amd64 binary is sha256 886193624f20..., the one named
+    above), grafana-server and grafana-cli are unchanged. The rebuilt arm64 binaries in the pinned base, offline as
+    10001 with cloud/'s config: production renders 19 pages, inserts four datasources, logs no error and answers 401
+    without IAP. A Viewer signed in with a throwaway key gets 200 on search, the overview (legacy and app-platform
+    APIs) and /openapi/v3, and 403 on a write.
+  - [x] `tests/cloud/test_image_policy.py` (13 tests): both architectures of the four packages from Alpine 3.24 main,
+    the five stages by name, the raise and its four go.sum lines, no go get, tidy, -mod=mod or sum-database bypass,
+    the official list rewritten by the two lines alone, the apk step and its origin check; 19 mutants each red.
+    `scripts/cloud_image_check.sh` step 0 now also reads grafana's two modules from its build information and the
+    packages by origin (checked here on the host binaries, a go1.26.9 grafana still at v0.147.0, and the base).
+  - [ ] Only Cloud Build proves the compile in golang:1.26.9-alpine3.24 (its RUN, `cmp` included), the scan clean of
+    these five, and the policy, sign and tag. Not run here: `make cloud-image-check` and tpa-platform's
+    `image_start_check.sh watchtower`, because the Docker VM had under 1 GB of disk free (below). kin-openapi's
+    GHSA-g3f9-hcw7-r9w2 (MEDIUM, no CVE yet, fixed in v0.150.0) stays below the gate.
+
 - [x] CAT (2026-10-24, for the backups check below) the catalogue at tpa-platform master `52a17003` (from `64391438`,
   157 commits), branch `backups/check`; the tests pin its Terraform at the same commit:
   - [x] call-center's svc-voice event loop charted on Call centre (R5077, I-5133: `voice_loop_lag`, `_ms`,

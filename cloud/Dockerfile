@@ -9,8 +9,9 @@
 # disabled in grafana.ini. Only the core stackdriver (Cloud Monitoring) datasource is used.
 #
 # Every base is pinned by digest, each a multi-platform index (linux/amd64 among its manifests), and everything
-# fetched is pinned by its hash: Grafana's source by its commit, its Go modules by its own go.sum and go.work.sum, and
-# the zlib package by its sha256. No build argument and no secret.
+# fetched is pinned by its hash: Grafana's source by its commit, its Go modules by its own go.sum and go.work.sum (the
+# two raised below by the go.sum lines pinned there), and the Alpine packages by their sha256. No build argument and
+# no secret.
 
 # --- Grafana 12.4.12, as Grafana built it ---------------------------------------------------------------------------
 #
@@ -32,11 +33,23 @@ FROM grafana/grafana:12.4.12@sha256:83be3e511ede559bee80e2215bb1987cb1246075461c
 # Grafana's release build (from its security mirror's release-12.4.12#patched branch) compiled nothing the public
 # source lacks.
 #
-# The modules: GOFLAGS=-mod=readonly, so every module is the version Grafana's go.mod and go.work name, and each
-# download is checked against go.sum and go.work.sum at that commit; nothing may add or change one. The RUN then
-# requires each rebuilt binary's module list and build settings (`go version -m`, all but its first line, which names
-# the file and its Go) to be the official binary's exactly, so the only difference is the Go toolchain. The module and
-# build caches (some 3 GB and 5 GB) are emptied in the same RUN, so the stage keeps only the three binaries.
+# The modules: GOFLAGS=-mod=readonly, so every module is the version Grafana's go.mod and go.work name (but the two
+# raised below), and each download is checked against go.sum and go.work.sum at that commit and the four lines pinned
+# below; nothing else may add or change one. The RUN then requires each rebuilt binary's module list and build
+# settings (`go version -m`, all but its first line, which names the file and its Go) to be the official binary's
+# exactly, but for grafana's two raised lines, so the only differences are the Go toolchain and those two modules. The
+# module and build caches (some 3 GB and 5 GB) are emptied in the same RUN, so the stage keeps only the three binaries.
+#
+# kin-openapi: tpa-platform's build b5453d1f (2026-10-24, trellis-watchtower fe9302a) failed its policy step on
+# github.com/getkin/kin-openapi v0.147.0, compiled into grafana alone (grafana-server and grafana-cli carry none of it):
+# CVE-2026-100352 (HIGH, fixed in v0.148.0), CVE-2026-100353 and CVE-2026-100354 (HIGH, each fixed in v0.149.0). So
+# the source's go.mod is raised to v0.149.0, the first release with all three fixes, and with it
+# github.com/santhosh-tekuri/jsonschema/v6 from v6.0.2 to v6.0.3, which v0.149.0 requires (the move is part of
+# CVE-2026-100352's fix) and without which -mod=readonly refuses the build. Their four go.sum lines are pinned here as
+# sum.golang.org lists them, so each download is checked against them. Grafana 12.4.13 (published 2026-10-13, Go
+# 1.26.9) still pins v0.147.0; its release-12.4.14 branch (unreleased on 2026-10-24) makes the same two moves, to
+# v0.151.0 (commit 80927128), which also rewrites kin-openapi's schema validator. When a release carries the fix and
+# Go 1.26.9 or later, moving to it drops the rebuild.
 FROM scratch AS grafana-source
 ADD --checksum=60d1cb9522f234508f98e9c88295cc920c965d10 https://github.com/grafana/grafana.git#v12.4.12 /
 
@@ -51,12 +64,25 @@ COPY --from=grafana /usr/share/grafana/bin/ /w/official/
 WORKDIR /w/grafana
 RUN set -eu; \
     test "$(go env GOVERSION)" = "go1.26.9"; \
+    go mod edit -require=github.com/getkin/kin-openapi@v0.149.0 \
+      -require=github.com/santhosh-tekuri/jsonschema/v6@v6.0.3; \
+    printf '%s\n' \
+      'github.com/getkin/kin-openapi v0.149.0 h1:ZbhmVJ4yq5RZDUsyP8lcBcGMsjsaTqXEFt6isdtMDfA=' \
+      'github.com/getkin/kin-openapi v0.149.0/go.mod h1:1+BHDzstro+P5CKtPy1X4PfofnFgmRe6uvMy9+r9fKY=' \
+      'github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 h1:1EYB5IzjZawrrnELUi78f9fPu57HuXjmddZPjrls/28=' \
+      'github.com/santhosh-tekuri/jsonschema/v6 v6.0.3/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=' \
+      >> go.sum; \
     stamps="-X main.version=12.4.12 -X main.commit=60d1cb9522f234508f98e9c88295cc920c965d10"; \
     stamps="$stamps -X main.buildBranch=v12.4.12 -X main.buildstamp=1790671435"; \
     for cmd in grafana grafana-server grafana-cli; do \
       go build -buildvcs=false -trimpath -ldflags "$stamps" -o "/out/$cmd" "./pkg/cmd/$cmd"; \
       test "$(go version "/out/$cmd")" = "/out/$cmd: go1.26.9"; \
-      go version -m "/w/official/$cmd" | sed 1d > "/w/$cmd.official"; \
+      go version -m "/w/official/$cmd" | sed 1d | awk -F '\t' -v OFS='\t' ' \
+        $3 == "github.com/getkin/kin-openapi" && $4 == "v0.147.0" { \
+          $4 = "v0.149.0"; $5 = "h1:ZbhmVJ4yq5RZDUsyP8lcBcGMsjsaTqXEFt6isdtMDfA=" }; \
+        $3 == "github.com/santhosh-tekuri/jsonschema/v6" && $4 == "v6.0.2" { \
+          $4 = "v6.0.3"; $5 = "h1:1EYB5IzjZawrrnELUi78f9fPu57HuXjmddZPjrls/28=" }; \
+        { print }' > "/w/$cmd.official"; \
       go version -m "/out/$cmd" | sed 1d > "/w/$cmd.rebuilt"; \
       grep -qxF "$(printf '\tbuild\tCGO_ENABLED=0')" "/w/$cmd.rebuilt"; \
       cmp "/w/$cmd.official" "/w/$cmd.rebuilt"; \
@@ -64,20 +90,39 @@ RUN set -eu; \
     test "$(/out/grafana -v)" = "grafana version 12.4.12"; \
     go clean -cache -modcache; \
     chmod 0555 /out/grafana /out/grafana-server /out/grafana-cli; \
-    echo "grafana, grafana-server, grafana-cli: 12.4.12 (60d1cb95), go1.26.9, the official module list, checked"
+    echo "grafana, grafana-server, grafana-cli: 12.4.12 (60d1cb95), go1.26.9, the official module list but" \
+      "kin-openapi v0.149.0 and jsonschema/v6 v6.0.3, checked"
 
-# --- zlib 1.3.2-r1 ---------------------------------------------------------------------------------------------------
+# --- zlib 1.3.2-r1, musl 1.2.6-r3, brotli 1.2.1-r0 ------------------------------------------------------------------
 #
 # The base's Alpine 3.24.2 has zlib 1.3.2-r0, and Container Scanning reports CVE-2026-85091 (HIGH) in it, fixed in
 # 1.3.2-r1 (in Alpine 3.24's main repository since 2026-10-07; no Alpine or Grafana image carries it yet). The base
-# keeps zlib for curl and apk. Both architectures' packages, by sha256, from Alpine's own repository; the RUN below
-# installs this machine's with no repository and no network, and apk still checks the package's own signature against
-# the base's Alpine keys.
+# keeps zlib for curl and apk. tpa-platform's build b5453d1f (2026-10-24, trellis-watchtower fe9302a) found two more,
+# each with no severity yet, which its policy refuses as it refuses a CRITICAL: CVE-2026-107891 in musl 1.2.6-r2
+# (packages musl and musl-utils), fixed in 1.2.6-r3 (Alpine 3.24 main, 2026-10-21), and CVE-2026-111497 in brotli
+# 1.2.0-r1 (package brotli-libs, which libcurl links), fixed in 1.2.1-r0 (2026-10-22). Container Scanning names each by
+# its origin, as /lib/apk/db/installed records it. Both architectures' packages, by sha256, from Alpine's own
+# repository; the RUN below installs this machine's with no repository and no network (apk still checks each
+# package's own signature against the base's Alpine keys), then requires every installed package of the three origins
+# to be exactly the fixed one. The stage keeps its name, zlib: tpa-platform's start check
+# (scripts/image_start_check.sh) holds this Dockerfile to exactly these five stages, by name.
 FROM scratch AS zlib
 ADD --checksum=sha256:63aeea03c15a2f9018f81805cfc8aa926bdf5cd68921f22149c2fbb5d0ee9f47 \
     https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/zlib-1.3.2-r1.apk /x86_64/zlib-1.3.2-r1.apk
 ADD --checksum=sha256:1f77a542ac6634761b9fe38d8bdca19b154071dcfa25432e73f2bc8a0740a33f \
     https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/zlib-1.3.2-r1.apk /aarch64/zlib-1.3.2-r1.apk
+ADD --checksum=sha256:e142255d0fa397f14318996bc10378093dcc069dc3dd1b6818c8f28a789c21da \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/musl-1.2.6-r3.apk /x86_64/musl-1.2.6-r3.apk
+ADD --checksum=sha256:2e17864102278d9049c3a56f1bceed9e8cf287065617e579325123443daed8a5 \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/musl-1.2.6-r3.apk /aarch64/musl-1.2.6-r3.apk
+ADD --checksum=sha256:47263d05842c5e12d01e0369e5b5bea51733323501c00ca21968a5102de137ca \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/musl-utils-1.2.6-r3.apk /x86_64/musl-utils-1.2.6-r3.apk
+ADD --checksum=sha256:bb460bdc009e88989bd5adca8a7c8298c339cba99da11c6196c818e042fbaf49 \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/musl-utils-1.2.6-r3.apk /aarch64/musl-utils-1.2.6-r3.apk
+ADD --checksum=sha256:62a7e37e43bbfc1f8525a00ad2125fd5897135dc93b849733884cb78ffd8e26c \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/brotli-libs-1.2.1-r0.apk /x86_64/brotli-libs-1.2.1-r0.apk
+ADD --checksum=sha256:f802b9d5a329c216f02e73607cb8f662c434767e41686367ac0afcf6d0d45d64 \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/brotli-libs-1.2.1-r0.apk /aarch64/brotli-libs-1.2.1-r0.apk
 
 # --- the image -------------------------------------------------------------------------------------------------------
 FROM grafana
@@ -96,10 +141,15 @@ FROM grafana
 # Everything else the base leaves world-writable (its logs folder, unused with console logging; the AWS credentials
 # folder, unused; /var/tmp) is root's and closed here, so nothing else in the image is writable by 10001.
 USER root
-RUN --mount=type=bind,from=zlib,target=/mnt/zlib \
+RUN --mount=type=bind,from=zlib,target=/mnt/apk \
     set -eu; \
-    apk --repositories-file=/dev/null add --no-cache "/mnt/zlib/$(apk --print-arch)/zlib-1.3.2-r1.apk"; \
-    test "$(apk info -v 2>/dev/null | grep '^zlib-')" = "zlib-1.3.2-r1"
+    arch="$(apk --print-arch)"; \
+    apk --repositories-file=/dev/null add --no-cache "/mnt/apk/$arch/zlib-1.3.2-r1.apk" \
+      "/mnt/apk/$arch/musl-1.2.6-r3.apk" "/mnt/apk/$arch/musl-utils-1.2.6-r3.apk" \
+      "/mnt/apk/$arch/brotli-libs-1.2.1-r0.apk"; \
+    test "$(awk -F: '/^P:/ { p = $2 }; /^V:/ { v = $2 }; /^o:(brotli|musl|zlib)$/ { print p "-" v }' \
+      /lib/apk/db/installed | sort | tr '\n' ' ')" \
+      = "brotli-libs-1.2.1-r0 musl-1.2.6-r3 musl-utils-1.2.6-r3 zlib-1.3.2-r1 "
 COPY --from=grafana-build /out/grafana /out/grafana-server /out/grafana-cli /usr/share/grafana/bin/
 COPY grafana.ini /etc/grafana/grafana.ini
 COPY iap_keys.json /etc/grafana/iap_keys.json
