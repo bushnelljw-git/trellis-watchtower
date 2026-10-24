@@ -84,3 +84,5 @@ groups:
         expr: "sum by (reason_code) (count_over_time({stack=\"tpa\", service=\"auth\"} |~ `\"msg\": ?\"not_ready\"` | json rc=\"reason\" | label_format reason_code=`{{ if eq (regexReplaceAll \"^[A-Za-z][A-Za-z_]{0,39}$\" .rc \"\") \"\" }}{{ .rc }}{{ else }}other{{ end }}` [30s] offset 15s))"
       - record: tw:auth_not_ready_ms:min
         expr: "min by (reason_code) (min_over_time({stack=\"tpa\", service=\"auth\"} |~ `\"msg\": ?\"not_ready\"` | json rc=\"reason\" | label_format reason_code=`{{ if eq (regexReplaceAll \"^[A-Za-z][A-Za-z_]{0,39}$\" .rc \"\") \"\" }}{{ .rc }}{{ else }}other{{ end }}` | label_format ts=`{{ unixEpochMillis __timestamp__ }}` | unwrap ts [1m]))"
+      - record: tw:velocity_lines:count10m
+        expr: "sum by (code, decision) (count_over_time({stack=\"tpa\", service=\"records\"} |= `\"message\":\"velocity\"` | json code, decision | code=~\"velocity_(flag|hold|freeze)\" [10m]))"

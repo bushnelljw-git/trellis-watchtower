@@ -719,12 +719,12 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "sum by (decision) (count_over_time({stack=\"tpa\", service=\"records\"} | json decision | __error__=\"\" | decision!=\"\" [$__auto]))",
+          "expr": "sum by (decision) (count_over_time({stack=\"tpa\", service=\"records\"} | json decision, code | __error__=\"\" | decision!=\"\" | code!~\"velocity_.*\" [$__auto]))",
           "legendFormat": "{{decision}}",
           "queryType": "range"
         }
       ],
-      "description": "The authorize gate's decision on each operation call (allow or deny), parsed at query time. records logs no duration today, so there is no latency panel.",
+      "description": "The authorize gate's decision on each operation call (allow or deny), parsed at query time. records logs no duration today, so there is no latency panel. records' velocity lines (enforce or report) are left out: the Security page charts them.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -795,12 +795,12 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "topk(15, sum by (gate, code) (count_over_time({stack=\"tpa\", service=\"records\"} | json gate, code | __error__=\"\" | code!=\"\" [$__range])))",
+          "expr": "topk(15, sum by (gate, code) (count_over_time({stack=\"tpa\", service=\"records\"} | json gate, code | __error__=\"\" | code!=\"\" | code!~\"velocity_.*\" [$__range])))",
           "legendFormat": "",
           "queryType": "instant"
         }
       ],
-      "description": "gate and code are parsed from the line at query time (CONTRACT \u00a77 error codes).",
+      "description": "gate and code are parsed from the line at query time (CONTRACT \u00a77 error codes). records' velocity lines carry a code but are not refusals, so they are left out (the Security page charts them); a call a hold or freeze refused is here, as `denied`.",
       "fieldConfig": {
         "defaults": {
           "color": {

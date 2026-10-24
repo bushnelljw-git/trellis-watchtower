@@ -162,6 +162,47 @@ loki.process "scrub" {
 		}
 	}
 
+	// 4b. records' velocity lines (bodyfirst tasks/security-watch SPEC §7:
+	//     the limit's flag, hold and freeze, a settings change, a lift or a
+	//     clear, the meter failing): REBUILD the line from an allowlist, so a
+	//     field records adds later never ships unread. Each kept value is
+	//     closed: the message, code, decision, reason (a measure, a setting or
+	//     a clear's half) and role must be one of the contract's words, else
+	//     they read "other"; numbers must be digits. principal_id, tenant_id
+	//     and any member, name or other field are not copied.
+	stage.match {
+		selector = `{service="records"} |~ "\"(?:message|code)\":\\s*\"velocity"`
+
+		stage.json {
+			expressions = {
+				v_ts       = "ts",
+				v_level    = "level",
+				v_message  = "message",
+				v_request  = "request_id",
+				v_op       = "op",
+				v_code     = "code",
+				v_decision = "decision",
+				v_reason   = "reason",
+				v_role     = "role",
+				v_rows     = "rows",
+				v_status   = "status",
+				v_gate     = "gate",
+				v_class    = "exc.class",
+				v_sqlstate = "exc.sqlstate",
+			}
+			drop_malformed = true
+		}
+
+		stage.template {
+			source   = "v_line"
+			template = `{{- $d := dict "service" "records" -}}{{- with .v_ts }}{{ if regexMatch "^[0-9][0-9T:.+Z-]{9,39}$" . }}{{ $_ := set $d "ts" . }}{{ end }}{{ end -}}{{- with .v_level }}{{ if regexMatch "^[A-Za-z]{3,9}$" . }}{{ $_ := set $d "level" . }}{{ end }}{{ end -}}{{- with .v_message }}{{ if regexMatch "^(velocity|velocity settings changed|velocity meter failed|velocity freeze unwritten|velocity hold lifted|velocity freeze half signed|velocity freeze cleared)$" . }}{{ $_ := set $d "message" . }}{{ else }}{{ $_ := set $d "message" "other" }}{{ end }}{{ end -}}{{- with .v_request }}{{ if regexMatch "^[A-Za-z0-9_.:-]{1,80}$" . }}{{ $_ := set $d "request_id" . }}{{ end }}{{ end -}}{{- with .v_op }}{{ if regexMatch "^[A-Za-z0-9_.:-]{1,80}$" . }}{{ $_ := set $d "op" . }}{{ end }}{{ end -}}{{- with .v_code }}{{ if regexMatch "^velocity_(flag|hold|freeze|settings_changed|meter_failed|freeze_unwritten|lift|clear_signed|cleared)$" . }}{{ $_ := set $d "code" . }}{{ else }}{{ $_ := set $d "code" "other" }}{{ end }}{{ end -}}{{- with .v_decision }}{{ if regexMatch "^(enforce|report)$" . }}{{ $_ := set $d "decision" . }}{{ else }}{{ $_ := set $d "decision" "other" }}{{ end }}{{ end -}}{{- with .v_reason }}{{ if regexMatch "^(opened_1h|opened_1d|listed_1h|listed_1d|reveals_1h|reveals_1d|hold_multiplier|freeze_multiplier|lift_minutes|lifts_per_day|mode|unbound_multiplier|admin|compliance)$" . }}{{ $_ := set $d "reason" . }}{{ else }}{{ $_ := set $d "reason" "other" }}{{ end }}{{ end -}}{{- with .v_role }}{{ if regexMatch "^(tpa_admin|claims_examiner|claims_supervisor|eligibility_specialist|member_services|care_navigator|finance|compliance_officer|plan_administrator|ops_agent|ops_supervisor|ops_admin)$" . }}{{ $_ := set $d "role" . }}{{ else }}{{ $_ := set $d "role" "other" }}{{ end }}{{ end -}}{{- with .v_rows }}{{ if regexMatch "^[0-9]{1,9}$" . }}{{ $_ := set $d "rows" (atoi .) }}{{ end }}{{ end -}}{{- with .v_status }}{{ if regexMatch "^[1-5][0-9][0-9]$" . }}{{ $_ := set $d "status" (atoi .) }}{{ end }}{{ end -}}{{- with .v_gate }}{{ if regexMatch "^[0-9]$" . }}{{ $_ := set $d "gate" (atoi .) }}{{ end }}{{ end -}}{{- $e := dict -}}{{- with .v_class }}{{ if regexMatch "^[A-Za-z_][A-Za-z0-9_]{0,99}$" . }}{{ $_ := set $e "class" . }}{{ end }}{{ end -}}{{- with .v_sqlstate }}{{ if regexMatch "^[0-9A-Z]{5}$" . }}{{ $_ := set $e "sqlstate" . }}{{ end }}{{ end -}}{{- if $e }}{{ $_ := set $d "exc" $e }}{{ end -}}{{- toJson $d -}}`
+		}
+
+		stage.output {
+			source = "v_line"
+		}
+	}
+
 	// 5. Read the fields the metadata and the drops need. Services disagree
 	//    on names: tpa_common/records write `message`, auth writes `msg`;
 	//    records writes `op` for the operation; model-gateway-style lines
@@ -262,18 +303,20 @@ loki.process "scrub" {
 
 	// 8. Strip fields the monitoring does not need and that identify a
 	//    person, tenant, session or token: tid, sid, sub (auth), act/act_sub,
-	//    principal_id, tenant_id, jti, elevation_id (records), detail (the
-	//    tpa-jobs alert's org/principal ids) and auth's `error` (its message
-	//    part can carry values; the class is kept as exc_class above).
-	//    request_id stays. First `,"k":v` anywhere (nested objects and list
-	//    items included), then a field that opens an object `{"k":v,`.
+	//    principal_id, tenant_id, jti, elevation_id (records), member_id and
+	//    subject_member_id (a member; no service logs them today, so this is
+	//    the second layer), detail (the tpa-jobs alert's org/principal ids)
+	//    and auth's `error` (its message part can carry values; the class is
+	//    kept as exc_class above). request_id stays. First `,"k":v` anywhere
+	//    (nested objects and list items included), then a field that opens an
+	//    object `{"k":v,`.
 	stage.replace {
-		expression = `(,"(?:tid|sid|sub|act|act_sub|principal_id|tenant_id|jti|elevation_id|detail|error)":(?:"(?:[^"\\]|\\.)*"|-?[0-9][0-9.eE+-]*|true|false|null|\{[^{}]*\}|\[[^\[\]]*\]))`
+		expression = `(,"(?:tid|sid|sub|act|act_sub|principal_id|tenant_id|jti|elevation_id|member_id|subject_member_id|detail|error)":(?:"(?:[^"\\]|\\.)*"|-?[0-9][0-9.eE+-]*|true|false|null|\{[^{}]*\}|\[[^\[\]]*\]))`
 		replace    = ""
 	}
 
 	stage.replace {
-		expression = `\{("(?:tid|sid|sub|act|act_sub|principal_id|tenant_id|jti|elevation_id|detail|error)":(?:"(?:[^"\\]|\\.)*"|-?[0-9][0-9.eE+-]*|true|false|null|\{[^{}]*\}|\[[^\[\]]*\]),?)`
+		expression = `\{("(?:tid|sid|sub|act|act_sub|principal_id|tenant_id|jti|elevation_id|member_id|subject_member_id|detail|error)":(?:"(?:[^"\\]|\\.)*"|-?[0-9][0-9.eE+-]*|true|false|null|\{[^{}]*\}|\[[^\[\]]*\]),?)`
 		replace    = ""
 	}
 
@@ -292,7 +335,7 @@ loki.process "scrub" {
 	// 9. Fail closed: a line that still carries any of these after the
 	//    scrub is dropped whole rather than shipped.
 	stage.drop {
-		expression          = `"(?:tid|sid|sub|act|act_sub|principal_id|tenant_id|jti|elevation_id|detail|error|headers|resp_headers)"\s*:|\?[A-Za-z_]+=|Cookie|Authorization`
+		expression          = `"(?:tid|sid|sub|act|act_sub|principal_id|tenant_id|jti|elevation_id|member_id|subject_member_id|detail|error|headers|resp_headers)"\s*:|\?[A-Za-z_]+=|Cookie|Authorization`
 		drop_counter_reason = "scrub_fail_closed"
 	}
 

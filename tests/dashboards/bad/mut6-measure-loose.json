@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut6-measure-loose",
+  "title": "Mutation: a budget template that lets any word through",
+  "panels": [
+    {
+      "type": "table",
+      "title": "loose budget",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (measure) (count_over_time({stack=\"tpa\", service=\"records\"} | json rc=\"reason\" | label_format measure=`{{ if eq (regexReplaceAll \"^[a-z0-9_ .@]+$\" .rc \"\") \"\" }}{{ .rc }}{{ else }}other{{ end }}` [1h]))"
+        }
+      ]
+    }
+  ]
+}

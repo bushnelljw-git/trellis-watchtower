@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut6-role-copy",
+  "title": "Mutation: a person's name copied into the role label",
+  "panels": [
+    {
+      "type": "table",
+      "title": "role copy",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (role) (count_over_time({stack=\"tpa\", service=\"records\"} |= `\"message\":\"velocity\"` | json role=\"member_name\" [1h]))"
+        }
+      ]
+    }
+  ]
+}

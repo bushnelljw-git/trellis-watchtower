@@ -146,13 +146,17 @@ def title_room(panel: dict) -> int:
 # Prometheus: the probe contract, the postgres db, an alert's name, a value turned into a label by count_values
 # (`code`, `state`). Loki: the stream labels, Alloy's structured metadata, and the labels the dashboards derive
 # from them: `where` (operation or route), `area`, `status_class`, `msg_name`/`reason_code` (a message's or reason's
-# constant name; anything else is replaced by "other" before it is grouped), records' `gate`/`decision`, auth's
+# constant name; anything else is replaced by "other" before it is grouped), records' `gate`/`decision`, records'
+# velocity line's `role` (one internal role name; Alloy rebuilds that line and turns any other value into "other")
+# and `measure` (its reason: a measure, a setting or a clear's half, one of fourteen words or "other": the vetted
+# template below), auth's
 # `release`, `dash` (the dashboard a row links to), `check` (service and probe joined) and `rank` (a problem's
 # severity, a constant 0, 1 or 9), and the headline's roll-up name: `lead` (a stack's name), `others` (a count of
 # stacks, from count_values) and `scope` (the two joined, "TPA + 1 stack").
 LOCAL_LABELS = {"stack", "service", "probe", "db", "job", "code", "state", "alertname", "level", "exc_class", "sqlstate",
                 "operation", "route", "outcome", "status", "status_class", "lane", "gate", "decision", "where", "area",
-                "msg_name", "reason_code", "release", "dash", "check", "rank", "lead", "others", "scope"}
+                "msg_name", "reason_code", "release", "dash", "check", "rank", "lead", "others", "scope", "role",
+                "measure"}
 # Recording rules whose own labels are all on the list, so they may be read without an aggregation.
 LOCAL_BARE_SERIES = {"stack:probe_success:max_over_time1h"}
 AGGREGATIONS = {"sum", "min", "max", "avg", "group", "stddev", "stdvar", "count", "count_values", "bottomk", "topk",
@@ -181,11 +185,18 @@ VETTED_LABEL_FORMATS = {
                  "{{ else }}other{{ end }}"),
     ("reason_code", '{{ if eq (regexReplaceAll "^[A-Za-z][A-Za-z_]{0,39}$" .rc "") "" }}{{ .rc }}{{ else }}other'
                     "{{ end }}"),
+    # records' velocity reason: one of the contract's fourteen words (the six measures, the six tenant settings, a
+    # clear's two halves; scripts/gen_home.py VELOCITY_REASONS), else "other". reason_code would turn the measures
+    # into "other": they hold digits.
+    ("measure", '{{ if eq (regexReplaceAll "^(opened_1h|opened_1d|listed_1h|listed_1d|reveals_1h|reveals_1d|'
+                'hold_multiplier|freeze_multiplier|lift_minutes|lifts_per_day|mode|unbound_multiplier|admin|'
+                'compliance)$" .rc "") "" }}{{ .rc }}{{ else }}other{{ end }}'),
 }
 # The fields each vetted template reads, pinned: the template is safe only fed from these.
 VETTED_SOURCES = {
     "msg_name": {"m1": "msg", "m2": "message"},
     "reason_code": {"rc": "reason"},
+    "measure": {"rc": "reason"},
     "n": {"f": "tenants_failed", "p": "tenants_partial", "k": "tenants_skipped"},
 }
 # `| json label="field"` into a listed label from a field of another name.

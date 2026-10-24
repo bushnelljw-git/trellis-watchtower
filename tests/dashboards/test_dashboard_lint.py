@@ -88,6 +88,13 @@ class DashboardLintTest(unittest.TestCase):
             'VETTED_UNWRAPS',
             'mut5-unwrap-member-number.json: panel "member number": query A: `| unwrap x` reads a number that is not',
             'mut5-regexp-digits-identifier.json: panel "digits": query A: uses a `| regexp` that is not one of VETTED',
+            # The Security page's two labels (records' velocity lines): a role is never copied from another field,
+            # and a budget is only ever one of the contract's five words.
+            'mut6-measure-other-source.json: panel "budget source": query A: `| label_format measure=...` reads `rc`, '
+            'which must be set once',
+            'mut6-measure-loose.json: panel "loose budget": query A: `| label_format measure=...` is not one of VETTED',
+            'mut6-role-copy.json: panel "role copy": query A: `| json role="member_name"` copies another field into '
+            'the listed label `role`',
             # Loki's recording rules are queries too.
             'mut5-loki-rules.yml:7: is a log query',
             'mut5-loki-rules.yml:9: `by (...)` names the label `member`',

@@ -19,7 +19,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOKI_URL="${LOKI_URL:-http://127.0.0.1:4392}"
 RUN_DIR="${FIXTURES_RUN_DIR:-$ROOT/.fixtures-run}"
 FIXTURES="$ROOT/tests/fixtures/logs"
-EXPECTED_TOTAL=21
+EXPECTED_TOTAL=32
 WAIT_SECONDS="${WAIT_SECONDS:-120}"
 
 command -v jq >/dev/null || { echo "scrub-check: jq is required" >&2; exit 2; }
@@ -86,7 +86,7 @@ echo "must be zero:"
 # The SPEC's pattern (json_data|Request options|\?[A-Za-z_]+=|"tid"|Cookie)
 # widened: more id names (as keys, since "error" is also a Caddy level value)
 # and every Caddy header/address field.
-check 'forbidden (bodies, query strings, ids, headers)' "$(count '{stack="fixture"} |~ `json_data|Request options|\?[A-Za-z_]+=|"(tid|sid|principal_id|tenant_id)"|"(sub|act|act_sub|jti|elevation_id|detail|error)"\s*:|Cookie|Authorization|remote_ip|client_ip|resp_headers|"headers"|User-Agent`')" eq 0
+check 'forbidden (bodies, query strings, ids, headers)' "$(count '{stack="fixture"} |~ `json_data|Request options|\?[A-Za-z_]+=|"(tid|sid|principal_id|tenant_id|member_id|subject_member_id)"|"(sub|act|act_sub|jti|elevation_id|detail|error)"\s*:|Cookie|Authorization|remote_ip|client_ip|resp_headers|"headers"|User-Agent`')" eq 0
 check 'DEBUG (metadata)' "$(count '{stack="fixture"} | level="DEBUG"')" eq 0
 check 'DEBUG (raw level field)' "$(count '{stack="fixture"} |~ `(?i)"(level|severity)":"debug"`')" eq 0
 check 'auth error message text' "$(count '{stack="fixture", service="auth"} |~ `duplicate key|<email>|invitations_email_key`')" eq 0
@@ -95,6 +95,10 @@ check 'traceback text' "$(count '{stack="fixture"} |~ `Traceback|File "|ValueErr
 check 'connectors raw row id' "$(count '{stack="fixture", service="connectors"} |= `01J9ZFXROW`')" eq 0
 check 'jobs alert detail ids' "$(count '{stack="fixture", service="tpa-jobs-drains"} |~ `prn-fx|org-fx|tnt-fx`')" eq 0
 check 'records id values' "$(count '{stack="fixture", service="records"} |~ `elv-fx|sa-fx|prn-fx|tnt-fx|jti-fx|ses-fx`')" eq 0
+# records' velocity lines are rebuilt from an allowlist (alloy/config.alloy, 4b): a member, a name, an address or any
+# field the contract does not name never ships, and a value off the contract's lists reads "other".
+check 'records member ids, names and addresses' "$(count '{stack="fixture", service="records"} |~ `(?i)(mem-fx|jane|fixture@|member_name|member_ids)`')" eq 0
+check 'velocity lines carry the contract fields only' "$(count '{stack="fixture", service="records"} |= `"message":"velocity"` |~ `"(door|roles|act_sub|elevation_id)"`')" eq 0
 check 'auth id values' "$(count '{stack="fixture", service="auth"} |~ `usr-fx|ses-fx|jti-fx|tnt-fx|sa-fx`')" eq 0
 check 'streams service=model-gateway (all stacks)' "$(series '{service="model-gateway"}')" eq 0
 check 'streams service=dev-vendor-sink (all stacks)' "$(series '{service="dev-vendor-sink"}')" eq 0
@@ -103,6 +107,17 @@ echo "must arrive:"
 check 'total lines this run' "$total" eq "$EXPECTED_TOTAL"
 check 'records ERROR OperationalError/08006/claims.get' "$(count '{stack="fixture", service="records"} | level="ERROR" | exc_class="OperationalError" | sqlstate="08006" | operation="claims.get" | status="503"')" eq 1
 check 'records op -> operation (members.get)' "$(count '{stack="fixture", service="records"} | operation="members.get"')" eq 1
+check 'velocity freeze: code, decision, role, budget, rows kept' "$(count '{stack="fixture", service="records"} |= `"message":"velocity"` | json code, decision, role, reason, rows | code="velocity_freeze" | decision="enforce" | role="member_services" | reason="opened_1h" | rows="121" | level="ERROR" | operation="eligibility.get_member"')" eq 1
+check 'velocity hold: member fields gone, role kept' "$(count '{stack="fixture", service="records"} |= `"message":"velocity"` | json code, role, rows | code="velocity_hold" | role="ops_agent" | rows="1501"')" eq 1
+check 'velocity values off the lists read other' "$(count '{stack="fixture", service="records"} |= `"message":"velocity"` | json code, decision, role, reason | code="velocity_flag" | decision="report" | role="other" | reason="other"')" eq 1
+check 'velocity line in spaced JSON rebuilt, not dropped' "$(count '{stack="fixture", service="records"} |= `"message":"velocity"` | json code, decision, role, reason | code="velocity_freeze" | decision="report" | role="tpa_admin" | reason="reveals_1h"')" eq 1
+check 'velocity settings change: role and field kept' "$(count '{stack="fixture", service="records"} |= `"message":"velocity settings changed"` | json code, role, reason | code="velocity_settings_changed" | role="member_services" | reason="opened_1h" | level="WARNING"')" eq 1
+check 'velocity tenant setting: field kept, no role' "$(count '{stack="fixture", service="records"} |= `"message":"velocity settings changed"` |= `"reason":"hold_multiplier"` !~ `"role"`')" eq 1
+check 'velocity clear: a half signed keeps which half' "$(count '{stack="fixture", service="records"} |= `"message":"velocity freeze half signed"` | json code, reason | code="velocity_clear_signed" | reason="admin"')" eq 1
+check 'velocity clear: the freeze cleared' "$(count '{stack="fixture", service="records"} |= `"message":"velocity freeze cleared"` | json code | code="velocity_cleared"')" eq 1
+check 'velocity meter failed: class, SQLSTATE, gate kept' "$(count '{stack="fixture", service="records"} |= `"message":"velocity meter failed"` | level="ERROR" | exc_class="QueryCanceled" | sqlstate="57014" |= `"gate":6` |= `"code":"velocity_meter_failed"`')" eq 1
+check 'refusal by a hold keeps its reason' "$(count '{stack="fixture", service="records"} | operation="eligibility.list_members" | status="403" |= `"reason":"velocity_hold"`')" eq 1
+check 'served line: member id stripped, line kept' "$(count '{stack="fixture", service="records"} | operation="eligibility.reveal" |= `"door":"door_internal"`')" eq 1
 check 'records constraint error 23505' "$(count '{stack="fixture", service="records"} | exc_class="UniqueViolation" | sqlstate="23505"')" eq 1
 check 'tpa-api ERROR exc_class=ReadTimeout + route' "$(count '{stack="fixture", service="tpa-api"} | exc_class="ReadTimeout" | route="/v1/claims/{claim_id}"')" eq 1
 check 'auth error -> exc_class=UniqueViolation only' "$(count '{stack="fixture", service="auth"} | level="ERROR" | exc_class="UniqueViolation" | outcome="unhandled"')" eq 1

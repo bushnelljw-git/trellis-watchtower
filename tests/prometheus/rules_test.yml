@@ -247,3 +247,91 @@ tests:
       - eval_time: 25m
         alertname: WorkerStale
         exp_alerts: []
+
+  # home.yml: records' velocity lines (recorded by Loki's ruler as tw:velocity_lines:count10m, each line seen for 10
+  # minutes). An enforced freeze raises StaffAccountFrozen at once (no hold) and keeps it for 24 hours after its last
+  # sample; it is not a hold. ALERTS_FOR_STATE carries when it began, which the home page's "since" reads.
+  - interval: 1m
+    input_series:
+      - series: 'tw:velocity_lines:count10m{code="velocity_freeze",decision="enforce"}'
+        values: '_x10 1x8'
+      - series: 'tw:velocity_lines:count10m{code="velocity_flag",decision="enforce"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: StaffAccountFrozen
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: StaffAccountFrozen
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "a staff account was frozen"
+              description: "records froze a staff account in the last 24 hours: it refuses every call that person makes in that tenant. Who and why: the ops portal, Compliance, Access limits. A freeze stays until a TPA admin and a compliance officer clear it; the clear's line does not say whose freeze it ended, so this alert holds for 24 hours rather than go quiet on the wrong one. Counted from records' velocity lines by Loki's ruler; nothing is paged from this laptop."
+      - eval_time: 12m
+        alertname: StaffAccountHeld
+        exp_alerts: []
+      - eval_time: 24h15m
+        alertname: StaffAccountFrozen
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "a staff account was frozen"
+              description: "records froze a staff account in the last 24 hours: it refuses every call that person makes in that tenant. Who and why: the ops portal, Compliance, Access limits. A freeze stays until a TPA admin and a compliance officer clear it; the clear's line does not say whose freeze it ended, so this alert holds for 24 hours rather than go quiet on the wrong one. Counted from records' velocity lines by Loki's ruler; nothing is paged from this laptop."
+      - eval_time: 24h20m
+        alertname: StaffAccountFrozen
+        exp_alerts: []
+    promql_expr_test:
+      - expr: ALERTS_FOR_STATE{alertname="StaffAccountFrozen"}
+        eval_time: 12m
+        exp_samples:
+          - labels: 'ALERTS_FOR_STATE{alertname="StaffAccountFrozen",severity="page"}'
+            value: 600
+
+  # A freeze in report-only mode and a hold are StaffAccountHeld (amber), each for an hour, never StaffAccountFrozen.
+  # A freeze line with no decision counts as enforced. A flag raises nothing.
+  - interval: 1m
+    input_series:
+      - series: 'tw:velocity_lines:count10m{code="velocity_freeze",decision="report"}'
+        values: '_x10 1x8'
+      - series: 'tw:velocity_lines:count10m{code="velocity_hold",decision="enforce"}'
+        values: '_x20 1x8'
+      - series: 'tw:velocity_lines:count10m{code="velocity_freeze"}'
+        values: '_x100 1x3'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: StaffAccountFrozen
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: StaffAccountHeld
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              code: velocity_freeze
+              decision: report
+            exp_annotations:
+              summary: "a staff account would have been frozen (report only)"
+              description: "records held a staff account in the last hour (new members show without details; lists, searches, downloads and reveals are refused until the window slides or a supervisor lifts it), or, in report-only mode, would have held or frozen one. Who and why: the ops portal, Compliance, Access limits. Counted from records' velocity lines by Loki's ruler; nothing is paged from this laptop."
+      - eval_time: 1h20m
+        alertname: StaffAccountHeld
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              code: velocity_hold
+              decision: enforce
+            exp_annotations:
+              summary: "a staff account was held"
+              description: "records held a staff account in the last hour (new members show without details; lists, searches, downloads and reveals are refused until the window slides or a supervisor lifts it), or, in report-only mode, would have held or frozen one. Who and why: the ops portal, Compliance, Access limits. Counted from records' velocity lines by Loki's ruler; nothing is paged from this laptop."
+      - eval_time: 1h30m
+        alertname: StaffAccountHeld
+        exp_alerts: []
+      - eval_time: 1h45m
+        alertname: StaffAccountFrozen
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "a staff account was frozen"
+              description: "records froze a staff account in the last 24 hours: it refuses every call that person makes in that tenant. Who and why: the ops portal, Compliance, Access limits. A freeze stays until a TPA admin and a compliance officer clear it; the clear's line does not say whose freeze it ended, so this alert holds for 24 hours rather than go quiet on the wrong one. Counted from records' velocity lines by Loki's ruler; nothing is paged from this laptop."

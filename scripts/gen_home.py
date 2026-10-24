@@ -12,10 +12,12 @@ The home page answers "is anything wrong, and where" in a few seconds, and never
   - every check (state, HTTP code, latency and its trend, uptime) and its history;
   - background work, error groups and drill-down links in collapsed rows.
 
-The log-derived numbers (worker ages, ERROR and restart counts, auth's not-ready lines, the drains) are not read
-from Loki on every refresh: Loki's ruler records them every 30 s and writes them to Prometheus (loki/rules/fake/
-home.yml), and the page reads those few series. The alerts for them sit beside the probe alerts
-(prometheus/rules/home.yml). This script writes all three files, so a worker's limits live in one place.
+The log-derived numbers (worker ages, ERROR and restart counts, auth's not-ready lines, the drains, records' velocity
+lines) are not read from Loki on every refresh: Loki's ruler records them every 30 s and writes them to Prometheus
+(loki/rules/fake/home.yml), and the page reads those few series. The alerts for them sit beside the probe alerts
+(prometheus/rules/home.yml): among them "a staff account was frozen" (red) and "held" (amber), which the Security page
+(scripts/gen_security.py) explains. This script writes all three files, so a worker's limits and the velocity
+contract live in one place.
 
 Usage:
   scripts/gen_home.py                     write home.json, loki/rules/fake/home.yml and prometheus/rules/home.yml
@@ -80,6 +82,8 @@ DASH_BY_SERVICE = [
     ("tw-forge", "forge-engine"),
     ("tw-enroll", "enroll-engine"),
     ("tw-feed-ingest", "feed-ingest"),
+    # An alert's row is named after the alert: the security ones open the Security page.
+    ("tw-security", "StaffAccountFrozen|StaffAccountHeld"),
 ]
 # Services with a card of their own. Any other probed service (the TPA_NET overlay's web, connectors and
 # tpa-jobs-drains, or a target added later) lands on the "other checks" card.
@@ -146,8 +150,14 @@ def live(series: str) -> str:
 
 
 ALERTS_OWN = live(f'ALERTS{{alertstate="firing", alertname!~"{SHOWN_ALERTS}"}}')
-# A firing alert is red unless it is about a degraded check (a 2xx whose body says the database is down: amber).
-AMBER_ALERTS = "DatabaseReportedDown"
+# The alerts of our own that are amber on the headline and in "What's wrong now" (a held staff account: records
+# refuses some reads, and it clears itself); every other is red.
+OWN_AMBER_ALERTS = "StaffAccountHeld"
+ALERTS_OWN_RED = live(f'ALERTS{{alertstate="firing", alertname!~"{SHOWN_ALERTS}|{OWN_AMBER_ALERTS}"}}')
+ALERTS_OWN_AMBER = live(f'ALERTS{{alertstate="firing", alertname=~"{OWN_AMBER_ALERTS}"}}')
+# A firing alert is red unless it is about a degraded check (a 2xx whose body says the database is down) or a held
+# staff account: amber.
+AMBER_ALERTS = f"DatabaseReportedDown|{OWN_AMBER_ALERTS}"
 
 
 def with_dash(expr: str) -> str:
@@ -207,6 +217,31 @@ STARTUPS = [("auth", '{stack="tpa", service="auth"} |= "Application startup comp
             ("tpa-api", '{stack="tpa", service="tpa-api"} |= "Application startup complete"'),
             ("records", '{stack="tpa", service="records"} | operation="records.startup" |= "permissions_mode_set"')]
 
+# records' velocity lines, the limit on how many members one staff person reads (bodyfirst tasks/security-watch
+# SPEC §7): message "velocity", `code` one of velocity_flag|velocity_hold|velocity_freeze, `decision` enforce or
+# report, `reason` the measure it crossed, `role` one internal role name. A settings change is message "velocity
+# settings changed", `code` velocity_settings_changed, `reason` the field; the people's acts are velocity_lift,
+# velocity_clear_signed (`reason` admin or compliance) and velocity_cleared. Alloy rebuilds every such line from that
+# allowlist (alloy/config.alloy, 4b), so its values are closed words. The Security page (scripts/gen_security.py)
+# reads the same constants.
+RECORDS = '{stack="tpa", service="records"}'
+VELOCITY = f'{RECORDS} |= `"message":"velocity"` | json code, decision'
+VELOCITY_STATES = f'{VELOCITY} | code=~"velocity_(flag|hold|freeze)"'
+VELOCITY_SETTINGS = f'{RECORDS} |= `velocity_settings_changed` | json code, role | code="velocity_settings_changed"'
+# Every word a velocity line's `reason` may hold (SPEC §2.2, §6.5, §7.5): the six measures (members opened or
+# listed, reveals, each in the hour or the day), the six tenant settings a change can name, and the half of a clear.
+# The Alloy rebuild, the lint's `measure` template and the Security page all use this list.
+VELOCITY_MEASURES = ("opened_1h", "opened_1d", "listed_1h", "listed_1d", "reveals_1h", "reveals_1d")
+VELOCITY_REASONS = VELOCITY_MEASURES + ("hold_multiplier", "freeze_multiplier", "lift_minutes", "lifts_per_day",
+                                        "mode", "unbound_multiplier", "admin", "compliance")
+# The people's acts (SPEC §7.5) and the meter's own failures (§7.3, §7.4).
+VELOCITY_ACTS = f'{RECORDS} |= `"code":"velocity_` | json code | code=~"velocity_(lift|clear_signed|cleared)"'
+VELOCITY_FAILED = f'{RECORDS} |= `"code":"velocity_` | json code | code=~"velocity_(meter_failed|freeze_unwritten)"'
+# How long a freeze, or a hold, stays on the headline after its line. A freeze stays until two people clear it, and
+# the clear's line does not say whose freeze it ended, so it holds for a day rather than go quiet on the wrong one; a
+# hold clears itself as its window slides.
+FREEZE_SHOWN, HOLD_SHOWN = "24h", "1h"
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Recorded by Loki's ruler every 30 s (loki/rules/fake/home.yml) and written to Prometheus. A count looks at the 30 s
@@ -241,6 +276,10 @@ def loki_rules() -> list[tuple[str, str, dict]]:
          f"sum by (reason_code) (count_over_time({NOT_READY} | {REASON} [30s] offset 15s))", {}),
         ("tw:auth_not_ready_ms:min", f"min by (reason_code) (min_over_time({NOT_READY} | {REASON} | {TS_FMT} [1m]))",
          {}),
+        # records' velocity lines in the last 10 minutes, by state and mode. Each line is seen by some twenty
+        # evaluations, so one freeze line is never missed, even shipped minutes late (a count would double it; the
+        # alerts only ask whether there was one).
+        ("tw:velocity_lines:count10m", f"sum by (code, decision) (count_over_time({VELOCITY_STATES} [10m]))", {}),
     ]
     return rules
 
@@ -454,7 +493,7 @@ LOKI_BLIND = (f"(((({TPA_LINES_5M} == bool 0) and on () {FRESH}) or vector(0))"
 # checks). Red: all but degraded checks.
 PROM_PROBLEMS = f"(count({FAILING}) or 0 * count(probe:state)) + (count({ALERTS_OWN}) or vector(0))"
 PROM_RED = (f"(count(max by (stack, service, probe) (probe:state) == 1) or 0 * count(probe:state))"
-            f" + (count({ALERTS_OWN}) or vector(0))")
+            f" + (count({ALERTS_OWN_RED}) or vector(0))")
 PROM_BLIND = f'(count({SCRAPES} == 0) or 0 * count({SCRAPES})) + (absent(up{{job="blackbox"}}) or vector(0))'
 LOKI_PROBLEMS_TOTAL = f"{LOKI_PROBLEMS} + {LOKI_BLIND}"
 PROM_PROBLEMS_TOTAL = f"{PROM_PROBLEMS} + {PROM_BLIND}"
@@ -467,6 +506,7 @@ PROBLEM_KINDS = [
     ("DR", "✕ drains: ${__field.labels.state}", DOWN, "L"),
     ("PG", "▲ ${__field.labels.check} degraded · ${__field.labels.code}", WARN, "P"),
     ("WE", "▲ ${__field.labels.check} erroring", WARN, "L"),
+    ("AW", "▲ alert ${__field.labels.alertname}", WARN, "P"),
 ]
 # The watchtower's own blindness: never rolled up, always named.
 BLIND_KINDS = [
@@ -511,8 +551,12 @@ def problems(table=False, hide=False):
         prom("PG", problem_checks(2, "degraded", "1"), "▲ {{check}} degraded · {{code}}", fmt=fmt, hide=hide),
         prom("AL", with_dash(check_of(labelled(
             f'label_replace(max by (alertname) (ALERTS_FOR_STATE{{alertname!~"ProbeDown|DatabaseReportedDown"}}) * 1000'
-            f' and on (alertname) count by (alertname) ({ALERTS_OWN}), "service", "$1", "alertname", "(.*)")',
+            f' and on (alertname) count by (alertname) ({ALERTS_OWN_RED}), "service", "$1", "alertname", "(.*)")',
             state="firing", rank="0"))), "✕ alert {{alertname}}", fmt=fmt, hide=hide),
+        prom("AW", with_dash(check_of(labelled(
+            f'label_replace(max by (alertname) (ALERTS_FOR_STATE{{alertname=~"{OWN_AMBER_ALERTS}"}}) * 1000'
+            f' and on (alertname) count by (alertname) ({ALERTS_OWN_AMBER}), "service", "$1", "alertname", "(.*)")',
+            state="warning", rank="1"))), "▲ alert {{alertname}}", fmt=fmt, hide=hide),
         prom("BL", with_dash(check_of(labelled(
             f'label_replace(max by (job) (max_over_time(timestamp({SCRAPES} == 1)[24h:1m])) * 1000'
             f' and on (job) (max by (job) ({SCRAPES}) == 0), "service", "$1", "job", "(.*)")', state="not scraped",
@@ -622,7 +666,8 @@ def hero():
         HERO_ID, "stat", "", 0, 0, 9, TOP, datasource=MIXED, targets=targets,
         description="Computed on the server. A problem is a check down (three failed probes in a row: no answer, a "
                     "503 or another error) or degraded (a 2xx whose body says the database is down), a firing "
-                    "alert, auth not ready, a worker stale or erroring, a drain tick that raised or a tenant not ok. "
+                    "alert (amber for a held staff account, red for a frozen one and every other), auth not ready, a "
+                    "worker stale or erroring, a drain tick that raised or a tenant not ok. "
                     "Each side (Prometheus: checks and alerts; Loki: logs) is gated on its own count, so one going "
                     "blind never hides the other's problems. Up to three on a side show a line each; above three, "
                     "one roll-up line for that side with the earliest start and the count, red when any is red and "
@@ -657,6 +702,7 @@ def whats_wrong():
                           "firing": ("✕ firing", RED_TEXT), "tick raised": ("✕ tick raised", RED_TEXT),
                           "tenants not ok": ("✕ tenants not ok", RED_TEXT), "not ready": ("✕ not ready", RED_TEXT),
                           "degraded": ("▲ degraded", WARN), "erroring": ("▲ erroring", WARN),
+                          "warning": ("▲ firing", WARN),
                           "not scraped": ("? not scraped", WARN), "no checks": ("? no checks", WARN),
                           "no lines": ("? no log lines", WARN), "not arriving": ("? not arriving", WARN),
                           "none arriving": ("? none arriving", WARN),
@@ -742,11 +788,14 @@ def watchtower():
                     "down: Prometheus, the probe exporter, Loki or Alloy not scraped. History since: the oldest sample "
                     "it holds (every '24 h' figure covers only that). Checks loaded is amber whenever it differs from "
                     "the configured count, above it as well as below. Alerts: Prometheus' own rules (ProbeDown, "
-                    "DatabaseReportedDown, PostgresDown, AuthNotReady, WorkerStale). A rule that matches is 'pending' "
-                    "first and 'firing' after its hold (2 minutes for a probe, 1 for auth and the workers); the "
+                    "DatabaseReportedDown, PostgresDown, AuthNotReady, WorkerStale, StaffAccountFrozen, "
+                    "StaffAccountHeld). A rule that matches is 'pending' "
+                    "first and 'firing' after its hold (2 minutes for a probe, 1 for auth and the workers, none for "
+                    "a staff account); the "
                     "headline names a problem as soon as it is seen, before its alert fires. 'Alerts firing' is red "
-                    "when any of them is about an outage and amber when all are about a degraded check (a database a "
-                    "2xx reports down), matching the headline's colour for the same problems. There is no "
+                    "when any of them is about an outage or a frozen staff account, and amber when all are about a "
+                    "degraded check (a database a 2xx reports down) or a held one, matching the headline's colour "
+                    "for the same problems. There is no "
                     "Alertmanager locally: alerts are shown here only and sent nowhere, so 0 firing means no rule has "
                     "held, not that someone was told.",
         targets=[
@@ -1377,9 +1426,9 @@ def errors(y):
 
 def drill(y):
     items = [("TPA edge and API", "tw-tpa-edge-api"), ("auth-notary", "tw-auth"), ("records-service", "tw-records"),
-             ("Jobs and connectors", "tw-jobs-connectors"), ("Errors", "tw-errors"), ("Every check", "tw-overview"),
-             ("CRM · network", "tw-crm-network"), ("health-forge", "tw-forge"), ("enroll", "tw-enroll"),
-             ("feed-ingest", "tw-feed-ingest")]
+             ("Jobs and connectors", "tw-jobs-connectors"), ("Security", "tw-security"), ("Errors", "tw-errors"),
+             ("Every check", "tw-overview"), ("CRM · network", "tw-crm-network"), ("health-forge", "tw-forge"),
+             ("enroll", "tw-enroll"), ("feed-ingest", "tw-feed-ingest")]
     chips = "".join(
         f'<a href="/d/{uid}" style="display:inline-block;margin:4px 6px 4px 0;padding:6px 12px;border:1px solid {LINE};'
         f'border-radius:16px;color:{INK};text-decoration:none;font-size:14px">{t} &rarr;</a>' for t, uid in items)
@@ -1467,6 +1516,35 @@ def prom_alerts() -> list[dict]:
                          "description": "No INFO tick or summary line from this worker within its limit (the home "
                                         "page's red), for 1 minute. Quiet while Loki's rules are not arriving: the "
                                         "page says it cannot tell instead."}},
+        # records' velocity lines (VELOCITY above). Shown, never sent: no Alertmanager, and nothing on this laptop
+        # pages anyone (the cloud pages through Google's own PagerDuty channel). A missing `decision` counts as
+        # enforced, so a freeze line never goes quiet for want of one.
+        {"alert": "StaffAccountFrozen",
+         "expr": f'max(max_over_time(tw:velocity_lines:count10m{{code="velocity_freeze", decision!="report"}}'
+                 f"[{FREEZE_SHOWN}])) > 0",
+         "labels": {"severity": "page"},
+         "annotations": {"summary": "a staff account was frozen",
+                         "description": "records froze a staff account in the last 24 hours: it refuses every call "
+                                        "that person makes in that tenant. Who and why: the ops portal, Compliance, "
+                                        "Access limits. A freeze stays until a TPA admin and a compliance officer "
+                                        "clear it; the clear's line does not say whose freeze it ended, so this "
+                                        "alert holds for 24 hours rather than go quiet on the wrong one. "
+                                        "Counted from records' velocity lines by Loki's ruler; nothing is paged from "
+                                        "this laptop."}},
+        {"alert": "StaffAccountHeld",
+         "expr": f'max by (code, decision) (max_over_time(tw:velocity_lines:count10m{{code="velocity_hold"}}'
+                 f"[{HOLD_SHOWN}]) or max_over_time(tw:velocity_lines:count10m{{code=\"velocity_freeze\", "
+                 f'decision="report"}}[{HOLD_SHOWN}])) > 0',
+         "labels": {"severity": "warning"},
+         "annotations": {"summary": '{{ if eq $labels.code "velocity_freeze" }}a staff account would have been frozen'
+                                    '{{ else }}a staff account was held{{ end }}'
+                                    '{{ if eq $labels.decision "report" }} (report only){{ end }}',
+                         "description": "records held a staff account in the last hour (new members show without "
+                                        "details; lists, searches, downloads and reveals are refused until the "
+                                        "window slides or a supervisor lifts it), or, in report-only mode, would "
+                                        "have held or frozen one. Who and why: the ops portal, Compliance, Access "
+                                        "limits. Counted from records' velocity lines by Loki's ruler; nothing is "
+                                        "paged from this laptop."}},
     ]
 
 

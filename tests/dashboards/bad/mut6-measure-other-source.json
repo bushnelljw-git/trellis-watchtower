@@ -1,0 +1,24 @@
+{
+  "uid": "tw-mut6-measure-src",
+  "title": "Mutation: the vetted budget template fed from another field",
+  "panels": [
+    {
+      "type": "table",
+      "title": "budget source",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (measure) (count_over_time({stack=\"tpa\", service=\"records\"} | json rc=\"member_name\" | label_format measure=`{{ if eq (regexReplaceAll \"^(opened_1h|opened_1d|listed_1h|listed_1d|reveals_1h|reveals_1d|hold_multiplier|freeze_multiplier|lift_minutes|lifts_per_day|mode|unbound_multiplier|admin|compliance)$\" .rc \"\") \"\" }}{{ .rc }}{{ else }}other{{ end }}` [1h]))"
+        }
+      ]
+    }
+  ]
+}
