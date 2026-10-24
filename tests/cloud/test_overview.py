@@ -372,7 +372,7 @@ class OverviewTest(unittest.TestCase):
             tiles = sections(pages["overview"])[gen.DATABASES_ROW]
             dbs = ["auth-db", "tpa-db", "cc-db", "crm-db"] if env == "beta" else ["auth-db", "tpa-db", "crm-db"]
             want = dbs + [f"{db} backups ({gen.BACKUP_HOURS} h)" for db in dbs] + [
-                f"{db} point-in-time logs" for db in dbs]
+                f"{db} logs shipped" for db in dbs]
             self.assertEqual([p["title"] for p in tiles], want, env)
             for p in tiles:
                 self.assertIn("/d/tw-cloud-databases?", json.dumps(p["links"]))

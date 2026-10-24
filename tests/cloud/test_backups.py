@@ -14,10 +14,14 @@ read the same counters, each red when its condition holds:
 - `<db>-backup-failed`: a `sql_backup_failures` in five minutes (an automated backup's STATUS_ATTEMPT_FAILED or
   STATUS_FAILED entry, or a backup or restore operation's error: one bad night writes several).
 
-A failure is its own red value on each tile, and turns the tile's status red (the coordinator's ruling).
+A failure is its own red value on each tile (every failed entry in the window). The backups tile's status reads
+"✕ a backup failed" only while the newest failure is later than the newest success, each by the hour (the review of
+07178a4: beta's 2026-10-09 had a failed attempt each on auth-db and crm-db that a later attempt made good). Each tile is
+fed scenarios through tests/cloud/grafana_model.py, a model of the Grafana transformations it uses, held to Grafana by
+the same scenarios rendered with testdata.
 
 Where each is read:
-- the overview: each database's backups (30 h) and point-in-time logs (30 min) tiles under its tile in Databases, and
+- the overview: each database's backups (30 h) and logs shipped (30 min) tiles under its tile in Databases, and
   again in What's wrong now; a failed backup or archive is a problem row of its area (the area's tile counts it);
 - Databases, and the page of the area that owns each instance: a backups and point-in-time recovery row.
 
@@ -47,6 +51,7 @@ sys.path.insert(0, str(HERE))
 
 import cloud_dashboards as gen  # noqa: E402
 import dashboard_lint as lint  # noqa: E402
+import grafana_model as model  # noqa: E402
 from test_resources import (CHECKOUT_PRESENT, DASHBOARDS, ENVIRONMENTS, INFRA, INFRA_SOURCE,  # noqa: E402
                             RENDER, RENDERED, Infra, sections)
 
@@ -162,7 +167,8 @@ def check_backups_tile(panel: dict, db: str, where: str) -> list[str]:
     if panel.get("timeFrom") != f"{hours}h":
         problems.append(f"{where}: reads {panel.get('timeFrom')}, not {hours} hours")
     by_alias = {t["aliasBy"]: t for t in panel["targets"]}
-    want = {"minutes reported": SQL_UP, "backups": BACKUPS, "failed": BACKUP_FAILURES}
+    want = {"minutes reported": SQL_UP, "backups": BACKUPS, "failed": BACKUP_FAILURES,
+            "backups, newest hour": BACKUPS, "failed, newest hour": BACKUP_FAILURES}
     if {a: facts(t)["metric"] for a, t in by_alias.items()} != want:
         problems.append(f"{where}: reads {sorted((a, facts(t)['metric']) for a, t in by_alias.items())}")
     if "minutes reported" in by_alias and tsl(by_alias["minutes reported"])["perSeriesAligner"] != "ALIGN_COUNT":
@@ -177,6 +183,70 @@ def check_backups_tile(panel: dict, db: str, where: str) -> list[str]:
             ("left", "right")] != ["ran the window", "no backup"]:
         problems.append(f"{where}: ✕ none is not the window reported with no backup")
     problems += check_status(panel, where, gen.BACKUP_STATUS, "missing ×4", "a failure ×2")
+    problems += check_scenarios(panel, where, BACKUP_SCENARIOS)
+    return problems
+
+
+H = 3_600_000
+HOURS = [1_761_300_000_000 + i * H for i in range(30)]   # the tile's 30 hourly buckets, oldest first
+
+
+def hourly(**counts) -> list:
+    """A log counter's hourly points: a count in each named hour (an index into HOURS), and the zero Cloud Logging
+    writes in the hour after one."""
+    points = {}
+    for hour, n in counts.items():
+        i = int(hour.removeprefix("h"))
+        points[i] = points.get(i, 0) + n
+        points.setdefault(i + 1, 0)
+    times = [HOURS[i] for i in sorted(points) if i < len(HOURS)]
+    return [times, [points[i] for i in sorted(points) if i < len(HOURS)]]
+
+
+# (name, the frames by alias, what the tile shows). A day reported is 30 hours of 60 minutes.
+DAY = [HOURS, [60] * 30]
+BACKUP_SCENARIOS = [
+    ("healthy", {"minutes reported": DAY, "backups": hourly(h20=1)},
+     {"status": "✓ backed up", "backups or none": 1, "failed or none": 0}),
+    ("none while it reported the window", {"minutes reported": DAY},
+     {"status": "✕ none in 30 h", "backups or none": 0, "failed or none": 0}),
+    ("none, 28 hours reported", {"minutes reported": [HOURS[2:], [60] * 28]},
+     {"status": "no backup yet", "backups or none": 0, "failed or none": 0}),
+    # Beta, 2026-10-09: auth-db's attempt failed at 05:15, its backup succeeded at 10:18.
+    ("failed, then succeeded", {"minutes reported": DAY, "backups": hourly(h25=1), "failed": hourly(h20=1)},
+     {"status": "✓ backed up", "backups or none": 1, "failed or none": 1}),
+    ("succeeded, then failed", {"minutes reported": DAY, "backups": hourly(h3=1), "failed": hourly(h27=2)},
+     {"status": "✕ a backup failed", "backups or none": 1, "failed or none": 2}),
+    ("failed and succeeded in the same hour", {"minutes reported": DAY, "backups": hourly(h20=1),
+                                               "failed": hourly(h20=1)},
+     {"status": "✓ backed up", "backups or none": 1, "failed or none": 1}),
+    ("a night that failed: attempts and a final failure, no success",
+     {"minutes reported": DAY, "failed": hourly(h24=2, h26=1)},
+     {"status": "✕ none in 30 h", "backups or none": 0, "failed or none": 3}),
+    ("a failure, started since", {"minutes reported": [HOURS[20:], [60] * 10], "failed": hourly(h25=1)},
+     {"status": "✕ a backup failed", "backups or none": 0, "failed or none": 1}),
+    ("nothing arrived", {}, {}),
+]
+
+
+def scenario_frames(panel: dict, series: dict) -> list[dict]:
+    """The frames the tile's queries would return: each query's alias fed its scenario's points (a query whose
+    counter had no point in the range returns no frame); a "<x>, newest hour" query reads <x>'s."""
+    out = []
+    for t in panel["targets"]:
+        points = series.get(t["aliasBy"]) or series.get(t["aliasBy"].removesuffix(", newest hour"))
+        if points:
+            out.append(model.frame(t["refId"], t["aliasBy"], points[1], points[0]))
+    return out
+
+
+def check_scenarios(panel: dict, where: str, scenarios: list) -> list[str]:
+    problems = []
+    for name, series, want in scenarios:
+        got = model.shows(panel, scenario_frames(panel, series))
+        got = {k: v for k, v in got.items() if k in ("status", *want)}
+        if got != want:
+            problems.append(f"{where}: {name}: shows {got}, not {want}")
     return problems
 
 
@@ -211,7 +281,27 @@ def check_pitr_tile(panel: dict, db: str, where: str) -> list[str]:
                                                                                    {"fixed": str(held)}):
         problems.append(f"{where}: ran is not {held} minutes reported (the threshold's hold): {ran}")
     problems += check_status(panel, where, gen.PITR_STATUS, "stalled ×4", "a failure ×2")
+    problems += check_scenarios(panel, where, PITR_SCENARIOS)
     return problems
+
+
+MINUTES = [1_761_300_000_000 + i * 60_000 for i in range(30)]
+PITR_SCENARIOS = [
+    ("shipping", {"minutes reported": [MINUTES, [1] * 30], "shipped": [MINUTES, [0, 0, 0, 0, 1] * 6],
+                  "failed": [MINUTES[14::15], [0, 0]]},
+     {"status": "✓ shipping", "shipped or none": 6, "failed or none": 0}),
+    ("stalled: zeros", {"minutes reported": [MINUTES, [1] * 30], "shipped": [MINUTES, [0] * 30]},
+     {"status": "✕ stalled", "shipped or none": 0}),
+    ("stalled: not reported", {"minutes reported": [MINUTES, [1] * 30]}, {"status": "✕ stalled", "shipped or none": 0}),
+    ("a failure in the latest 15 minutes", {"minutes reported": [MINUTES, [1] * 30], "shipped": [MINUTES, [1] * 30],
+                                            "failed": [MINUTES[14::15], [0, 1]]},
+     {"status": "✕ archive failed", "failed or none": 1}),
+    ("a failure in the 15 before", {"minutes reported": [MINUTES, [1] * 30], "shipped": [MINUTES, [1] * 30],
+                                    "failed": [MINUTES[14::15], [1, 0]]},
+     {"status": "✓ shipping", "failed or none": 0}),
+    ("10 minutes reported, none shipped", {"minutes reported": [MINUTES[:10], [1] * 10]},
+     {"status": "no logs yet", "shipped or none": 0}),
+]
 
 
 def check_one_instance(panel: dict, db: str, where: str) -> list[str]:
@@ -246,7 +336,7 @@ def check_status(panel: dict, where: str, codes: dict, urgent: str, warning: str
 
 def tiles_of(panels: list[dict], db: str) -> tuple[dict | None, dict | None]:
     backups = next((p for p in panels if p["title"] == f"{db} backups ({gen.BACKUP_HOURS} h)"), None)
-    logs = next((p for p in panels if p["title"] == f"{db} point-in-time logs"), None)
+    logs = next((p for p in panels if p["title"] == f"{db} logs shipped"), None)
     return backups, logs
 
 
@@ -287,7 +377,7 @@ def check_backup_row(page: str, dashboard: dict, db: str, env: str) -> list[str]
     panels = next(iter(rows.values()))
     problems = []
     backups = next((p for p in panels if p["title"] == f"Backups in the last {gen.BACKUP_HOURS} hours"), None)
-    logs = next((p for p in panels if p["title"] == "Point-in-time logs (30 min)"), None)
+    logs = next((p for p in panels if p["title"] == "Logs shipped (30 min)"), None)
     problems += check_backups_tile(backups, db, f"{where} backups") if backups else [f"{where}: no backups tile"]
     problems += check_pitr_tile(logs, db, f"{where} logs") if logs else [f"{where}: no logs tile"]
     series = [p for p in panels if p["type"] == "timeseries"]
@@ -352,6 +442,9 @@ class BackupsTest(unittest.TestCase):
                         self.assertIn("judges today's backup, from 14:00 UTC", text, (env, db, page))
                         self.assertIn("a successful backup in the last 30 hours", text, (env, db, page))
                         self.assertIn("about two hours after the page", text, (env, db, page))
+                        # A failure counts only while it is newer than the newest success.
+                        self.assertIn("newest success, each by the hour", text, (env, db, page))
+                        self.assertIn("a later attempt made good reads ✓ backed up", text, (env, db, page))
 
     def test_the_windows(self):
         self.assertEqual((gen.BACKUP_HOURS, gen.BACKUP_RAN_MINUTES, gen.PITR_MINUTES, gen.PITR_RAN_MINUTES,
@@ -413,7 +506,7 @@ class MutationTest(unittest.TestCase):
 
     def test_failed_archives_over_another_window(self):
         page = self.overview("production")
-        tile = self.tile(page, "crm-db point-in-time logs")
+        tile = self.tile(page, "crm-db logs shipped")
         next(t for t in tile["targets"] if t["aliasBy"] == "failed")["timeSeriesList"]["alignmentPeriod"] = "+300s"
         self.assertTrue(any("crm-db logs: failed archives read" in p for p in check_overview(page, "production")))
 
@@ -425,9 +518,27 @@ class MutationTest(unittest.TestCase):
              if s["value"] == 2)["color"] = gen.AMBER
         self.assertTrue(any("cc-db backups: status colours" in p for p in check_overview(page, "beta")))
 
+    def test_any_failure_in_30_hours_turns_the_tile_red(self):
+        page = self.overview()
+        tile = self.tile(page, "tpa-db backups (30 h)")
+        step = next(t for t in tile["transformations"] if t["options"].get("alias") == "a failure ×2")
+        step["options"]["binary"]["left"] = {"matcher": {"id": "byName", "options": "failed or none"}}
+        self.assertIn("beta overview Databases: tpa-db backups: failed, then succeeded: shows {'status': '✕ a "
+                      "backup failed', 'backups or none': 1, 'failed or none': 1}, not {'status': '✓ backed up', "
+                      "'backups or none': 1, 'failed or none': 1}", check_overview(page, "beta"))
+
+    def test_the_newest_failure_read_without_its_hours(self):
+        page = self.overview()
+        tile = self.tile(page, "auth-db backups (30 h)")
+        tile["transformations"] = [t for t in tile["transformations"]
+                                   if not (t["id"] == "filterByValue" and t["filter"]["options"] == "E")]
+        # The zero Cloud Logging writes after a failure would read as a failure an hour later than the success.
+        self.assertTrue(any("auth-db backups: failed and succeeded in the same hour" in p
+                            for p in check_overview(page, "beta")))
+
     def test_a_failed_archive_count_not_red(self):
         page = self.overview()
-        tile = self.tile(page, "auth-db point-in-time logs")
+        tile = self.tile(page, "auth-db logs shipped")
         props = next(o["properties"] for o in tile["fieldConfig"]["overrides"]
                      if o["matcher"]["options"] == "failed or none")
         next(x for x in props if x["id"] == "thresholds")["value"]["steps"][1]["color"] = gen.AMBER
@@ -435,7 +546,7 @@ class MutationTest(unittest.TestCase):
 
     def test_another_databases_backups(self):
         page = self.overview()
-        tile = self.tile(page, "auth-db point-in-time logs")
+        tile = self.tile(page, "auth-db logs shipped")
         tile["targets"][1]["timeSeriesList"]["filters"][-1] = "*:tpa-db"
         self.assertTrue(any("shipped does not read auth-db alone" in p for p in check_overview(page, "beta")))
 

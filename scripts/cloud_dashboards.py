@@ -861,13 +861,16 @@ TERRAFORM_WARM = {"beta": ("auth-outbox-publisher", "svc-voice", "svc-twilio-res
 DEPLOYMENT_WARM = {"beta": ("auth", "records", "tpa-api", "svc-ops"), "production": ()}
 KEPT_WARM = {env: TERRAFORM_WARM[env] + tuple(s for s in DEPLOYMENT_WARM[env] if s not in TERRAFORM_WARM[env])
              for env in TERRAFORM_WARM}
-# What each root builds that the environment does not run, and why: no tile for it, said here, so a service its
-# Terraform adds and nobody placed fails tests/cloud/test_overview.py.
+# What each root builds that has no tile here, and why (a service the environment does not run, or beta's
+# file-reader, which runs with no page yet): said here, so a service its Terraform adds and nobody placed fails
+# tests/cloud/test_overview.py.
 FILE_READER_OFF = ("file_reader_enabled off by default (D-154, the roster file reader): no digest and no page here "
                    "yet; a switch turned on is a service with a page and a tile")
+FILE_READER_BETA = ("beta runs it since 2026-10-13 (its deployment's tfvars turn file_reader_enabled on; gcloud run "
+                    "services list, read only: min 0, max 10, internal ingress); no page or tile yet (tasks/todo.md)")
 NOT_RUN = {"beta": {"connectors": "connectors_enabled off: beta has no destination for it (R120)",
                     "tpa-jobs-drains": "tpa_jobs_drains_enabled off: its loops wait, idempotent, until it is on",
-                    "file-reader": FILE_READER_OFF},
+                    "file-reader": FILE_READER_BETA},
            "production": {"file-reader": FILE_READER_OFF}}
 # The module's `<service> has no instance` (its threshold condition; its absence one waits ten minutes): instance_count
 # the most in each minute, summed over revisions, below one for five minutes.
@@ -1277,39 +1280,65 @@ def status_overrides(codes: dict, counts: dict[str, tuple[str, dict]]) -> list[d
 
 def backups_status(db: str, ds: str, title: str, *, w: int = 6, h: int = 4, link: bool = False) -> dict:
     """An instance's successful automated backups in the last 30 hours and its failed ones: ✕ none in 30 h (red)
-    once it has reported 29 of them with none; ✕ a backup failed (red, and the count red on its own); ✓ backed
-    up."""
+    once it has reported 29 of them with none; ✕ a backup failed (red) while its newest failure is later than its
+    newest success, each by the hour, so a failed attempt a later one made good reads ✓ backed up; the failed count,
+    red from one, counts every failed entry in the 30 hours."""
     missing, failed = BACKUP_POLICIES["backup-missing"], BACKUP_POLICIES["backup-failed"]
     where = {"database_id": f"*:{db}"}
+
+    def newest(ref: str, field: str, at: str) -> list[dict]:
+        """The hour of the newest count of a query (its hours with one or more kept, each hour's time read as a
+        number, the latest taken); with none, no value (`<at> or none` reads 0)."""
+        only = {"id": "byRefId", "options": ref}
+        return [{"id": "filterByValue", "filter": only, "options": {"type": "include", "match": "any", "filters": [
+                    {"fieldName": field, "config": {"id": "greater", "options": {"value": 0.5}}}]}},
+                {**calc(at, "Time", "+", 0), "filter": only},
+                {"id": "reduce", "filter": only,
+                 "options": {"mode": "reduceFields", "reducers": ["max"], "includeTimeField": False}}]
     p = stat(title, ds,
              [q(SQL_UP, SQL, align="ALIGN_COUNT", period="+3600s", name="minutes reported", **where),
               q(missing["metric"], SQL, period="+3600s", name="backups", **where),
-              q(failed["metric"], SQL, period="+3600s", name="failed", **where)],
+              q(failed["metric"], SQL, period="+3600s", name="failed", **where),
+              q(missing["metric"], SQL, period="+3600s", name="backups, newest hour", **where),
+              q(failed["metric"], SQL, period="+3600s", name="failed, newest hour", **where)],
              f"{db}'s successful automated backups in the last {BACKUP_HOURS} hours (`sql_automated_backups`, "
              "windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). " +
              BACKUP_TWO_CLOCKS.replace("{db}", db) + " One backup a night, starting in a four-hour window from "
              f"{BACKUP_POLICIES['backup-missing']['start']} UTC: on beta two land up to 26.1 hours apart, so a healthy "
              f"instance always has one in {BACKUP_HOURS} hours. ✕ none in {BACKUP_HOURS} h, red: none while {db} "
              f"reported for {BACKUP_RAN_MINUTES // 60} of the {BACKUP_HOURS} hours or more; an instance started since "
-             "reads \"no backup yet\". ✕ a backup failed, red, and the failed count red (`" + db + "-backup-failed`): "
-             "one bad night writes several failed attempts and a final failure, so the count is entries, not nights. "
-             "✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute "
+             "reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`" + db + "-backup-failed`) is "
+             "later than its newest success, each by the hour, so a failed attempt that a later attempt made good "
+             "reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts "
+             "every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, "
+             "so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute "
              "chosen. " + STOPPED_DB,
              w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from=f"{BACKUP_HOURS}h", decimals=0,
              value_size=STATUS_VALUE_SIZE,
              no_value="not reporting", deps=(db,),
              links=page_links((("Databases", "databases"),)) if link else None,
              transformations=[
+                 *newest("D", "backups, newest hour", "newest backup at"),
+                 *newest("E", "failed, newest hour", "newest failure at"),
+                 # The rest summed over the range (the newest hours are one row each by now).
                  {"id": "reduce", "options": {"mode": "reduceFields", "reducers": ["sum"], "includeTimeField": False}},
                  {"id": "concatenate", "options": {"frameNameMode": "drop"}},
                  # Summed over what arrived: a counter that wrote nothing counts as none.
                  reduce_row("backups or none", "sum", ["backups"]),
                  reduce_row("failed or none", "sum", ["failed"]),
+                 reduce_row("newest backup or none", "sum", ["newest backup at"]),
+                 reduce_row("newest failure or none", "sum", ["newest failure at"]),
                  calc("ran the window /", "minutes reported", "/", BACKUP_RAN_MINUTES),
                  unary("ran the window", "floor", "ran the window /"),
-                 *at_least_one("backups or none", "backed up"), *at_least_one("failed or none", "a failure"),
+                 *at_least_one("backups or none", "backed up"),
+                 # The newest failure later than the newest success: max(failure - success, 0), at least one.
+                 calc("failure after", "newest failure or none", "-", "newest backup or none"),
+                 unary("|failure after|", "abs", "failure after"),
+                 calc("failure after +|", "failure after", "+", "|failure after|"),
+                 calc("failure later by", "failure after +|", "/", 2),
+                 *at_least_one("failure later by", "a failure since"),
                  calc("no backup", 1, "-", "backed up"), calc("missing", "ran the window", "*", "no backup"),
-                 calc("missing ×4", "missing", "*", 4), calc("a failure ×2", "a failure", "*", 2),
+                 calc("missing ×4", "missing", "*", 4), calc("a failure ×2", "a failure since", "*", 2),
                  reduce_row("status", "max", ["backed up", "a failure ×2", "missing ×4"]),
                  {"id": "organize", "options": {"includeByName": {"status": True, "backups or none": True,
                                                                   "failed or none": True},
@@ -1333,7 +1362,8 @@ def pitr_status(db: str, ds: str, title: str, *, w: int = 6, h: int = 4, link: b
               q(PITR_SHIPPED, SQL, period="+60s", name="shipped", **where),
               q(PITR_FAILED, SQL, align=failed["aligner"], period="+" + failed["period"], reduce=failed["reducer"],
                 name="failed", **where)],
-             f"Cloud SQL's point-in-time logs for {db}: write-ahead log archives shipped in the last {PITR_MINUTES} "
+             f"Cloud SQL's point-in-time recovery logs for {db}: write-ahead log archives shipped in the last "
+             f"{PITR_MINUTES} "
              "minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) "
              f"and archives that failed in the last {PITR_FAILED_MINUTES} minutes (`log_archive_failure_count`). ✕ stalled, "
              f"red: none shipped while {db} reported for {PITR_RAN_MINUTES} of the {PITR_MINUTES} minutes or more, as the "
@@ -1382,7 +1412,7 @@ def backup_rows(name: str, ds: str) -> list[dict]:
     return [
         row(f"{name}: backups and point-in-time recovery (seven days of logs)"),
         backups_status(name, ds, f"Backups in the last {BACKUP_HOURS} hours", w=6, h=5),
-        pitr_status(name, ds, f"Point-in-time logs ({PITR_MINUTES} min)", w=6, h=5),
+        pitr_status(name, ds, f"Logs shipped ({PITR_MINUTES} min)", w=6, h=5),
         series("Point-in-time logs shipped, per hour", ds, q(PITR_SHIPPED, SQL, period="+3600s", name="shipped",
                                                               **where),
                f"Write-ahead log archives Cloud SQL shipped for {name} in each hour "
@@ -1402,7 +1432,9 @@ def backup_rows(name: str, ds: str) -> list[dict]:
                f"{name}'s successful automated backups, one bar a night in the hour it was counted "
                "(`sql_automated_backups`), and failed backup entries (`sql_backup_failures`: "
                f"`{name}-backup-failed`; one bad night writes several failed attempts and a final failure, so a bar "
-               "above 1 is still a backup that failed, not several nights), per hour. "
+               "above 1 is still a backup that failed, not several nights), per hour. The backups tile beside it "
+               "reads ✕ a backup failed only while the newest failure is later than the newest success, each by the "
+               "hour: a failed attempt that a later attempt made good reads ✓ backed up. "
                + BACKUP_TWO_CLOCKS.replace("{db}", name).replace("This tile shows", "The backups tile beside it shows"),
                w=12, h=6, bars=True, decimals=0),
     ]
@@ -1893,12 +1925,12 @@ def overview(cc: bool = True, env: str = "beta") -> dict:
         row(DATABASES_ROW),
         *[db_status(db, ds, w=span) for db, ds in dbs],
         *[backups_status(db, ds, f"{db} backups ({BACKUP_HOURS} h)", w=span, link=True) for db, ds in dbs],
-        *[pitr_status(db, ds, f"{db} point-in-time logs", w=span, link=True) for db, ds in dbs],
+        *[pitr_status(db, ds, f"{db} logs shipped", w=span, link=True) for db, ds in dbs],
         *collapsed([row("What's wrong now (details): each problem of the last 15 minutes, named, by project; each "
                         f"database's backups ({BACKUP_HOURS} h) and point-in-time logs ({PITR_MINUTES} min)"),
                     *[whats_wrong(*a, w=span, env=env) for a in areas],
                     *[backups_status(db, ds, f"{db} backups ({BACKUP_HOURS} h)", w=span, link=True) for db, ds in dbs],
-                    *[pitr_status(db, ds, f"{db} point-in-time logs", w=span, link=True)
+                    *[pitr_status(db, ds, f"{db} logs shipped", w=span, link=True)
                       for db, ds in dbs]]),
         *collapsed([row("Right now (details): uptime by host"),
                     stat("Uptime by host (24 h)", APP,

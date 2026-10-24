@@ -14465,7 +14465,7 @@
     {
       "type": "stat",
       "title": "auth-db backups (30 h)",
-      "description": "auth-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `auth-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while auth-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red (`auth-db-backup-failed`): one bad night writes several failed attempts and a final failure, so the count is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "auth-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `auth-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while auth-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`auth-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -14576,6 +14576,68 @@
             "preprocessor": "none"
           },
           "aliasBy": "failed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_automated_backups",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "backups, newest hour"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_backup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:auth-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed, newest hour"
         }
       ],
       "interval": "1m",
@@ -14739,6 +14801,126 @@
       },
       "transformations": [
         {
+          "id": "filterByValue",
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          },
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "backups, newest hour",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0.5
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "newest backup at",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "0"
+              }
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "max"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "filterByValue",
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          },
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "failed, newest hour",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0.5
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "newest failure at",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "0"
+              }
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "max"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
           "id": "reduce",
           "options": {
             "mode": "reduceFields",
@@ -14778,6 +14960,34 @@
               "reducer": "sum",
               "include": [
                 "failed"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "newest backup or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "newest backup at"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "newest failure or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "newest failure at"
               ]
             }
           }
@@ -14873,13 +15083,91 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
-            "alias": "a failure +1",
+            "alias": "failure after",
             "replaceFields": false,
             "binary": {
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "failed or none"
+                  "options": "newest failure or none"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "newest backup or none"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "|failure after|",
+            "replaceFields": false,
+            "unary": {
+              "operator": "abs",
+              "fieldName": "failure after"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "failure after +|",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure after"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "|failure after|"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "failure later by",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure after +|"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure since +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure later by"
                 }
               },
               "operator": "+",
@@ -14893,20 +15181,20 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
-            "alias": "a failure /",
+            "alias": "a failure since /",
             "replaceFields": false,
             "binary": {
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "failed or none"
+                  "options": "failure later by"
                 }
               },
               "operator": "/",
               "right": {
                 "matcher": {
                   "id": "byName",
-                  "options": "a failure +1"
+                  "options": "a failure since +1"
                 }
               }
             }
@@ -14916,11 +15204,11 @@
           "id": "calculateField",
           "options": {
             "mode": "unary",
-            "alias": "a failure",
+            "alias": "a failure since",
             "replaceFields": false,
             "unary": {
               "operator": "ceil",
-              "fieldName": "a failure /"
+              "fieldName": "a failure since /"
             }
           }
         },
@@ -14997,7 +15285,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "a failure"
+                  "options": "a failure since"
                 }
               },
               "operator": "*",
@@ -15044,7 +15332,7 @@
     {
       "type": "stat",
       "title": "tpa-db backups (30 h)",
-      "description": "tpa-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `tpa-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while tpa-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red (`tpa-db-backup-failed`): one bad night writes several failed attempts and a final failure, so the count is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "tpa-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `tpa-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while tpa-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`tpa-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -15155,6 +15443,68 @@
             "preprocessor": "none"
           },
           "aliasBy": "failed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_automated_backups",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "backups, newest hour"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_backup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:tpa-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed, newest hour"
         }
       ],
       "interval": "1m",
@@ -15318,6 +15668,126 @@
       },
       "transformations": [
         {
+          "id": "filterByValue",
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          },
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "backups, newest hour",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0.5
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "newest backup at",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "0"
+              }
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "max"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "filterByValue",
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          },
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "failed, newest hour",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0.5
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "newest failure at",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "0"
+              }
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "max"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
           "id": "reduce",
           "options": {
             "mode": "reduceFields",
@@ -15357,6 +15827,34 @@
               "reducer": "sum",
               "include": [
                 "failed"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "newest backup or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "newest backup at"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "newest failure or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "newest failure at"
               ]
             }
           }
@@ -15452,13 +15950,91 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
-            "alias": "a failure +1",
+            "alias": "failure after",
             "replaceFields": false,
             "binary": {
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "failed or none"
+                  "options": "newest failure or none"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "newest backup or none"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "|failure after|",
+            "replaceFields": false,
+            "unary": {
+              "operator": "abs",
+              "fieldName": "failure after"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "failure after +|",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure after"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "|failure after|"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "failure later by",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure after +|"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure since +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure later by"
                 }
               },
               "operator": "+",
@@ -15472,20 +16048,20 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
-            "alias": "a failure /",
+            "alias": "a failure since /",
             "replaceFields": false,
             "binary": {
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "failed or none"
+                  "options": "failure later by"
                 }
               },
               "operator": "/",
               "right": {
                 "matcher": {
                   "id": "byName",
-                  "options": "a failure +1"
+                  "options": "a failure since +1"
                 }
               }
             }
@@ -15495,11 +16071,11 @@
           "id": "calculateField",
           "options": {
             "mode": "unary",
-            "alias": "a failure",
+            "alias": "a failure since",
             "replaceFields": false,
             "unary": {
               "operator": "ceil",
-              "fieldName": "a failure /"
+              "fieldName": "a failure since /"
             }
           }
         },
@@ -15576,7 +16152,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "a failure"
+                  "options": "a failure since"
                 }
               },
               "operator": "*",
@@ -15623,7 +16199,7 @@
     {
       "type": "stat",
       "title": "cc-db backups (30 h)",
-      "description": "cc-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `cc-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while cc-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red (`cc-db-backup-failed`): one bad night writes several failed attempts and a final failure, so the count is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "cc-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `cc-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while cc-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`cc-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -15734,6 +16310,68 @@
             "preprocessor": "none"
           },
           "aliasBy": "failed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-cc"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CC_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_automated_backups",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:cc-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "backups, newest hour"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-cc"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CC_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_backup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:cc-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed, newest hour"
         }
       ],
       "interval": "1m",
@@ -15897,6 +16535,126 @@
       },
       "transformations": [
         {
+          "id": "filterByValue",
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          },
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "backups, newest hour",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0.5
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "newest backup at",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "0"
+              }
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "max"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "filterByValue",
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          },
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "failed, newest hour",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0.5
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "newest failure at",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "0"
+              }
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "max"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
           "id": "reduce",
           "options": {
             "mode": "reduceFields",
@@ -15936,6 +16694,34 @@
               "reducer": "sum",
               "include": [
                 "failed"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "newest backup or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "newest backup at"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "newest failure or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "newest failure at"
               ]
             }
           }
@@ -16031,13 +16817,91 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
-            "alias": "a failure +1",
+            "alias": "failure after",
             "replaceFields": false,
             "binary": {
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "failed or none"
+                  "options": "newest failure or none"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "newest backup or none"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "|failure after|",
+            "replaceFields": false,
+            "unary": {
+              "operator": "abs",
+              "fieldName": "failure after"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "failure after +|",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure after"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "|failure after|"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "failure later by",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure after +|"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure since +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure later by"
                 }
               },
               "operator": "+",
@@ -16051,20 +16915,20 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
-            "alias": "a failure /",
+            "alias": "a failure since /",
             "replaceFields": false,
             "binary": {
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "failed or none"
+                  "options": "failure later by"
                 }
               },
               "operator": "/",
               "right": {
                 "matcher": {
                   "id": "byName",
-                  "options": "a failure +1"
+                  "options": "a failure since +1"
                 }
               }
             }
@@ -16074,11 +16938,11 @@
           "id": "calculateField",
           "options": {
             "mode": "unary",
-            "alias": "a failure",
+            "alias": "a failure since",
             "replaceFields": false,
             "unary": {
               "operator": "ceil",
-              "fieldName": "a failure /"
+              "fieldName": "a failure since /"
             }
           }
         },
@@ -16155,7 +17019,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "a failure"
+                  "options": "a failure since"
                 }
               },
               "operator": "*",
@@ -16202,7 +17066,7 @@
     {
       "type": "stat",
       "title": "crm-db backups (30 h)",
-      "description": "crm-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `crm-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while crm-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red (`crm-db-backup-failed`): one bad night writes several failed attempts and a final failure, so the count is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "crm-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `crm-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while crm-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`crm-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -16313,6 +17177,68 @@
             "preprocessor": "none"
           },
           "aliasBy": "failed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_automated_backups",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "backups, newest hour"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/sql_backup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloudsql_database",
+              "AND",
+              "resource.label.database_id",
+              "=",
+              "*:crm-db"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+3600s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed, newest hour"
         }
       ],
       "interval": "1m",
@@ -16476,6 +17402,126 @@
       },
       "transformations": [
         {
+          "id": "filterByValue",
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          },
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "backups, newest hour",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0.5
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "newest backup at",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "0"
+              }
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "max"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "filterByValue",
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          },
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "failed, newest hour",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0.5
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "newest failure at",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "0"
+              }
+            }
+          },
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          }
+        },
+        {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "max"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
           "id": "reduce",
           "options": {
             "mode": "reduceFields",
@@ -16515,6 +17561,34 @@
               "reducer": "sum",
               "include": [
                 "failed"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "newest backup or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "newest backup at"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "newest failure or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "newest failure at"
               ]
             }
           }
@@ -16610,13 +17684,91 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
-            "alias": "a failure +1",
+            "alias": "failure after",
             "replaceFields": false,
             "binary": {
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "failed or none"
+                  "options": "newest failure or none"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "newest backup or none"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "|failure after|",
+            "replaceFields": false,
+            "unary": {
+              "operator": "abs",
+              "fieldName": "failure after"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "failure after +|",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure after"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "|failure after|"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "failure later by",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure after +|"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "a failure since +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "failure later by"
                 }
               },
               "operator": "+",
@@ -16630,20 +17782,20 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
-            "alias": "a failure /",
+            "alias": "a failure since /",
             "replaceFields": false,
             "binary": {
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "failed or none"
+                  "options": "failure later by"
                 }
               },
               "operator": "/",
               "right": {
                 "matcher": {
                   "id": "byName",
-                  "options": "a failure +1"
+                  "options": "a failure since +1"
                 }
               }
             }
@@ -16653,11 +17805,11 @@
           "id": "calculateField",
           "options": {
             "mode": "unary",
-            "alias": "a failure",
+            "alias": "a failure since",
             "replaceFields": false,
             "unary": {
               "operator": "ceil",
-              "fieldName": "a failure /"
+              "fieldName": "a failure since /"
             }
           }
         },
@@ -16734,7 +17886,7 @@
               "left": {
                 "matcher": {
                   "id": "byName",
-                  "options": "a failure"
+                  "options": "a failure since"
                 }
               },
               "operator": "*",
@@ -16780,8 +17932,8 @@
     },
     {
       "type": "stat",
-      "title": "auth-db point-in-time logs",
-      "description": "Cloud SQL's point-in-time logs for auth-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while auth-db reported for 20 of the 30 minutes or more, as the urgent `auth-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `auth-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "title": "auth-db logs shipped",
+      "description": "Cloud SQL's point-in-time recovery logs for auth-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while auth-db reported for 20 of the 30 minutes or more, as the urgent `auth-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `auth-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -17391,8 +18543,8 @@
     },
     {
       "type": "stat",
-      "title": "tpa-db point-in-time logs",
-      "description": "Cloud SQL's point-in-time logs for tpa-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while tpa-db reported for 20 of the 30 minutes or more, as the urgent `tpa-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `tpa-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "title": "tpa-db logs shipped",
+      "description": "Cloud SQL's point-in-time recovery logs for tpa-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while tpa-db reported for 20 of the 30 minutes or more, as the urgent `tpa-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `tpa-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -18002,8 +19154,8 @@
     },
     {
       "type": "stat",
-      "title": "cc-db point-in-time logs",
-      "description": "Cloud SQL's point-in-time logs for cc-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while cc-db reported for 20 of the 30 minutes or more, as the urgent `cc-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `cc-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "title": "cc-db logs shipped",
+      "description": "Cloud SQL's point-in-time recovery logs for cc-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while cc-db reported for 20 of the 30 minutes or more, as the urgent `cc-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `cc-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -18613,8 +19765,8 @@
     },
     {
       "type": "stat",
-      "title": "crm-db point-in-time logs",
-      "description": "Cloud SQL's point-in-time logs for crm-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while crm-db reported for 20 of the 30 minutes or more, as the urgent `crm-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `crm-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "title": "crm-db logs shipped",
+      "description": "Cloud SQL's point-in-time recovery logs for crm-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while crm-db reported for 20 of the 30 minutes or more, as the urgent `crm-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `crm-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -23435,7 +24587,7 @@
         {
           "type": "stat",
           "title": "auth-db backups (30 h)",
-          "description": "auth-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `auth-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while auth-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red (`auth-db-backup-failed`): one bad night writes several failed attempts and a final failure, so the count is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "auth-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `auth-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while auth-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`auth-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 6,
@@ -23546,6 +24698,68 @@
                 "preprocessor": "none"
               },
               "aliasBy": "failed"
+            },
+            {
+              "refId": "D",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/sql_automated_backups",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloudsql_database",
+                  "AND",
+                  "resource.label.database_id",
+                  "=",
+                  "*:auth-db"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "+3600s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "backups, newest hour"
+            },
+            {
+              "refId": "E",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/sql_backup_failures",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloudsql_database",
+                  "AND",
+                  "resource.label.database_id",
+                  "=",
+                  "*:auth-db"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "+3600s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "failed, newest hour"
             }
           ],
           "interval": "1m",
@@ -23709,6 +24923,126 @@
           },
           "transformations": [
             {
+              "id": "filterByValue",
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              },
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "backups, newest hour",
+                    "config": {
+                      "id": "greater",
+                      "options": {
+                        "value": 0.5
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "newest backup at",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Time"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "0"
+                  }
+                }
+              },
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              }
+            },
+            {
+              "id": "reduce",
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              },
+              "options": {
+                "mode": "reduceFields",
+                "reducers": [
+                  "max"
+                ],
+                "includeTimeField": false
+              }
+            },
+            {
+              "id": "filterByValue",
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              },
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "failed, newest hour",
+                    "config": {
+                      "id": "greater",
+                      "options": {
+                        "value": 0.5
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "newest failure at",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Time"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "0"
+                  }
+                }
+              },
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              }
+            },
+            {
+              "id": "reduce",
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              },
+              "options": {
+                "mode": "reduceFields",
+                "reducers": [
+                  "max"
+                ],
+                "includeTimeField": false
+              }
+            },
+            {
               "id": "reduce",
               "options": {
                 "mode": "reduceFields",
@@ -23748,6 +25082,34 @@
                   "reducer": "sum",
                   "include": [
                     "failed"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "newest backup or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "newest backup at"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "newest failure or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "newest failure at"
                   ]
                 }
               }
@@ -23843,13 +25205,91 @@
               "id": "calculateField",
               "options": {
                 "mode": "binary",
-                "alias": "a failure +1",
+                "alias": "failure after",
                 "replaceFields": false,
                 "binary": {
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "failed or none"
+                      "options": "newest failure or none"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "newest backup or none"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "|failure after|",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "abs",
+                  "fieldName": "failure after"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "failure after +|",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure after"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "|failure after|"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "failure later by",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure after +|"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "fixed": "2"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "a failure since +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure later by"
                     }
                   },
                   "operator": "+",
@@ -23863,20 +25303,20 @@
               "id": "calculateField",
               "options": {
                 "mode": "binary",
-                "alias": "a failure /",
+                "alias": "a failure since /",
                 "replaceFields": false,
                 "binary": {
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "failed or none"
+                      "options": "failure later by"
                     }
                   },
                   "operator": "/",
                   "right": {
                     "matcher": {
                       "id": "byName",
-                      "options": "a failure +1"
+                      "options": "a failure since +1"
                     }
                   }
                 }
@@ -23886,11 +25326,11 @@
               "id": "calculateField",
               "options": {
                 "mode": "unary",
-                "alias": "a failure",
+                "alias": "a failure since",
                 "replaceFields": false,
                 "unary": {
                   "operator": "ceil",
-                  "fieldName": "a failure /"
+                  "fieldName": "a failure since /"
                 }
               }
             },
@@ -23967,7 +25407,7 @@
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "a failure"
+                      "options": "a failure since"
                     }
                   },
                   "operator": "*",
@@ -24014,7 +25454,7 @@
         {
           "type": "stat",
           "title": "tpa-db backups (30 h)",
-          "description": "tpa-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `tpa-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while tpa-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red (`tpa-db-backup-failed`): one bad night writes several failed attempts and a final failure, so the count is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "tpa-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `tpa-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while tpa-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`tpa-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 6,
@@ -24125,6 +25565,68 @@
                 "preprocessor": "none"
               },
               "aliasBy": "failed"
+            },
+            {
+              "refId": "D",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-phi"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_PHI_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/sql_automated_backups",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloudsql_database",
+                  "AND",
+                  "resource.label.database_id",
+                  "=",
+                  "*:tpa-db"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "+3600s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "backups, newest hour"
+            },
+            {
+              "refId": "E",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-phi"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_PHI_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/sql_backup_failures",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloudsql_database",
+                  "AND",
+                  "resource.label.database_id",
+                  "=",
+                  "*:tpa-db"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "+3600s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "failed, newest hour"
             }
           ],
           "interval": "1m",
@@ -24288,6 +25790,126 @@
           },
           "transformations": [
             {
+              "id": "filterByValue",
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              },
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "backups, newest hour",
+                    "config": {
+                      "id": "greater",
+                      "options": {
+                        "value": 0.5
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "newest backup at",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Time"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "0"
+                  }
+                }
+              },
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              }
+            },
+            {
+              "id": "reduce",
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              },
+              "options": {
+                "mode": "reduceFields",
+                "reducers": [
+                  "max"
+                ],
+                "includeTimeField": false
+              }
+            },
+            {
+              "id": "filterByValue",
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              },
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "failed, newest hour",
+                    "config": {
+                      "id": "greater",
+                      "options": {
+                        "value": 0.5
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "newest failure at",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Time"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "0"
+                  }
+                }
+              },
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              }
+            },
+            {
+              "id": "reduce",
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              },
+              "options": {
+                "mode": "reduceFields",
+                "reducers": [
+                  "max"
+                ],
+                "includeTimeField": false
+              }
+            },
+            {
               "id": "reduce",
               "options": {
                 "mode": "reduceFields",
@@ -24327,6 +25949,34 @@
                   "reducer": "sum",
                   "include": [
                     "failed"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "newest backup or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "newest backup at"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "newest failure or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "newest failure at"
                   ]
                 }
               }
@@ -24422,13 +26072,91 @@
               "id": "calculateField",
               "options": {
                 "mode": "binary",
-                "alias": "a failure +1",
+                "alias": "failure after",
                 "replaceFields": false,
                 "binary": {
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "failed or none"
+                      "options": "newest failure or none"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "newest backup or none"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "|failure after|",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "abs",
+                  "fieldName": "failure after"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "failure after +|",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure after"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "|failure after|"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "failure later by",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure after +|"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "fixed": "2"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "a failure since +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure later by"
                     }
                   },
                   "operator": "+",
@@ -24442,20 +26170,20 @@
               "id": "calculateField",
               "options": {
                 "mode": "binary",
-                "alias": "a failure /",
+                "alias": "a failure since /",
                 "replaceFields": false,
                 "binary": {
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "failed or none"
+                      "options": "failure later by"
                     }
                   },
                   "operator": "/",
                   "right": {
                     "matcher": {
                       "id": "byName",
-                      "options": "a failure +1"
+                      "options": "a failure since +1"
                     }
                   }
                 }
@@ -24465,11 +26193,11 @@
               "id": "calculateField",
               "options": {
                 "mode": "unary",
-                "alias": "a failure",
+                "alias": "a failure since",
                 "replaceFields": false,
                 "unary": {
                   "operator": "ceil",
-                  "fieldName": "a failure /"
+                  "fieldName": "a failure since /"
                 }
               }
             },
@@ -24546,7 +26274,7 @@
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "a failure"
+                      "options": "a failure since"
                     }
                   },
                   "operator": "*",
@@ -24593,7 +26321,7 @@
         {
           "type": "stat",
           "title": "cc-db backups (30 h)",
-          "description": "cc-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `cc-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while cc-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red (`cc-db-backup-failed`): one bad night writes several failed attempts and a final failure, so the count is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "cc-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `cc-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while cc-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`cc-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 6,
@@ -24704,6 +26432,68 @@
                 "preprocessor": "none"
               },
               "aliasBy": "failed"
+            },
+            {
+              "refId": "D",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-cc"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CC_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/sql_automated_backups",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloudsql_database",
+                  "AND",
+                  "resource.label.database_id",
+                  "=",
+                  "*:cc-db"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "+3600s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "backups, newest hour"
+            },
+            {
+              "refId": "E",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-cc"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CC_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/sql_backup_failures",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloudsql_database",
+                  "AND",
+                  "resource.label.database_id",
+                  "=",
+                  "*:cc-db"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "+3600s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "failed, newest hour"
             }
           ],
           "interval": "1m",
@@ -24867,6 +26657,126 @@
           },
           "transformations": [
             {
+              "id": "filterByValue",
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              },
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "backups, newest hour",
+                    "config": {
+                      "id": "greater",
+                      "options": {
+                        "value": 0.5
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "newest backup at",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Time"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "0"
+                  }
+                }
+              },
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              }
+            },
+            {
+              "id": "reduce",
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              },
+              "options": {
+                "mode": "reduceFields",
+                "reducers": [
+                  "max"
+                ],
+                "includeTimeField": false
+              }
+            },
+            {
+              "id": "filterByValue",
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              },
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "failed, newest hour",
+                    "config": {
+                      "id": "greater",
+                      "options": {
+                        "value": 0.5
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "newest failure at",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Time"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "0"
+                  }
+                }
+              },
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              }
+            },
+            {
+              "id": "reduce",
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              },
+              "options": {
+                "mode": "reduceFields",
+                "reducers": [
+                  "max"
+                ],
+                "includeTimeField": false
+              }
+            },
+            {
               "id": "reduce",
               "options": {
                 "mode": "reduceFields",
@@ -24906,6 +26816,34 @@
                   "reducer": "sum",
                   "include": [
                     "failed"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "newest backup or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "newest backup at"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "newest failure or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "newest failure at"
                   ]
                 }
               }
@@ -25001,13 +26939,91 @@
               "id": "calculateField",
               "options": {
                 "mode": "binary",
-                "alias": "a failure +1",
+                "alias": "failure after",
                 "replaceFields": false,
                 "binary": {
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "failed or none"
+                      "options": "newest failure or none"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "newest backup or none"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "|failure after|",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "abs",
+                  "fieldName": "failure after"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "failure after +|",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure after"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "|failure after|"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "failure later by",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure after +|"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "fixed": "2"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "a failure since +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure later by"
                     }
                   },
                   "operator": "+",
@@ -25021,20 +27037,20 @@
               "id": "calculateField",
               "options": {
                 "mode": "binary",
-                "alias": "a failure /",
+                "alias": "a failure since /",
                 "replaceFields": false,
                 "binary": {
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "failed or none"
+                      "options": "failure later by"
                     }
                   },
                   "operator": "/",
                   "right": {
                     "matcher": {
                       "id": "byName",
-                      "options": "a failure +1"
+                      "options": "a failure since +1"
                     }
                   }
                 }
@@ -25044,11 +27060,11 @@
               "id": "calculateField",
               "options": {
                 "mode": "unary",
-                "alias": "a failure",
+                "alias": "a failure since",
                 "replaceFields": false,
                 "unary": {
                   "operator": "ceil",
-                  "fieldName": "a failure /"
+                  "fieldName": "a failure since /"
                 }
               }
             },
@@ -25125,7 +27141,7 @@
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "a failure"
+                      "options": "a failure since"
                     }
                   },
                   "operator": "*",
@@ -25172,7 +27188,7 @@
         {
           "type": "stat",
           "title": "crm-db backups (30 h)",
-          "description": "crm-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `crm-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while crm-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red, and the failed count red (`crm-db-backup-failed`): one bad night writes several failed attempts and a final failure, so the count is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "crm-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `crm-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while crm-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`crm-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 6,
@@ -25283,6 +27299,68 @@
                 "preprocessor": "none"
               },
               "aliasBy": "failed"
+            },
+            {
+              "refId": "D",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/sql_automated_backups",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloudsql_database",
+                  "AND",
+                  "resource.label.database_id",
+                  "=",
+                  "*:crm-db"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "+3600s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "backups, newest hour"
+            },
+            {
+              "refId": "E",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-crm"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_CRM_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/sql_backup_failures",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloudsql_database",
+                  "AND",
+                  "resource.label.database_id",
+                  "=",
+                  "*:crm-db"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "+3600s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "failed, newest hour"
             }
           ],
           "interval": "1m",
@@ -25446,6 +27524,126 @@
           },
           "transformations": [
             {
+              "id": "filterByValue",
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              },
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "backups, newest hour",
+                    "config": {
+                      "id": "greater",
+                      "options": {
+                        "value": 0.5
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "newest backup at",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Time"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "0"
+                  }
+                }
+              },
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              }
+            },
+            {
+              "id": "reduce",
+              "filter": {
+                "id": "byRefId",
+                "options": "D"
+              },
+              "options": {
+                "mode": "reduceFields",
+                "reducers": [
+                  "max"
+                ],
+                "includeTimeField": false
+              }
+            },
+            {
+              "id": "filterByValue",
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              },
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "failed, newest hour",
+                    "config": {
+                      "id": "greater",
+                      "options": {
+                        "value": 0.5
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "newest failure at",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Time"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "0"
+                  }
+                }
+              },
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              }
+            },
+            {
+              "id": "reduce",
+              "filter": {
+                "id": "byRefId",
+                "options": "E"
+              },
+              "options": {
+                "mode": "reduceFields",
+                "reducers": [
+                  "max"
+                ],
+                "includeTimeField": false
+              }
+            },
+            {
               "id": "reduce",
               "options": {
                 "mode": "reduceFields",
@@ -25485,6 +27683,34 @@
                   "reducer": "sum",
                   "include": [
                     "failed"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "newest backup or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "newest backup at"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "newest failure or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "newest failure at"
                   ]
                 }
               }
@@ -25580,13 +27806,91 @@
               "id": "calculateField",
               "options": {
                 "mode": "binary",
-                "alias": "a failure +1",
+                "alias": "failure after",
                 "replaceFields": false,
                 "binary": {
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "failed or none"
+                      "options": "newest failure or none"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "newest backup or none"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "|failure after|",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "abs",
+                  "fieldName": "failure after"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "failure after +|",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure after"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "|failure after|"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "failure later by",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure after +|"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "fixed": "2"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "a failure since +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "failure later by"
                     }
                   },
                   "operator": "+",
@@ -25600,20 +27904,20 @@
               "id": "calculateField",
               "options": {
                 "mode": "binary",
-                "alias": "a failure /",
+                "alias": "a failure since /",
                 "replaceFields": false,
                 "binary": {
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "failed or none"
+                      "options": "failure later by"
                     }
                   },
                   "operator": "/",
                   "right": {
                     "matcher": {
                       "id": "byName",
-                      "options": "a failure +1"
+                      "options": "a failure since +1"
                     }
                   }
                 }
@@ -25623,11 +27927,11 @@
               "id": "calculateField",
               "options": {
                 "mode": "unary",
-                "alias": "a failure",
+                "alias": "a failure since",
                 "replaceFields": false,
                 "unary": {
                   "operator": "ceil",
-                  "fieldName": "a failure /"
+                  "fieldName": "a failure since /"
                 }
               }
             },
@@ -25704,7 +28008,7 @@
                   "left": {
                     "matcher": {
                       "id": "byName",
-                      "options": "a failure"
+                      "options": "a failure since"
                     }
                   },
                   "operator": "*",
@@ -25750,8 +28054,8 @@
         },
         {
           "type": "stat",
-          "title": "auth-db point-in-time logs",
-          "description": "Cloud SQL's point-in-time logs for auth-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while auth-db reported for 20 of the 30 minutes or more, as the urgent `auth-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `auth-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "title": "auth-db logs shipped",
+          "description": "Cloud SQL's point-in-time recovery logs for auth-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while auth-db reported for 20 of the 30 minutes or more, as the urgent `auth-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `auth-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 6,
@@ -26361,8 +28665,8 @@
         },
         {
           "type": "stat",
-          "title": "tpa-db point-in-time logs",
-          "description": "Cloud SQL's point-in-time logs for tpa-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while tpa-db reported for 20 of the 30 minutes or more, as the urgent `tpa-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `tpa-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "title": "tpa-db logs shipped",
+          "description": "Cloud SQL's point-in-time recovery logs for tpa-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while tpa-db reported for 20 of the 30 minutes or more, as the urgent `tpa-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `tpa-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 6,
@@ -26972,8 +29276,8 @@
         },
         {
           "type": "stat",
-          "title": "cc-db point-in-time logs",
-          "description": "Cloud SQL's point-in-time logs for cc-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while cc-db reported for 20 of the 30 minutes or more, as the urgent `cc-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `cc-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "title": "cc-db logs shipped",
+          "description": "Cloud SQL's point-in-time recovery logs for cc-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while cc-db reported for 20 of the 30 minutes or more, as the urgent `cc-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `cc-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 6,
@@ -27583,8 +29887,8 @@
         },
         {
           "type": "stat",
-          "title": "crm-db point-in-time logs",
-          "description": "Cloud SQL's point-in-time logs for crm-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while crm-db reported for 20 of the 30 minutes or more, as the urgent `crm-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `crm-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "title": "crm-db logs shipped",
+          "description": "Cloud SQL's point-in-time recovery logs for crm-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while crm-db reported for 20 of the 30 minutes or more, as the urgent `crm-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `crm-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 6,
