@@ -51,8 +51,8 @@ The research found five constraints that shape the design:
   trellis-watchtower as a check and it should be on all the main dashboards and we should have alerting 3. I dont need
   to test restore"*. tpa-platform sets seven days of point-in-time recovery on every Cloud SQL instance and its four
   alert policies (backup missing, logs stalled, a failed archive, a failed backup); the cloud pages read the same
-  counters: each database's backups (30 h) and point-in-time logs (30 min) on the overview, Databases and its area's
-  page, failures as problems of their area ([cloud/README.md](../cloud/README.md#backups-and-point-in-time-recovery)).
+  counters: each database's backups (30 h; the alert judges today's backup from 14:00 UTC) and point-in-time logs
+  (30 min) on the overview, Databases and its area's page, failures as problems of their area ([cloud/README.md](../cloud/README.md#backups-and-point-in-time-recovery)).
   No restore test.
 
 ## Design decisions (stated, not asked)
