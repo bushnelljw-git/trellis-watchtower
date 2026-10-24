@@ -190,7 +190,8 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     projects; the wording says so), production-full's `merge({...})` instance ceilings, beta's
     `local.connectors_max_instances` (read with the code sender off, as the pages chart connectors), and the latency
     exclusions of the services the pages chart.
-  - [x] `file-reader` (D-154, off by default in both roots) is in NOT_RUN; beta's CRM copy's `crm-lane-send` and
+  - [x] `file-reader` (D-154) is in NOT_RUN: off by default in both roots, but beta runs it (corrected in BK's
+    review, below); beta's CRM copy's `crm-lane-send` and
     `crm-lane-comp` (R430, R441, switched off) are names of the CRM's project. Not charted: the catalogue's optional
     sections (`beta_text_codes`, `crm_lane_*`, `perimeter_dry_run`), which the reader does not read.
   - [x] `make cloud-catalogue [CATALOGUE_REF=...]`: vendor, regenerate, `make lint`, in one step.
@@ -213,6 +214,23 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     root's one start time; every backups description says the alert judges "today's backup, from 14:00 UTC" and the
     tile "a successful backup in the last 30 hours" (a missed night turns it red about two hours after the page), and
     that a failed count is entries, not nights.
+  - [x] The review of 07178a4 (CHANGES):
+    - A failed attempt kept the backups tile red for 30 hours after a later success (beta, 2026-10-09: auth-db failed
+      05:15, succeeded 10:18; crm-db failed 08:41, succeeded 09:39). The status now reads ✕ a backup failed only while
+      the newest failure is later than the newest success, each by the hour (a second query of each counter, its hours
+      with a count kept, its newest hour's time compared); the 30-hour failed count stays red. Every scenario, "failed,
+      then succeeded" (✓) and "succeeded, then failed" (✕) among them, runs through `tests/cloud/grafana_model.py` and
+      in a throwaway Grafana with testdata, with the same result.
+    - The logs tile is titled `<db> logs shipped` (and "Logs shipped (30 min)"): "auth-db point-in-time logs" was cut at
+      1440 px. The descriptions still say these are the point-in-time recovery logs.
+    - `file-reader`'s NOT_RUN reason in beta is true now: beta runs it.
+  - [ ] **Deploy order** (the review): beta's `sql_automated_backups` was made 2026-10-24T19:17Z and has no point yet,
+    so an image deployed before each instance's first counted backup (about 10:00 to 13:00 UTC 2026-10-25) reads "✕
+    none in 30 h" on all four. Build and deploy only once each instance's first count is visible; the same for
+    production-full's first apply (cloud/README.md, "Backups and point-in-time recovery").
+- [ ] FR (2026-10-24, from BK's review) give `file-reader` a tile and a page: beta runs it since 2026-10-13
+  (trellistpa-beta-tpa-app, min 0, max 10, internal ingress; its deployment's tfvars), and the overview has no tile for
+  it. Not built in BK: it is a service, not a backup.
   - [x] A failed backup and a failed archive are problem rows of their area (the area tile counts them, What's wrong
     now names them). A missing backup or stalled logs cannot be read in fifteen minutes (a log counter's series comes
     back only with a point in the range), so those are the tiles; `tests/cloud/test_overview.py`'s database-tile pin
