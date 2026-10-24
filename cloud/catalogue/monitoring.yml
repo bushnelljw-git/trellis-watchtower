@@ -12,7 +12,9 @@
 #   model-gateway (D-70, 2026-09-27) and web in `app`; the CRM's engine in
 #   `crm`; beta's call-centre services and job in `cc` (2026-10-11, read by
 #   beta's callcentre.tf alone: production-full has no call-centre project).
-#   Nothing crosses the perimeter.
+#   Nothing crosses the perimeter. `beta_text_codes` (2026-10-13, D-158) is
+#   beta's text sender's, read by beta's textcodes.tf alone into the
+#   member-data project, and only while var.beta_text_codes_enabled is on.
 # - A label is one of service, operation, gate, code, outcome, status_class,
 #   job, lane, class, sqlstate, and no extractor reads a tenant, request,
 #   session, principal, member, row, address or URL field.
@@ -36,6 +38,15 @@
 #   threshold, an absence or PromQL over a counter or a distribution (never a
 #   log-match condition), and no documentation names a label or a value with
 #   Cloud Monitoring's ${...} variables.
+# - `subject` (2026-10-13, the owner: "Arent all of these messages supposed to
+#   be formatted better?") is the notification's subject line, which
+#   PagerDuty titles the incident with: what is wrong, then which, plain. The
+#   module writes "<environment> · " and, from `urgent`, "URGENT " in front;
+#   without one the display name is the subject. "Which" names only a closed
+#   label its own condition's series carry, as
+#   ${metric_or_resource.label.KEY}, never a raw resource string such as a
+#   database_id; at most 255 bytes once written in
+#   (tests/infra/test_alert_subjects.py; docs/infra/monitoring.md §9a).
 
 # Added to every project's own lists below.
 shared:
@@ -171,6 +182,7 @@ shared:
   alert_policies:
     canary-5xx:
       display_name: "5xx above 0.1% of requests"
+      subject: "5xx above 0.1% of requests: ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service answered more than 0.1 percent of its requests with
         a 5xx over five minutes (and at least five of them). The release canary
@@ -188,6 +200,7 @@ shared:
 
     canary-latency:
       display_name: "p95 latency above 2 s"
+      subject: "p95 above 2 s: ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service's 95th percentile request latency stayed above two
         seconds for ten minutes. The canary compares a new revision with the
@@ -203,6 +216,7 @@ shared:
 
     canary-startup:
       display_name: "container startup or runtime failure"
+      subject: "container failing to start or run: ${metric_or_resource.label.service_name}${metric_or_resource.label.job_name}"
       documentation: >-
         Cloud Run's system log reported a failed probe or an exit (a memory
         limit exceeded is `run-oom`'s). A startup probe failure means `/ready`
@@ -226,6 +240,7 @@ shared:
     # (`<instance>-down`, per project below).
     canary-sql:
       display_name: "database connection errors"
+      subject: "database connection refused: ${metric_or_resource.label.service_name}${metric_or_resource.label.job_name}"
       documentation: >-
         The Cloud SQL Auth Proxy beside a service or a job could not reach its
         database or log in to it. The canary's "Cloud SQL connection errors:
@@ -256,6 +271,7 @@ shared:
 
     run-cpu-high:
       display_name: "a Cloud Run service's CPU above 90% for 15 minutes"
+      subject: "CPU above 90%: ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service's 99th percentile container CPU stayed above 90
         percent for fifteen minutes: its instances are saturated, so requests
@@ -277,6 +293,7 @@ shared:
 
     run-memory-high:
       display_name: "a Cloud Run service's memory above 90% for 10 minutes"
+      subject: "memory above 90%: ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service's 99th percentile container memory stayed above
         90 percent of its limit for ten minutes: the next allocation may kill
@@ -299,6 +316,7 @@ shared:
     # svc-voice (20, one call each; this never opens for it).
     run-concurrency-high:
       display_name: "a Cloud Run service's instances near their request concurrency"
+      subject: "near its request concurrency: ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service's 99th percentile of the most requests one
         instance served at once stayed at 72 or more (90 percent of the
@@ -343,6 +361,7 @@ shared:
 
     run-oom:
       display_name: "a container was killed for exceeding its memory limit"
+      subject: "killed for memory: ${metric_or_resource.label.service_name}${metric_or_resource.label.job_name}"
       documentation: >-
         Cloud Run killed a container that exceeded its memory limit (its
         system log's "Memory limit of ... exceeded"). The request it was
@@ -363,6 +382,7 @@ shared:
 
     run-crash-loop:
       display_name: "a Cloud Run service's containers keep crashing"
+      subject: "containers crashing: ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service's containers exited non-zero, or were killed by a
         signal other than a shutdown's, three times or more in fifteen
@@ -398,6 +418,7 @@ shared:
     # branch reads a window with none: then every 5xx is the load balancer's.
     edge-5xx:
       display_name: "a load balancer answered 5xx no backend sent"
+      subject: "load balancer 5xx no backend sent: ${metric_or_resource.label.url_map_name}"
       documentation: >-
         An external load balancer (by its URL map: um-app, um-crm, um-cc,
         um-watch) answered five or more 5xx in ten minutes that no backend
@@ -422,6 +443,7 @@ shared:
     # scanning and the voice host's own uptime check never reach.
     armor-deny-spike:
       display_name: "Cloud Armor refusals spiked"
+      subject: "Cloud Armor refusals spiked: ${metric_or_resource.label.policy_name}"
       documentation: >-
         A Cloud Armor policy refused more than 300 requests in ten minutes,
         and more than ten times its own rate over the 23 hours before (or with
@@ -445,6 +467,7 @@ shared:
     # the text vendor and the model leave through it.
     nat-port-exhaustion:
       display_name: "Cloud NAT is running out of ports"
+      subject: "Cloud NAT running out of ports: ${metric_or_resource.label.gateway_name}"
       documentation: >-
         A Cloud NAT gateway could not allocate addresses or ports, or dropped
         outgoing packets for want of them, for five minutes: calls to the
@@ -473,6 +496,7 @@ shared:
 
     quota-exceeded:
       display_name: "a Google Cloud quota is refusing requests"
+      subject: "quota refusing requests: ${metric_or_resource.label.service} ${metric_or_resource.label.quota_metric}"
       documentation: >-
         A Google API refused this project's requests for exceeding a quota in
         three minutes or more of ten. The incident's labels are the service
@@ -495,6 +519,7 @@ shared:
     # Urgent: a sink that cannot export is a hole in the audit trail.
     log-sink-errors:
       display_name: "URGENT a log sink cannot export (the audit trail)"
+      subject: "log sink cannot export: ${metric_or_resource.label.name}"
       urgent: true
       documentation: >-
         A log sink failed to export entries in every five minutes for fifteen:
@@ -524,6 +549,7 @@ shared:
     # has none, so it could never match.
     secret-version-disabled:
       display_name: "a Secret Manager version was disabled or destroyed"
+      subject: "secret version disabled or destroyed: ${metric_or_resource.label.operation}"
       documentation: >-
         A secret's version was disabled or destroyed (the Admin Activity
         log; the incident's label is the method). A service that mounts it,
@@ -550,6 +576,7 @@ shared:
 
     kms-version-disabled:
       display_name: "URGENT a KMS key version was disabled or scheduled for destruction"
+      subject: "KMS key version disabled or destroyed: ${metric_or_resource.label.operation}"
       urgent: true
       documentation: >-
         A Cloud KMS key version was disabled or scheduled for destruction
@@ -960,6 +987,7 @@ projects:
     alert_policies:
       audit-chain:
         display_name: "URGENT audit chain (auth)"
+        subject: "auth audit chain: ${metric_or_resource.label.job_name}${metric_or_resource.label.job_id}"
         urgent: true
         documentation: >-
           The issuer's audit chain did not verify, or the job that verifies or
@@ -1022,6 +1050,7 @@ projects:
 
       audit-credential-tag:
         display_name: "URGENT credential or workload tag invalid (auth)"
+        subject: "auth credential or workload tag invalid: ${metric_or_resource.label.code}"
         urgent: true
         documentation: >-
           A stored factor, workload or key failed its tag at use, meaning a
@@ -1113,6 +1142,7 @@ projects:
 
       iap-unknown-key:
         display_name: "URGENT IAP assertion under a key the image does not pin (auth, tpa-api)"
+        subject: "IAP assertion under an unpinned key: ${metric_or_resource.label.service_name}"
         # An outage of the browser's way in, the owner's first urgent kind: once
         # Google retires the old key every portal request is refused (the
         # re-check, 2026-10-05).
@@ -1136,6 +1166,7 @@ projects:
 
       iap-pinned-keys-stale:
         display_name: "IAP keys pinned in an image are stale (auth, tpa-api)"
+        subject: "IAP keys pinned in an image are stale: ${metric_or_resource.label.service_name}"
         documentation: >-
           auth or tpa-api warned that the IAP keys pinned in its image are
           stale (R187's header check). Rebuild both images with the current
@@ -1164,6 +1195,7 @@ projects:
 
       auth-unhandled:
         display_name: "auth answered 500 (unhandled)"
+        subject: "auth answered 500: ${metric_or_resource.label.class}"
         documentation: >-
           An exception reached auth's catch-all handler (`unhandled`). The line
           names the class; the error-tracking policies say whether it is new.
@@ -1175,27 +1207,37 @@ projects:
                 AND metric.labels.operation = "unhandled"
               group_by_fields: ["metric.label.class"]
 
+      # R380 (the owner, 2026-10-17: "226 yes 1,2,3"; I-605): twice in a row,
+      # never once. Beta's 51 of these in a week were one-off failures the
+      # next run healed (records answering one 500, a slow first connection).
+      # The module writes the condition as PromQL per job, over a window of
+      # two of its schedules (modules/monitoring, `failed_twice`); the audit
+      # jobs' urgent `audit-chain` and the PHI project's protected jobs still
+      # open on one.
       jobs-failed:
-        display_name: "a job execution failed"
+        display_name: "a job failed twice in a row"
+        subject: "job failed twice in a row: ${metric_or_resource.label.job_name}"
         documentation: >-
-          A Cloud Run job's execution failed after its retries. For tpa-jobs a
-          failed run is any tenant not `ok` (tpa-jobs.md §3): its alert records
-          say which. auth's three attended jobs (auth-bootstrap,
-          auth-tag-credentials, auth-retag-bearer-key; a person runs each,
-          R176) are here too (2026-10-11): their person is told on the
-          console, and whoever is on call learns the same. The audit jobs are
-          in the urgent audit-chain policy.
+          The same Cloud Run job's last two executions both failed after their
+          retries: within a window of two of its schedules (a day for a job a
+          person runs), two failed runs and no successful one. One failed run
+          opens nothing, and its next run's success closes it; the run's own
+          lines say why it failed. For tpa-jobs a failed run is any tenant not
+          `ok`, or a run that could not list its tenants (tpa-jobs.md §3): its
+          alert records say which. auth's three attended jobs
+          (auth-bootstrap, auth-tag-credentials, auth-retag-bearer-key; a
+          person runs each, R176) are here too (2026-10-11): their person is
+          told on the console, and whoever is on call learns of a second
+          failure. The audit jobs are in the urgent audit-chain policy, which
+          opens on one.
         conditions:
-          - name: "a failed execution"
-            threshold:
-              filter: >-
-                metric.type = "run.googleapis.com/job/completed_execution_count" AND resource.type = "cloud_run_job"
-                AND metric.labels.result = "failed"
-                AND resource.labels.job_name = one_of("migrate-auth", "auth-publisher", "auth-sweeper", "auth-bootstrap", "auth-tag-credentials", "auth-retag-bearer-key", "tpa-jobs-erisa-clocks", "tpa-jobs-nightly-anomalies", "tpa-jobs-stoploss-surveillance", "tpa-jobs-accumulator-reconcile", "tpa-jobs-workload-audit", "tpa-jobs-member-access")
-              group_by_fields: ["resource.label.job_name"]
+          - name: "the same job failed twice in a row"
+            failed_twice:
+              jobs: ["migrate-auth", "auth-publisher", "auth-sweeper", "auth-bootstrap", "auth-tag-credentials", "auth-retag-bearer-key", "tpa-jobs-erisa-clocks", "tpa-jobs-nightly-anomalies", "tpa-jobs-stoploss-surveillance", "tpa-jobs-accumulator-reconcile", "tpa-jobs-workload-audit", "tpa-jobs-member-access"]
 
       scheduler-failed:
         display_name: "a schedule could not start its job"
+        subject: "schedule could not start its job: ${metric_or_resource.label.job_id} (${metric_or_resource.label.code})"
         documentation: >-
           Cloud Scheduler's attempt to start a job finished in error. The
           status code says why; PERMISSION_DENIED means row 8 or row 74 of the
@@ -1210,28 +1252,36 @@ projects:
 
       jobs-alerts:
         display_name: "a job raised an alert"
+        subject: "tpa-jobs ${metric_or_resource.label.job} raised ${metric_or_resource.label.code}"
         documentation: >-
           A tpa-jobs run raised one of its registry's alerts (tpa_jobs/registry.py):
           a failed or skipped tenant, a dead letter, a lag, a breach count, an
           orphan. The incident's labels are the job and the alert's name; the
           run's own line carries the rest, never a body. Compliance alerts
-          (breach count, orphan) have no channel of their own yet.
+          (breach count, orphan) have no channel of their own yet. A scheduled
+          run's failed tenants are told by `jobs-failed`, on the second failed
+          run in a row (R380); a drain tick's here.
         conditions:
+          # R380 (I-605): a scheduled run that failed a tenant exits 1, so its
+          # failed execution is `jobs-failed`'s, told on the second in a row;
+          # its `tenants_failed` is not told here as well. A drain tick is no
+          # execution, so the drain's keeps it (below).
           - name: "from a scheduled run"
             threshold:
               filter: >-
                 metric.type = "logging.googleapis.com/user/tpa_jobs_alerts" AND resource.type = "cloud_run_job"
-                AND metric.labels.code = one_of("tenants_failed", "tenants_skipped", "mirror_stale_run", "erisa_breach_count", "outbox_dead_letter", "outbox_lag", "crm_transition_dead", "crm_transition_lag", "workload_orphan", "member_access_swept", "member_access_dry_run")
+                AND metric.labels.code = one_of("tenants_skipped", "mirror_stale_run", "erisa_breach_count", "outbox_dead_letter", "outbox_lag", "crm_transition_dead", "crm_transition_lag", "workload_orphan", "member_access_swept", "member_access_dry_run", "catalogue_too_large", "catalogue_invalid", "cutoff_freeze_behind")
               group_by_fields: ["metric.label.job", "metric.label.code"]
           - name: "from a drain tick"
             threshold:
               filter: >-
                 metric.type = "logging.googleapis.com/user/tpa_jobs_alerts" AND resource.type = "cloud_run_revision"
-                AND metric.labels.code = one_of("tenants_failed", "tenants_skipped", "mirror_stale_run", "erisa_breach_count", "outbox_dead_letter", "outbox_lag", "crm_transition_dead", "crm_transition_lag", "workload_orphan", "member_access_swept", "member_access_dry_run")
+                AND metric.labels.code = one_of("tenants_failed", "tenants_skipped", "mirror_stale_run", "erisa_breach_count", "outbox_dead_letter", "outbox_lag", "crm_transition_dead", "crm_transition_lag", "workload_orphan", "member_access_swept", "member_access_dry_run", "catalogue_too_large", "catalogue_invalid", "cutoff_freeze_behind")
               group_by_fields: ["metric.label.job", "metric.label.code"]
 
       jobs-alerts-paging:
         display_name: "URGENT a job raised a paging alert"
+        subject: "tpa-jobs ${metric_or_resource.label.job} raised ${metric_or_resource.label.code}"
         urgent: true
         documentation: >-
           A tpa-jobs alert whose registry entry pages: an anomaly at the
@@ -1254,6 +1304,7 @@ projects:
 
       jobs-partial-recurring:
         display_name: "a job ran partial twice"
+        subject: "tpa-jobs ${metric_or_resource.label.job} ran partial twice"
         documentation: >-
           A job reported `partial` tenants twice within a day and a half hour
           (tpa-jobs.md §6: one slow run is a slow run, two is a capacity
@@ -1274,6 +1325,7 @@ projects:
 
       drain-raised:
         display_name: "a drain tick raised"
+        subject: "drain tick raised: ${metric_or_resource.label.job} (${metric_or_resource.label.class})"
         documentation: >-
           A tick of tpa-jobs-drains raised instead of finishing: most often a
           scope never granted or an address that answers nothing. The loop
@@ -1293,6 +1345,7 @@ projects:
       # hours: 24 h 30 min of lookback in all.
       accumulator-backlog-growing:
         display_name: "accumulator reconciliations outstanding grew"
+        subject: "accumulator backlog grew: ${metric_or_resource.label.job}"
         documentation: >-
           accumulator_reconcile left more reconciliations open tonight than
           it did the night before (the sum of every tenant's open count).
@@ -1318,6 +1371,7 @@ projects:
       # warm one is the module's `no_instance` policy (warm_services).
       backend-down:
         display_name: "URGENT a core service answered only errors (web, auth, tpa-api)"
+        subject: "answering only errors: ${metric_or_resource.label.service_name}"
         urgent: true
         documentation: >-
           Every request web, auth or tpa-api answered in the last ten minutes
@@ -1337,6 +1391,7 @@ projects:
 
       tpa-api-latency:
         display_name: "tpa-api p95 latency above 2 s (its own request line)"
+        subject: "tpa-api p95 above 2 s"
         documentation: >-
           tpa-api's 95th percentile time to answer stayed above two seconds
           for ten minutes, read from its own request line without the streams,
@@ -1429,6 +1484,7 @@ projects:
       # step) cannot reach three in fifteen minutes on its own.
       sign-in-message-vendor:
         display_name: "sign-in messages: the email or text vendor is failing"
+        subject: "sign-in message vendor failing: ${metric_or_resource.label.lane}"
         documentation: >-
           auth's messenger had three or more sends refused or unanswered by a
           vendor in fifteen minutes, on one channel (the incident's `lane`:
@@ -1675,6 +1731,7 @@ projects:
     alert_policies:
       records-critical:
         display_name: "URGENT records: audit flush failed or database unreachable"
+        subject: "records: ${metric_or_resource.label.code}"
         urgent: true
         documentation: >-
           The gateway logged `audit flush failed` (a refusal's audit rows did
@@ -1741,6 +1798,7 @@ projects:
 
       jobs-failed:
         display_name: "a protected job's execution failed"
+        subject: "protected job failed: ${metric_or_resource.label.job_name}"
         documentation: >-
           A Cloud Run job in the PHI project failed after its retries: the
           migration, the nightly export or (beta) the restore drill, or beta's
@@ -1757,6 +1815,7 @@ projects:
 
       scheduler-failed:
         display_name: "a protected schedule could not start its job"
+        subject: "protected schedule could not start its job: ${metric_or_resource.label.job_id} (${metric_or_resource.label.code})"
         documentation: >-
           Cloud Scheduler's attempt to start a PHI-project job finished in
           error. Cloud Scheduler is outside the perimeter's restricted services
@@ -1771,6 +1830,7 @@ projects:
 
       connectors-dead-letters:
         display_name: "connectors: a dead letter"
+        subject: "connectors dead letter: ${metric_or_resource.label.code}"
         documentation: >-
           A row was settled dead: it will never be sent. The code says why
           (a lane mismatch or an unknown destination is a bug; a 4xx is the
@@ -1784,6 +1844,7 @@ projects:
 
       connectors-destination-refused:
         display_name: "connectors: a destination was refused"
+        subject: "connectors destination refused: ${metric_or_resource.label.lane}"
         documentation: >-
           The egress client refused a destination that is not on the
           allowlist: a configuration error, or something worse (connectors.md
@@ -1798,6 +1859,7 @@ projects:
 
       connectors-envelope-unsigned:
         display_name: "connectors: an envelope arrived unsigned"
+        subject: "connectors envelope unsigned: ${metric_or_resource.label.lane}"
         documentation: >-
           A claimed row carried no signature header: a gateway bug, not a
           network one. The row was settled dead unsent (connectors.md §6).
@@ -1830,6 +1892,7 @@ projects:
 
       perimeter-violations:
         display_name: "perimeter violation"
+        subject: "perimeter violation: ${metric_or_resource.label.service} (${metric_or_resource.label.code})"
         documentation: >-
           VPC Service Controls logged a violation. In dry run nothing was
           refused: read it against network-and-perimeter.md §5.5 before the
@@ -1850,6 +1913,7 @@ projects:
       # catalogue opens it too.
       monitoring-changed:
         display_name: "an alert policy or notification channel changed"
+        subject: "alert policy or channel changed: ${metric_or_resource.label.operation}"
         documentation: >-
           An alert policy or a notification channel in the PHI project was
           created, changed or deleted, a channel verified, or a snooze made or
@@ -1879,6 +1943,7 @@ projects:
       # WARNING): a change is to be read, not an outage.
       log-counters-changed:
         display_name: "a log metric changed"
+        subject: "log metric changed: ${metric_or_resource.label.operation}"
         documentation: >-
           A log-based metric in the PHI project was created, changed or
           deleted (D-142). Its log metric writers (row 174, grp-platform-admin)
@@ -1927,6 +1992,7 @@ projects:
       # would replace the shared one in production-full's merge.
       records-sql-errors:
         display_name: "records: database connection errors"
+        subject: "records database connection errors: ${metric_or_resource.label.sqlstate}"
         documentation: >-
           records logged an error whose SQLSTATE is a connection exception
           (class 08): it reached the proxy and the connection still failed or
@@ -2037,9 +2103,10 @@ projects:
       errors:
         description: >-
           ERROR lines of the CRM's services. Their formatter writes the whole
-          formatted exception to `exc`, so only the class name a whole last
-          line opens with is read (`Class` or `Class: ...`), and nothing else;
-          a last line of free text gives no class.
+          formatted exception to `exc`, so only the exception line's class is
+          read (the first line after the last frame, a dotted name ending as
+          an exception class does), and nothing else; any other shape gives
+          no class.
         filter: |
           resource.type="cloud_run_revision"
           AND jsonPayload.logger:*
@@ -2050,7 +2117,16 @@ projects:
           # message running onto "...for Jane Doe" read the class "Doe", a
           # person's name in a label that reaches PagerDuty, email and the
           # dashboards.
-          class: 'REGEXP_EXTRACT(jsonPayload.exc, "(?:^|\\n)([A-Za-z_][A-Za-z0-9_.]*)(?::[^\\n]*)?$")'
+          # The review of P129 (2026-10-13): the class is now a subject line's
+          # "which", so it is read only where Python writes it, the first line
+          # after the last frame (`  File ...` and its indented code lines),
+          # and only a dotted name ending as an exception class does (Error,
+          # Exception, Warning, Exit, Interrupt, Timeout, Violation, Failure,
+          # Shutdown, Canceled, Cancelled, Detected, Iteration). A message's own
+          # later lines ("member not found" then "M1234567") are never that
+          # line, and anything else (a number, an address, a sentence, a class
+          # past the set) gives no class.
+          class: 'REGEXP_EXTRACT(jsonPayload.exc, "^[\\s\\S]*\\n  File [^\\n]*\\n(?: {4}[^\\n]*\\n)*((?:[A-Za-z_][A-Za-z0-9_]*\\.)*[A-Za-z_][A-Za-z0-9_]*(?:Error|Exception|Warning|Exit|Interrupt|Timeout|Violation|Failure|Shutdown|Canceled|Cancelled|Detected|Iteration))(?::|\\n|$)")'
 
       # 2026-10-12 (the owner, paged seven times in an evening: "Figure out why
       # i keep getting paged this"): `canary-latency` opened on the engine every
@@ -2106,21 +2182,20 @@ projects:
       # own repository's to deploy (row 14 keeps `migrate-crm` reserved), and
       # a listed name no job carries never opens anything. In a project the
       # CRM shares this takes its role's prefix (`crm-jobs-failed`), as the
-      # root's renaming does.
+      # root's renaming does. R380 (I-605): twice in a row, as the app
+      # project's own `jobs-failed`, which it sits beside in beta.
       jobs-failed:
-        display_name: "a CRM job execution failed"
+        display_name: "a CRM job failed twice in a row"
+        subject: "CRM job failed twice in a row: ${metric_or_resource.label.job_name}"
         documentation: >-
-          One of the CRM's jobs failed: its migration (`migrate-crm`) or its
-          made-up data seed (`seed-crm`), each run by a person. Read the
-          execution's own lines.
+          One of the CRM's jobs failed twice in a row within a day, with no
+          successful run between: its migration (`migrate-crm`) or its
+          made-up data seed (`seed-crm`), each run by a person, who sees each
+          failure on the console. Read the executions' own lines.
         conditions:
-          - name: "a failed execution"
-            threshold:
-              filter: >-
-                metric.type = "run.googleapis.com/job/completed_execution_count" AND resource.type = "cloud_run_job"
-                AND metric.labels.result = "failed"
-                AND resource.labels.job_name = one_of("migrate-crm", "seed-crm")
-              group_by_fields: ["resource.label.job_name"]
+          - name: "the same job failed twice in a row"
+            failed_twice:
+              jobs: ["migrate-crm", "seed-crm"]
 
       # 2026-10-12: the engine's own p95 from its request line, without its
       # streams and file transfers (`engine_latency` above), beside the
@@ -2129,6 +2204,7 @@ projects:
       # (crm_enabled); routed as `tpa-api-latency` is (normal).
       engine-latency:
         display_name: "engine p95 latency above 2 s (its own request line)"
+        subject: "engine p95 above 2 s"
         documentation: >-
           The CRM engine's 95th percentile time to answer stayed above two
           seconds for ten minutes, read from its own request line without its
@@ -2201,9 +2277,12 @@ projects:
   # themselves (services/privacy/log_setup.py JsonLineFormatter: `severity`,
   # `message`, `logger`, `exception`), which Cloud Logging maps, so its error
   # counter reads severity; the relay writes only uvicorn's text, so its
-  # failures are its 5xx. No uptime check: armor-voice answers /health with
-  # 404 by design (R114), and opening it is a new ruling; svc-voice's liveness
-  # is Cloud Run's own (its instance count, while warm; its 5xx).
+  # failures are its 5xx (and, since I-5117, its own twilio_upstream_failed
+  # line). The voice host's uptime check expects armor-voice's 404 on /health
+  # (R114, D-147) and never reaches svc-voice: it proves the edge alone, and
+  # opening /health is a new ruling (I-5140, NEEDS-OWNER); svc-voice's
+  # liveness is Cloud Run's own (its instance count, while warm; its 5xx) and,
+  # since R5077, its stall alarm.
   # ---------------------------------------------------------------------------
   cc:
     log_metrics:
@@ -2211,10 +2290,10 @@ projects:
         description: >-
           call-center's lines at ERROR or above (svc-voice, svc-ops,
           migrate-cc), one per line. Its formatter writes the redacted
-          traceback to `exception`, so only the class name that a whole last
-          line opens with is read, and nothing else of the line. A last line
-          that is not `Class` or `Class: ...` (a message that runs onto a
-          second line, free text) gives no class rather than a word of it.
+          traceback to `exception`, so only the exception line's class is read
+          (the first line after the last frame, a dotted name ending as an
+          exception class does), and nothing else of it. Any other shape (no
+          frame, free text, a number) gives no class rather than a word of it.
         filter: |
           (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
           AND jsonPayload.logger:*
@@ -2223,7 +2302,96 @@ projects:
           # Anchored to a line's start (the alert-gaps review, finding 4): the
           # unanchored form took the last word of any last line ("...\ncaller
           # said Jane Doe" gave "Doe").
-          class: 'REGEXP_EXTRACT(jsonPayload.exception, "(?:^|\\n)([A-Za-z_][A-Za-z0-9_.]*)(?::[^\\n]*)?$")'
+          # The review of P129: the CRM's expression, on call-center's field
+          # (its redacted traceback keeps every real `  File` line).
+          class: 'REGEXP_EXTRACT(jsonPayload.exception, "^[\\s\\S]*\\n  File [^\\n]*\\n(?: {4}[^\\n]*\\n)*((?:[A-Za-z_][A-Za-z0-9_]*\\.)*[A-Za-z_][A-Za-z0-9_]*(?:Error|Exception|Warning|Exit|Interrupt|Timeout|Violation|Failure|Shutdown|Canceled|Cancelled|Detected|Iteration))(?::|\\n|$)")'
+
+      # The stall alarm (R5077, 2026-10-21; I-5133: on beta's first calls
+      # after a long idle svc-voice's event loop was starved, a 300 ms timer
+      # firing 4.5 s late and 157 s with nothing processed). svc-voice's
+      # watchdog writes one value-free `voice_loop_lag` line when its own
+      # timer fires late: `lag_ms`, how late, an integer, and `where`, a closed
+      # code. Nothing of a call is on the line, and only `where` becomes a
+      # label, through a code word's shape alone. The two threshold counters
+      # are what the alert reads; the count and the distribution are for
+      # reading the stall afterwards.
+      voice_loop_lag:
+        description: >-
+          Every `voice_loop_lag` line svc-voice writes (its event-loop
+          watchdog: the loop's own timer fired late), by its closed `where`
+          code. One per late timer.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="svc-voice"
+          AND jsonPayload.event="voice_loop_lag"
+        labels:
+          code: 'REGEXP_EXTRACT(jsonPayload.where, "^([a-z][a-z0-9_]{0,31})$")'
+
+      voice_loop_lag_ms:
+        description: >-
+          How late svc-voice's event-loop timer fired, in milliseconds, as a
+          distribution (each `voice_loop_lag` line's `lag_ms`).
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="svc-voice"
+          AND jsonPayload.event="voice_loop_lag"
+        value_extractor: 'EXTRACT(jsonPayload.lag_ms)'
+        unit: "ms"
+        bounds: [100, 250, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000]
+
+      voice_loop_lag_over_1s:
+        description: >-
+          The `voice_loop_lag` lines whose `lag_ms` is 1000 or more: the loop
+          held a second or longer. The alert's three-in-five-minutes count.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="svc-voice"
+          AND jsonPayload.event="voice_loop_lag"
+          AND jsonPayload.lag_ms>=1000
+
+      voice_loop_lag_over_5s:
+        description: >-
+          The `voice_loop_lag` lines whose `lag_ms` is 5000 or more: a stall a
+          caller hears as dead air. One opens the alert.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="svc-voice"
+          AND jsonPayload.event="voice_loop_lag"
+          AND jsonPayload.lag_ms>=5000
+
+      # A stall that never ends writes no `voice_loop_lag` line (the loop must
+      # come back to write it), so the watchdog's other half is counted too:
+      # faulthandler's C timer writes every thread's stack to stderr once the
+      # loop has not beaten for five seconds and a tick (call-center ef3ad77,
+      # `voice_gateway.loop_watch`), each thread's header "Thread 0x... (most
+      # recent call first):" one plain-text entry. Python's own tracebacks say
+      # "most recent call last", never this. Nothing of the dump is read: file
+      # names and line numbers stay in the entry.
+      voice_stack_dumps:
+        description: >-
+          svc-voice's faulthandler stack dumps, one per thread header ("most
+          recent call first"): its event loop had not beaten for five seconds
+          and more, whether or not it ever came back.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="svc-voice"
+          AND textPayload:"most recent call first"
+
+      # The watchdog's warm-up (call-center ef3ad77, `voice_gateway.keep_warm`):
+      # one value-free `voice_keep_warm_failed` line when a step fails or times
+      # out, its `warm_step` a closed code (`imports`, `dialog_client`,
+      # `member_tools`, `envelope`, `registry`, `line_settings`, `ledger`,
+      # `standing_token`) and `warm_error` an exception's type name, not read.
+      voice_keep_warm_failures:
+        description: >-
+          svc-voice's failed keep-warm steps, by the step's closed code. A
+          failing step leaves that path cold for the next call.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="svc-voice"
+          AND jsonPayload.event="voice_keep_warm_failed"
+        labels:
+          code: 'REGEXP_EXTRACT(jsonPayload.warm_step, "^([a-z][a-z0-9_]{0,31})$")'
 
     error_metrics:
       errors:
@@ -2242,8 +2410,8 @@ projects:
           (two or more, none answered otherwise): calls to the test line fail.
           A refused webhook signature is a 4xx and never counts here. Read
           svc-voice's system log (`canary-startup`) and its ERROR lines. The
-          voice host has no uptime check: its edge answers `/health` with 404
-          on purpose (R114).
+          voice host's uptime check expects its edge's 404 on `/health` (R114,
+          D-147) and never reaches svc-voice: it proves the edge alone.
         conditions:
           - name: "only 5xx for ten minutes, at least two"
             promql:
@@ -2258,6 +2426,7 @@ projects:
       # (a turn that failed, services/voice_gateway/server.py "turn failed").
       voice-model-errors:
         display_name: "svc-voice: the model vendor is failing"
+        subject: "svc-voice model vendor failing: ${metric_or_resource.label.class}"
         documentation: >-
           svc-voice logged three or more errors whose exception is the model
           vendor's (a class under `anthropic`) in ten minutes: callers to the
@@ -2275,8 +2444,74 @@ projects:
               alignment_period: "600s"
               group_by_fields: ["metric.label.class"]
 
+      # R5077's stall alarm (I-5133): the event-loop watchdog's lines, through
+      # the two threshold counters above. Normal routing (Slack, email and
+      # PagerDuty as WARNING), the other call-centre alerts' channels: beta's
+      # callers are the testers alone (R149), and voice-down stays the outage.
+      voice-loop-stall:
+        display_name: "svc-voice: its event loop stalled"
+        subject: "svc-voice event loop stalled"
+        auto_close: "1800s"
+        documentation: >-
+          svc-voice's event-loop watchdog saw its own timer fire five seconds
+          or more late once, or a second or more late three times, in five
+          minutes, or wrote its stack dump (the loop had not beaten for five
+          seconds, a stall that may not have ended): while the loop is held
+          nothing on any call is processed, and a caller hears silence (the
+          2026-10-21 stall, I-5133). Read the stack dump just before the line:
+          svc-voice's stderr entries "Thread 0x... (most recent call first)"
+          just before its `voice_loop_lag` line, whose `where` code names the
+          kind of stall; then svc-voice's CPU and the database connects
+          through its proxy in the same minutes (`canary-sql`). A dump with
+          no line after it is a loop that never came back: the instance needs
+          replacing. The line and the metrics carry no call.
+        conditions:
+          - name: "a lag of five seconds or more in five minutes"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/voice_loop_lag_over_5s" AND resource.type = "cloud_run_revision"
+              threshold_value: 0
+              alignment_period: "300s"
+          - name: "three lags of a second or more in five minutes"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/voice_loop_lag_over_1s" AND resource.type = "cloud_run_revision"
+              threshold_value: 2
+              alignment_period: "300s"
+          - name: "a stack dump: the loop had not beaten for five seconds"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/voice_stack_dumps" AND resource.type = "cloud_run_revision"
+              threshold_value: 0
+              alignment_period: "300s"
+
+      # The warm-up keeps the first call's cold path warm (call-center
+      # ef3ad77); a step failing again and again means the next call pays for
+      # it on the loop. A warning, by the step.
+      voice-keep-warm-failing:
+        display_name: "svc-voice: a keep-warm step keeps failing"
+        subject: "svc-voice keep-warm failing: ${metric_or_resource.label.code}"
+        documentation: >-
+          One of svc-voice's keep-warm steps failed or timed out more than
+          three times in fifteen minutes, so the next call's first use of it
+          is cold and may stall the loop (I-5133). Read svc-voice's
+          `voice_keep_warm_failed` lines for the step (`imports`,
+          `dialog_client`, `member_tools`, `envelope`, `registry`,
+          `line_settings`, `ledger` or `standing_token`) and their
+          `warm_error`, then what that step reaches (cc-db through the proxy,
+          tpa-api, the model vendor).
+        conditions:
+          - name: "more than three failures of one step in fifteen minutes"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/voice_keep_warm_failures" AND resource.type = "cloud_run_revision"
+              threshold_value: 3
+              alignment_period: "900s"
+              group_by_fields: ["metric.label.code"]
+
       jobs-failed:
         display_name: "a call-centre job execution failed"
+        subject: "call-centre job failed: ${metric_or_resource.label.job_name}"
         documentation: >-
           migrate-cc, cc-db's schema migration, failed (staffed desk only; a
           person runs it, row 134). It is read, never retried: read the
@@ -2405,8 +2640,9 @@ synthetics:
     # unusable credentials file; `iap_token`, no identity token; `egress`, its
     # own network path never opened within SYNTHETICS_EGRESS_WAIT_S). Not a verdict about the estate, so normal
     # routing whatever the journey's; the journey's `synthetic-job-failed`
-    # opens beside it (exit 1), and errors run after run add its missed run
-    # (900 s with no successful execution).
+    # opens beside it (exit 1). Since R380 (2026-10-17) a failed run is a run,
+    # so errors run after run add no missed run: that is a journey that did
+    # not run at all (900 s with no execution).
     synthetic-broken:
       display_name: "synthetic journey broken: __JOB__"
       documentation: >-
@@ -2426,8 +2662,9 @@ synthetics:
         run is the job's network still warming; run after run is the job's
         network or its firewall rules (1450 and 1460), unless the edge's own
         uptime checks are failing beside it. The journey's
-        `synthetic-job-failed` opens beside this (an `error` exits 1), and an
-        error on every run adds the job's missed run after 900 s.
+        `synthetic-job-failed` opens beside this (an `error` exits 1); its
+        missed run opens only if the job stops running at all (900 s with no
+        execution, failed or not).
       conditions:
         - name: "an error result in eleven minutes"
           promql:
@@ -2480,3 +2717,420 @@ synthetics:
             query: >-
               sum by (job_name) (increase(run_googleapis_com:job_completed_execution_count{monitored_resource="cloud_run_job", job_name="__JOB__", result="failed"}[10m])) > 0
             evaluation_interval: "60s"
+
+# D-158 (the owner's R5040 and R5041, 2026-10-13): beta's text codes, the
+# code sender in connectors (docs/services/connectors.md §4.6;
+# docs/infra/monitoring.md §13). Read by beta's textcodes.tf alone, into the
+# project the PHI role lives in (which receives connectors' logs), and only
+# while var.beta_text_codes_enabled builds the sender: production-full reads
+# none of it, and with the switch off beta makes none of it.
+#
+# The sender's lines carry ids and closed codes only: the challenge id, the
+# outcome, the vendor's own id for the text and the vendor's numeric error
+# code. Never a phone number, the code, the sentence or the vendor's words.
+# No filter or extractor here reads anything but the service, the line's
+# opening words, its outcome, its closed reason, its status and the vendor's
+# five-digit error number; the challenge id on a line is never read.
+beta_text_codes:
+  log_metrics:
+    connectors_beta_codes:
+      description: >-
+        One per code beta's text sender handled, and one when it reaches its
+        ceiling for the day (connectors/lanes/beta_codes.py): by outcome
+        (delivered or failed for a text it sent; refused for a code it would
+        not send; held for the ceiling) and by the sender's closed code
+        (`not_on_the_list`, `not_a_us_number`, `daily_ceiling`,
+        `duplicate_claim`, a transport or status code of connectors.md §3.2).
+        The challenge id on the line is never read.
+      filter: |
+        resource.type="cloud_run_revision"
+        AND jsonPayload.service="connectors"
+        AND jsonPayload.message=~"^(beta code |beta's code sender reached its ceiling for the day)"
+      labels:
+        outcome: 'EXTRACT(jsonPayload.outcome)'
+        code: 'EXTRACT(jsonPayload.reason)'
+
+    connectors_beta_code_vendor_refusals:
+      description: >-
+        One per text the vendor answered with a refusal (an HTTP status of 400
+        or above on the sender's `beta code … outcome=failed` line), by the
+        vendor's own five-digit error number where its answer named one
+        (60410 is its fraud guard blocking a destination's number prefix,
+        trellis-security TP-181). The number is from the vendor's published
+        list; its words, which repeat the phone number, are never logged, and
+        the sender writes only a number of five digits.
+      filter: |
+        resource.type="cloud_run_revision"
+        AND jsonPayload.service="connectors"
+        AND jsonPayload.message=~"^beta code "
+        AND jsonPayload.outcome="failed"
+        AND jsonPayload.status>=400
+      labels:
+        code: 'REGEXP_EXTRACT(jsonPayload.message, " vendor_code=([0-9]{5})")'
+
+  alert_policies:
+    # The callers list at the last hop refused a code: records handed out a
+    # code for a number that is not on the phone line's callers list (or is
+    # on it and is not a US number). Nothing was texted. On beta every made-up
+    # member carries the seed's one phone (R250), so this means that phone is
+    # not on the list, or the list changed under it.
+    beta-text-off-list:
+      display_name: "beta text codes: a code was not texted, its number is not on the callers list"
+      subject: "text code not texted, its number is off the callers list: ${metric_or_resource.label.code}"
+      documentation: >-
+        Beta's text sender claimed a one-time code and did not text it,
+        because the number records handed out is not on the phone line's
+        callers list (`not_on_the_list`) or is on it and is not a US number
+        (`not_a_us_number`). Nothing left the platform, and the code was
+        settled failed; the caller hears that a code was sent and receives
+        none. Compare the callers list (voice_allowed_callers in beta's
+        tfvars, which is also svc-voice's ALLOWED_CALLERS) with the phone the
+        seed wrote on beta's made-up members (the secret seed-owner-phone):
+        they must agree. The sender's line names the challenge id only.
+      conditions:
+        - name: "a code refused at the callers list"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/connectors_beta_codes" AND resource.type = "cloud_run_revision"
+              AND metric.labels.code = one_of("not_on_the_list", "not_a_us_number")
+            group_by_fields: ["metric.label.code"]
+
+    # The vendor answered a text with a refusal. 60410 is the Verify product's
+    # fraud guard (TP-181): about six verifications to one number inside a
+    # minute, none approved, and it blocked the number's whole prefix for
+    # about twelve hours (the Orchestrator's probes of the real account,
+    # 2026-10-13). The sender never tells the vendor a code was confirmed
+    # (records checks it), so every one counts; the listed numbers go on the
+    # vendor's Verify Safe List before "verify" is switched on.
+    beta-text-vendor-refused:
+      display_name: "beta text codes: the text vendor refused a code"
+      subject: "text vendor refused a text, its error number: ${metric_or_resource.label.code}"
+      documentation: >-
+        The text vendor answered one of beta's code texts with a refusal (an
+        HTTP 4xx or 5xx). The incident's code is the vendor's own error
+        number, to look up in the vendor's published list. 60410 is the
+        Verify product's fraud guard: it blocked the destination's number
+        prefix after several codes in a minute that nobody confirmed (seen on
+        this account 2026-10-13, about six in a minute, blocked for about
+        twelve hours). Stop test calls to that number, put the callers list's
+        numbers on the vendor's Verify Safe List if they are not there, and
+        wait the block out or lift it on the vendor's account. A 401 or 403
+        with another number is usually the restricted key (the secret
+        notify-sms-api-key's pinned version) or what the key may do. No
+        number means the answer named none: read the sender's line for its
+        status. The code was settled failed and is never sent again; the
+        caller asks for another.
+      conditions:
+        - name: "a text the vendor refused"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/connectors_beta_code_vendor_refusals" AND resource.type = "cloud_run_revision"
+            group_by_fields: ["metric.label.code"]
+
+    # The sender's own ceiling for the day is spent: thirty texts at most
+    # (beta_text_codes_daily_ceiling). It claims nothing more until the UTC
+    # day turns, so no code leaves records either.
+    beta-text-ceiling:
+      display_name: "beta text codes: the day's ceiling is reached"
+      subject: "text codes: the day's ceiling is reached"
+      documentation: >-
+        Beta's text sender has started as many texts today as its ceiling
+        allows (beta_text_codes_daily_ceiling, thirty at most) and claims no
+        more codes until the UTC day turns: callers are told a code was sent
+        and receive none. Thirty a day is more than testing needs, so read who
+        is calling before raising nothing: the ceiling cannot be raised past
+        thirty, and a restart of the sender starts its count again (records'
+        own thirty a day still holds).
+      conditions:
+        - name: "the ceiling line"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/connectors_beta_codes" AND resource.type = "cloud_run_revision"
+              AND metric.labels.code = "daily_ceiling"
+
+    # connectors-stalled's twin for a connectors built as the code sender
+    # alone (that policy follows the outbox lanes' own switch). The delivery
+    # loop writes its pass line whatever it claims, and a sender that dies
+    # takes the process with it, so no pass line means no sender.
+    beta-text-sender-stalled:
+      display_name: "beta text codes: the sender wrote no pass line for five minutes"
+      subject: "text codes: the sender wrote no pass line for five minutes"
+      documentation: >-
+        connectors, which is beta's text sender, wrote no pass line for five
+        minutes: it is down, stuck or was refused at start (a setting, the
+        mounted key, or the project it runs in), so no code is texted. Read
+        its revision's lines first: a refusal at start names the variable at
+        fault and never a value.
+      conditions:
+        # By service, not by revision: a deploy is not a stalled loop.
+        - name: "no pass line for five minutes"
+          absent:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/connectors_passes" AND resource.type = "cloud_run_revision"
+            duration: "300s"
+            cross_series_reducer: "REDUCE_SUM"
+            group_by_fields: ["resource.label.service_name"]
+
+# =============================================================================
+# S2 on beta (R430, the owner's teammate, 2026-10-21: "yes won deals
+# information can go from crm to tpa automatically"; R434: "ship with s2 off
+# for now and then spin up sub agents to get it built on beta"): the CRM beta
+# copy's sender job, crm-lane-send (beta's crm.tf). Read by beta's root alone,
+# into the project the CRM's role lives in (beta's app project), and only
+# while var.crm_lane_send_enabled opens S2 (a plan with it off is today's).
+# Its missed run is the module's (crm.tf, crm_lane_send_missed_runs). The
+# pass's lines are the CRM's: its drain's (engine/app/partner/drain.py, logger
+# `network.partner.drain`) and its job module's (engine/app/partner/
+# send_once.py, logger `network.partner.send_once`: a pass that raised), each
+# `msg` and a closed `outcome`; a pass's own report line (`tpa outbox pass`,
+# and send_once's JSON report on stdout, counts and an idle word) is never
+# read into a label.
+# =============================================================================
+crm_lane_send:
+  log_metrics:
+    crm_lane_send_errors:
+      description: >-
+        One per error line of the CRM beta copy's sender job: its drain's (the
+        lane on and not configured, `not_configured`; no workload token or
+        identity token to send with, `unavailable`: auth, the metadata server
+        or the copy's registration; a queued row off its schema, dead and never
+        signed, `schema_refused`) and its job module's (a pass that raised,
+        `failed`, the exception's type alone). By that closed outcome alone;
+        the row's transition id and path, and the exception's type, on the
+        line are never read.
+      filter: |
+        resource.type="cloud_run_job"
+        AND resource.labels.job_name="crm-lane-send"
+        AND (jsonPayload.logger="network.partner.drain" OR jsonPayload.logger="network.partner.send_once")
+        AND jsonPayload.level="ERROR"
+      labels:
+        outcome: 'REGEXP_EXTRACT(jsonPayload.outcome, "^(not_configured|unavailable|schema_refused|failed)$")'
+
+  alert_policies:
+    # R380's twice in a row (the app project's `jobs-failed`), as a policy of
+    # its own so the catalogue's lists stay what they were while S2 is off.
+    crm-lane-send-failed:
+      display_name: "the CRM copy's won-deal sender failed twice in a row"
+      subject: "CRM copy's won-deal sender failed twice in a row: ${metric_or_resource.label.job_name}"
+      documentation: >-
+        The CRM beta copy's sender job (crm-lane-send, one pass of its outbox
+        drain for won deals, every few minutes) failed twice in a row with no
+        successful run between. A pass fails when the lane is not configured
+        or it holds no credentials to send with (auth's workload token for the
+        copy's partner registration, or an identity token); a delivery the TPA
+        refused or could not take is retried or dead-lettered by the pass
+        itself and does not fail it. Read the executions' own lines (their
+        `tpa outbox pass` line counts, their error lines name an outcome),
+        then auth's (the registration, R430's in-person step) and tpa-api's.
+        Waiting won deals stay queued in the copy and go in order once it
+        recovers.
+      conditions:
+        - name: "the sender failed twice in a row"
+          failed_twice:
+            jobs: ["crm-lane-send"]
+
+    crm-lane-send-refused:
+      display_name: "the CRM copy's won-deal sender could not send"
+      subject: "CRM copy's won-deal sender could not send: ${metric_or_resource.label.outcome}"
+      documentation: >-
+        The CRM beta copy's sender job wrote an error line: `unavailable` (no
+        workload token from auth, or no identity token: the copy's partner
+        registration, auth's caller list or its endpoint), `not_configured`
+        (the job's settings are short of the send shape: read its revision's
+        environment names, never their values), `schema_refused` (a queued
+        won deal that is off the lane's schema, dead-lettered unsigned; the
+        copy's admin "TPA lane" page shows it, and its replay route resends it
+        once fixed) or `failed` (the pass raised: its line names the
+        exception's type alone, so read the execution's other lines; crm-db
+        through the proxy is the first suspect). Nothing more was sent for
+        that pass; a row is never sent twice.
+      conditions:
+        - name: "an error line"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/crm_lane_send_errors" AND resource.type = "cloud_run_job"
+            group_by_fields: ["metric.label.outcome"]
+
+# =============================================================================
+# S4 on beta (R441, the owner, 2026-10-23: "can you spin up as many sub agents
+# as you need to for you to build s3/s4 in the next 2 hours"; its ruling:
+# S3 and S4 built on beta switched off, every class 3, cost or in-person item
+# on the owner's list): the CRM beta copy's commission pass, the job
+# crm-lane-comp (beta's crm.tf), and the sender's statement replies. Read by
+# beta's root alone, into the project the CRM's role lives in, crm_lane_comp
+# while var.crm_lane_comp_enabled builds the pass and crm_lane_statements
+# while var.crm_lane_send_statements_enabled has the sender send statements
+# (a plan with either off is today's). The pass's missed run is the module's
+# (crm.tf, crm_lane_comp_missed_runs). Every line read is the CRM's own, by
+# its logger and its level (the S2 review's lesson, c27a1cba): on the pass,
+# its job module's (engine/app/partner/comp_once.py, logger
+# `network.partner.comp_once`: a pass that raised, "a TPA lane commission
+# pass failed"; the CRM's S4 commit, not yet at its 293d7ff1), the sweep's
+# (engine/app/services/comp_calc.py, `network.comp_calc`: "a commission
+# calculation failed", one invoice) and the builder's
+# (engine/app/services/comp_statements.py, `network.comp_statements`: "a
+# commission statement could not be built", one payee's month); on the
+# sender, comp_statements' reply lines (`network.comp_statements`: "the TPA
+# rejected a commission statement" at WARNING with its `alert`, and its two
+# ERRORs). A label is the logger's last word (`operation`) or the line's fixed
+# sentence (`outcome`, one of three), never a field the line carries (an id, a
+# period, a code).
+# =============================================================================
+crm_lane_comp:
+  log_metrics:
+    crm_lane_comp_errors:
+      description: >-
+        One per error line of the CRM beta copy's commission pass job: its job
+        module's (a pass that raised, `comp_once`), the nightly calculation's
+        (an invoice whose commission could not be calculated, `comp_calc`; the
+        next night retries it) and the statement builder's (a payee's month
+        whose statement could not be built, `comp_statements`; its earnings
+        wait). By the line's logger alone; the invoice id, the period and the
+        payee kind on the line are never read; `operation` is the logger's
+        last word.
+      filter: |
+        resource.type="cloud_run_job"
+        AND resource.labels.job_name="crm-lane-comp"
+        AND (jsonPayload.logger="network.partner.comp_once" OR jsonPayload.logger="network.comp_calc" OR jsonPayload.logger="network.comp_statements")
+        AND jsonPayload.level="ERROR"
+      labels:
+        operation: 'REGEXP_EXTRACT(jsonPayload.logger, "^network[.](?:partner[.])?(comp_once|comp_calc|comp_statements)$")'
+
+  alert_policies:
+    # R380's twice in a row, as S2's sender's: a policy of its own, so the
+    # catalogue's lists stay what they were while S4 is off.
+    crm-lane-comp-failed:
+      display_name: "the CRM copy's commission pass failed twice in a row"
+      subject: "CRM copy's commission pass failed twice in a row: ${metric_or_resource.label.job_name}"
+      documentation: >-
+        The CRM beta copy's commission pass (crm-lane-comp, the CRM's own
+        nightly commission step for its lane business, every hour at :40,
+        doing its work once a night after 01:00 and 01:30 of the business's
+        day) failed twice in a row with no successful run between. A pass
+        fails when it raised (its `a TPA lane commission pass failed` line
+        names the exception's type alone) or when the lane's business is not
+        configured; one invoice or one statement that fails is a line of its
+        own and does not fail the pass. Read the executions' own lines (the
+        JSON report on stdout counts and an idle word), then crm-db through
+        the proxy, the first suspect. The night's claim is taken before the
+        work, so a crashed calculation or build is not retried that night;
+        calculation also runs on each paid invoice's receipt, so only the
+        statements wait a day.
+      conditions:
+        - name: "the pass failed twice in a row"
+          failed_twice:
+            jobs: ["crm-lane-comp"]
+
+    crm-lane-comp-errors:
+      display_name: "the CRM copy's commission pass wrote an error line"
+      subject: "CRM copy's commission pass wrote an error line: ${metric_or_resource.label.operation}"
+      documentation: >-
+        The CRM beta copy's commission pass wrote an error line: `comp_once`
+        (the pass raised; its line names the exception's type alone),
+        `comp_calc` (one paid or reversed invoice's commission could not be
+        calculated; the next night's sweep tries it again) or
+        `comp_statements` (one payee's month could not be built into a
+        statement; its earnings wait for the next night). Read the job's
+        executions' lines in the CRM's project; nothing left the copy because
+        of it.
+      conditions:
+        - name: "an error line"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/crm_lane_comp_errors" AND resource.type = "cloud_run_job"
+            group_by_fields: ["metric.label.operation"]
+
+crm_lane_statements:
+  log_metrics:
+    crm_lane_statement_replies:
+      description: >-
+        One per line the CRM beta copy's sender job writes about a
+        commission statement's reply from the TPA: the TPA rejected a
+        statement (records' business rejection, at WARNING with its alert
+        comp_statement_rejected), or the reply could not be placed (it names
+        no statement the copy sent, or answers one under another id; at
+        ERROR). By the line's fixed sentence alone, the label `outcome` one
+        of the three; the statement's reference,
+        its rejection code and the transition id on the line are never read.
+      filter: |
+        resource.type="cloud_run_job"
+        AND resource.labels.job_name="crm-lane-send"
+        AND jsonPayload.logger="network.comp_statements"
+        AND (jsonPayload.alert="comp_statement_rejected" OR jsonPayload.level="ERROR")
+      labels:
+        outcome: 'REGEXP_EXTRACT(jsonPayload.msg, "^(the TPA rejected a commission statement|a statement reply names no statement this business sent|the TPA answered a statement under another id)$")'
+
+  alert_policies:
+    crm-lane-statement-replies:
+      display_name: "the TPA rejected or misplaced a CRM copy's statement"
+      subject: "CRM copy's commission statement: ${metric_or_resource.label.outcome}"
+      documentation: >-
+        The CRM beta copy's sender job sent a commission statement and wrote
+        one of three lines about the TPA's answer: "the TPA rejected a
+        commission statement" (records checked it against what the TPA
+        invoiced and was paid and refused it, with a closed rejection code:
+        invoice_not_paid, sponsor_mismatch, count_mismatch, amount_mismatch,
+        cap_exceeded, total_mismatch, parts_mismatch or
+        superseded_after_paid; the copy's admin pages show which statement and
+        why), "a statement reply names no statement this business sent", or
+        "the TPA answered a statement under another id" (the copy and the TPA
+        disagree about which statement this is: read records' statement for
+        the copy's reference before any resend). Nothing is sent twice; a
+        rejected statement is rebuilt by the copy once its facts are fixed.
+      conditions:
+        - name: "a statement reply line"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/crm_lane_statement_replies" AND resource.type = "cloud_run_job"
+            group_by_fields: ["metric.label.outcome"]
+
+# =============================================================================
+# The PHI project's perimeter while it is in dry run (R380, the owner,
+# 2026-10-17: "226 yes 1,2,3"; I-604). Read by beta's root alone: while
+# var.perimeter_dry_run is true it puts this policy in place of the PHI
+# project's per-violation `perimeter-violations` above, under the same key, so
+# the policy is changed in place and never made beside it; enforced, the
+# per-violation policy comes back exactly as written. A dry-run perimeter
+# refuses nothing, and beta's logged 500 and more a day once it was created,
+# almost all people's own console, gcloud and Terraform reads while its
+# break-glass level is off (I-347, D143): one notification each buried every
+# other alert. Nothing about the violations themselves changes: the same
+# counter (`perimeter_violations`), the same entries in Cloud Logging and,
+# through the audit sinks, in the vault. production-full reads none of it.
+# =============================================================================
+perimeter_dry_run:
+  alert_policies:
+    perimeter-violations:
+      display_name: "perimeter violations in dry run (the day's count)"
+      subject: "perimeter dry run: violations in the last 24 hours"
+      # Opened once a day and told then; its close, a few minutes later, is
+      # not told (Cloud Monitoring's AlertStrategy).
+      notification_prompts: ["OPENED"]
+      documentation: >-
+        The PHI project's perimeter is in dry run: it refused nothing, and it
+        logged the violations counted here in the 24 hours before about 14:00
+        UTC (the notification's observed value is the count; no reason or
+        service is in it). One notification a day, at about 14:00 UTC (09:00
+        in Chicago in summer, 08:00 in winter), none on a day with no
+        violation, and the incident closes by itself within about twenty
+        minutes, untold. Read the day's entries in the PHI project's logs (the
+        VpcServiceControlAuditMetadata entries, dry run) against
+        network-and-perimeter.md §5.5 before the flip: NO_MATCHING_ACCESS_LEVEL
+        on a person's own console, gcloud or Terraform read is expected while
+        the break-glass level is off (D143); a service account's entry, or
+        RESOURCES_NOT_IN_SAME_SERVICE_PERIMETER, is what to read first.
+        Enforced, the per-violation policy is back.
+      conditions:
+        # The day's count, read in one ten-minute window a day: true from
+        # 14:00 to 14:10 UTC when the 24 hours before held any violation, so
+        # one incident opens at the first evaluation in it and closes once it
+        # ends (Google closes a PromQL incident twice the evaluation interval
+        # after the condition was last met). Inside the 25 hours Google alerts
+        # over for a log metric; five minutes is the interval, twice in the
+        # window.
+        - name: "violations in the 24 hours before 14:00 UTC"
+          promql:
+            query: >-
+              sum(increase(logging_googleapis_com:user_perimeter_violations{monitored_resource="audited_resource"}[24h])) > 0
+              and on() (hour() == 14 and minute() < 10)
+            evaluation_interval: "300s"

@@ -139,7 +139,11 @@ NAMES = {
         "job_id": {"tpa-db-export", "records-chain-head", "restore-drill"},
         "database_id": {"tpa-db"},
     },
-    "crm": {"service_name": {"crm-web", "engine"}, "job_name": {"migrate-crm", "seed-crm"}, "job_id": set(),
+    # crm-lane-send and crm-lane-comp: beta's CRM copy's won-deal sender and commission pass (crm.tf, R430 and R441),
+    # each built only behind its own switch, off today; the catalogue's crm_lane_* sections name them. No page charts
+    # them yet.
+    "crm": {"service_name": {"crm-web", "engine"}, "job_name": {"migrate-crm", "seed-crm", "crm-lane-send",
+                                                                 "crm-lane-comp"}, "job_id": set(),
             "database_id": {"crm-db"}},
     "cc": {"service_name": {"svc-voice", "svc-ops", "svc-twilio-rest"}, "job_name": {"migrate-cc"}, "job_id": set(),
            "database_id": {"cc-db"}},
@@ -292,8 +296,8 @@ class CatalogueTest(unittest.TestCase):
         self.assertEqual(problems, [], "\n".join(problems))
 
     def test_an_unanchored_extractor_keeps_its_label_off_and_an_anchored_one_lets_it_back(self):
-        # Today's catalogue (tpa-platform d60de911): the CRM's class is anchored, as the call centre's is, so the
-        # CRM's error panels group by it again...
+        # Today's catalogue (tpa-platform 52a17003, P129's review): the CRM's class is anchored, as the call centre's
+        # is (both now read the exception line after the last `  File` frame), so the CRM's error panels group by it...
         self.assertEqual(self.catalogue.unanchored_labels("crm", "errors"), set())
         self.assertEqual(self.catalogue.unanchored_labels("cc", "errors"), set(), "the call centre's is anchored")
         crm_class = [(n, t) for n, t, _r, uid, _a, f in queries() if uid == "cloud-crm"
@@ -301,7 +305,7 @@ class CatalogueTest(unittest.TestCase):
         self.assertNotEqual(crm_class, [])
         # ...and the moment a vendored catalogue un-anchors it, the rule takes the label off again.
         unanchored = self.catalogue.text.replace(
-            'REGEXP_EXTRACT(jsonPayload.exc, "(?:^|\\\\n)([A-Za-z_]', 'REGEXP_EXTRACT(jsonPayload.exc, "([A-Za-z_]')
+            'REGEXP_EXTRACT(jsonPayload.exc, "^[\\\\s', 'REGEXP_EXTRACT(jsonPayload.exc, "[\\\\s')
         self.assertNotEqual(unanchored, self.catalogue.text, "the CRM extractor's text moved; update this test")
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "monitoring.yml"

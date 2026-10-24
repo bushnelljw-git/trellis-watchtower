@@ -135,8 +135,12 @@ class Catalogue:
         return out
 
     def jobs_named(self) -> set[str]:
-        """Every Cloud Run job the catalogue's alert filters name (`job_name = one_of(...)` or `= "..."`)."""
-        return self._named("job_name")
+        """Every Cloud Run job the catalogue's alert filters name (`job_name = one_of(...)` or `= "..."`), and every
+        job a `failed_twice` condition lists (R380: the module writes its PromQL per job from that list)."""
+        found = self._named("job_name")
+        for args in re.findall(r"^\s*failed_twice:\s*\n\s*jobs:\s*\[([^\]]*)\]", self.text, re.M):
+            found.update(re.findall(r'"([^"]+)"', args))
+        return found
 
     def schedules_named(self) -> set[str]:
         return self._named("job_id")

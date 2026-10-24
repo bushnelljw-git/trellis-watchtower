@@ -1396,7 +1396,7 @@
     {
       "type": "timeseries",
       "title": "Failed executions, by job",
-      "description": "Executions that failed after their retries (`jobs-failed`; `audit-chain` for the audit jobs, urgent). For tpa-jobs a failed run is any tenant not `ok`.",
+      "description": "Executions that failed after their retries: two in a row open `jobs-failed` (R380); one opens `audit-chain` for the audit jobs (urgent). For tpa-jobs a failed run is any tenant not `ok`.",
       "gridPos": {
         "h": 8,
         "w": 12,

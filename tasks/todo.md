@@ -181,6 +181,19 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     (e2-highcpu-8) or a longer step. Its start check (`image_start_check.sh`, plain `docker build`) compiles it in
     this Mac's Docker VM too, which has too little memory now.
 
+- [x] CAT (2026-10-24, for the backups check below) the catalogue at tpa-platform master `52a17003` (from `64391438`,
+  157 commits), branch `backups/check`; the tests pin its Terraform at the same commit:
+  - [x] call-center's svc-voice event loop charted on Call centre (R5077, I-5133: `voice_loop_lag`, `_ms`,
+    `_over_1s`, `_over_5s`, `voice_stack_dumps`, `voice_keep_warm_failures`), with `voice-loop-stall`'s and
+    `voice-keep-warm-failing`'s lines from the catalogue.
+  - [x] The readers: a `failed_twice` condition's job list (R380, `jobs-failed` on two in a row in the app and CRM
+    projects; the wording says so), production-full's `merge({...})` instance ceilings, beta's
+    `local.connectors_max_instances` (read with the code sender off, as the pages chart connectors), and the latency
+    exclusions of the services the pages chart.
+  - [x] `file-reader` (D-154, off by default in both roots) is in NOT_RUN; beta's CRM copy's `crm-lane-send` and
+    `crm-lane-comp` (R430, R441, switched off) are names of the CRM's project. Not charted: the catalogue's optional
+    sections (`beta_text_codes`, `crm_lane_*`, `perimeter_dry_run`), which the reader does not read.
+  - [x] `make cloud-catalogue [CATALOGUE_REF=...]`: vendor, regenerate, `make lint`, in one step.
 - [x] NF (2026-10-11, the owner: "There will be NO systems in fly ONLY the gcp project") every Fly piece removed,
   branch `remove-fly`:
   - [x] `prometheus/targets/fly.yml` (the `fly` stack's two laptop probes), the Fly production dashboard, and the

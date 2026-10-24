@@ -4975,7 +4975,7 @@
     {
       "type": "timeseries",
       "title": "Executions, by job and result",
-      "description": "Completed executions of auth's jobs per interval. A failed one opens `jobs-failed`, or the urgent `audit-chain` for the audit jobs.",
+      "description": "Completed executions of auth's jobs per interval. Two failed in a row open `jobs-failed` (R380); one opens the urgent `audit-chain` for the audit jobs.",
       "gridPos": {
         "h": 8,
         "w": 12,

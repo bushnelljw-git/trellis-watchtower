@@ -772,7 +772,7 @@
     },
     {
       "type": "row",
-      "title": "Resources: each Cloud Run service's CPU, memory, instances, concurrency and start-up (open a row)",
+      "title": "svc-voice: its event loop (the stall alarm) and its keep-warm",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -784,13 +784,568 @@
       "id": 8
     },
     {
+      "type": "timeseries",
+      "title": "Loop held 5 s+, and stack dumps (5 min)",
+      "description": "svc-voice's watchdog, in each 5 minutes: its loop's timer firing five seconds or more late (`voice_loop_lag_over_5s`), and faulthandler's stack dumps, one per thread, written once the loop has not beaten for five seconds whether or not it came back (`voice_stack_dumps`). Above 0 of either opens `voice-loop-stall`: a caller hears dead air. Nothing of a call is on the lines.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-cc"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-cc"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CC_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/voice_loop_lag_over_5s",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "held 5 s or more"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-cc"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CC_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/voice_stack_dumps",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "stack dump"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "Loop held 1 s+ (5 min)",
+      "description": "The loop's timer firing a second or more late (`voice_loop_lag_over_1s`), in each 5 minutes. The red line is `voice-loop-stall`'s: above 2 (three or more) opens it.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 6,
+        "y": 26
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-cc"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-cc"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CC_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/voice_loop_lag_over_1s",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "held 1 s or more"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 2.0
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "How late its timer fired (p99, p50)",
+      "description": "Each late timer's lag (`voice_loop_lag_ms`, a line's `lag_ms`): nothing drawn, no timer fired late. No policy reads the distribution; it is for reading a stall afterwards.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 26
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-cc"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-cc"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CC_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/voice_loop_lag_ms",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_99",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "p99"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-cc"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CC_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/voice_loop_lag_ms",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_50",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "p50"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "always",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "pointSize": 6
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11
+    },
+    {
+      "type": "timeseries",
+      "title": "Late timers, by where",
+      "description": "Every late-timer line (`voice_loop_lag`) by its closed `where` code: the kind of stall.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 26
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-cc"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-cc"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CC_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/voice_loop_lag",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12
+    },
+    {
+      "type": "timeseries",
+      "title": "Keep-warm steps that failed, by step (15 min)",
+      "description": "svc-voice's failed or timed-out keep-warm steps (`voice_keep_warm_failures`), by step, in each 15 minutes. The red line is `voice-keep-warm-failing`'s: above 3 of one step opens it; that path is cold for the next call.",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-cc"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-cc"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CC_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/voice_keep_warm_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 3.0
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 13
+    },
+    {
+      "type": "row",
+      "title": "Resources: each Cloud Run service's CPU, memory, instances, concurrency and start-up (open a row)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 39
+      },
+      "id": 14
+    },
+    {
       "type": "text",
       "title": "No disk on a Cloud Run service",
       "gridPos": {
         "h": 3,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 40
       },
       "options": {
         "mode": "markdown",
@@ -801,7 +1356,7 @@
           "showMiniMap": false
         }
       },
-      "id": 9
+      "id": 15
     },
     {
       "type": "row",
@@ -816,7 +1371,7 @@
             "h": 7,
             "w": 6,
             "x": 0,
-            "y": 30
+            "y": 44
           },
           "links": [
             {
@@ -979,7 +1534,7 @@
               "sort": "desc"
             }
           },
-          "id": 11
+          "id": 17
         },
         {
           "type": "timeseries",
@@ -989,7 +1544,7 @@
             "h": 7,
             "w": 6,
             "x": 6,
-            "y": 30
+            "y": 44
           },
           "datasource": {
             "type": "stackdriver",
@@ -1145,7 +1700,7 @@
               "sort": "desc"
             }
           },
-          "id": 12
+          "id": 18
         },
         {
           "type": "timeseries",
@@ -1155,7 +1710,7 @@
             "h": 7,
             "w": 6,
             "x": 12,
-            "y": 30
+            "y": 44
           },
           "datasource": {
             "type": "stackdriver",
@@ -1285,7 +1840,7 @@
               "sort": "desc"
             }
           },
-          "id": 13
+          "id": 19
         },
         {
           "type": "timeseries",
@@ -1295,7 +1850,7 @@
             "h": 7,
             "w": 6,
             "x": 18,
-            "y": 30
+            "y": 44
           },
           "datasource": {
             "type": "stackdriver",
@@ -1420,7 +1975,7 @@
               "sort": "desc"
             }
           },
-          "id": 14
+          "id": 20
         },
         {
           "type": "timeseries",
@@ -1430,7 +1985,7 @@
             "h": 7,
             "w": 8,
             "x": 0,
-            "y": 37
+            "y": 51
           },
           "datasource": {
             "type": "stackdriver",
@@ -1551,7 +2106,7 @@
               "sort": "desc"
             }
           },
-          "id": 15
+          "id": 21
         },
         {
           "type": "timeseries",
@@ -1561,7 +2116,7 @@
             "h": 7,
             "w": 8,
             "x": 8,
-            "y": 37
+            "y": 51
           },
           "datasource": {
             "type": "stackdriver",
@@ -1651,7 +2206,7 @@
               "sort": "desc"
             }
           },
-          "id": 16
+          "id": 22
         },
         {
           "type": "timeseries",
@@ -1661,7 +2216,7 @@
             "h": 7,
             "w": 8,
             "x": 16,
-            "y": 37
+            "y": 51
           },
           "datasource": {
             "type": "stackdriver",
@@ -1812,16 +2367,16 @@
               "sort": "desc"
             }
           },
-          "id": 17
+          "id": 23
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 43
       },
-      "id": 10
+      "id": 16
     },
     {
       "type": "row",
@@ -1836,7 +2391,7 @@
             "h": 7,
             "w": 6,
             "x": 0,
-            "y": 31
+            "y": 45
           },
           "links": [
             {
@@ -1999,7 +2554,7 @@
               "sort": "desc"
             }
           },
-          "id": 19
+          "id": 25
         },
         {
           "type": "timeseries",
@@ -2009,7 +2564,7 @@
             "h": 7,
             "w": 6,
             "x": 6,
-            "y": 31
+            "y": 45
           },
           "datasource": {
             "type": "stackdriver",
@@ -2165,7 +2720,7 @@
               "sort": "desc"
             }
           },
-          "id": 20
+          "id": 26
         },
         {
           "type": "timeseries",
@@ -2175,7 +2730,7 @@
             "h": 7,
             "w": 6,
             "x": 12,
-            "y": 31
+            "y": 45
           },
           "datasource": {
             "type": "stackdriver",
@@ -2305,7 +2860,7 @@
               "sort": "desc"
             }
           },
-          "id": 21
+          "id": 27
         },
         {
           "type": "timeseries",
@@ -2315,7 +2870,7 @@
             "h": 7,
             "w": 6,
             "x": 18,
-            "y": 31
+            "y": 45
           },
           "datasource": {
             "type": "stackdriver",
@@ -2444,7 +2999,7 @@
               "sort": "desc"
             }
           },
-          "id": 22
+          "id": 28
         },
         {
           "type": "timeseries",
@@ -2454,7 +3009,7 @@
             "h": 7,
             "w": 8,
             "x": 0,
-            "y": 38
+            "y": 52
           },
           "datasource": {
             "type": "stackdriver",
@@ -2575,7 +3130,7 @@
               "sort": "desc"
             }
           },
-          "id": 23
+          "id": 29
         },
         {
           "type": "timeseries",
@@ -2585,7 +3140,7 @@
             "h": 7,
             "w": 8,
             "x": 8,
-            "y": 38
+            "y": 52
           },
           "datasource": {
             "type": "stackdriver",
@@ -2675,7 +3230,7 @@
               "sort": "desc"
             }
           },
-          "id": 24
+          "id": 30
         },
         {
           "type": "timeseries",
@@ -2685,7 +3240,7 @@
             "h": 7,
             "w": 8,
             "x": 16,
-            "y": 38
+            "y": 52
           },
           "datasource": {
             "type": "stackdriver",
@@ -2836,16 +3391,16 @@
               "sort": "desc"
             }
           },
-          "id": 25
+          "id": 31
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 44
       },
-      "id": 18
+      "id": 24
     },
     {
       "type": "row",
@@ -2860,7 +3415,7 @@
             "h": 7,
             "w": 6,
             "x": 0,
-            "y": 32
+            "y": 46
           },
           "links": [
             {
@@ -3023,7 +3578,7 @@
               "sort": "desc"
             }
           },
-          "id": 27
+          "id": 33
         },
         {
           "type": "timeseries",
@@ -3033,7 +3588,7 @@
             "h": 7,
             "w": 6,
             "x": 6,
-            "y": 32
+            "y": 46
           },
           "datasource": {
             "type": "stackdriver",
@@ -3189,7 +3744,7 @@
               "sort": "desc"
             }
           },
-          "id": 28
+          "id": 34
         },
         {
           "type": "timeseries",
@@ -3199,7 +3754,7 @@
             "h": 7,
             "w": 6,
             "x": 12,
-            "y": 32
+            "y": 46
           },
           "datasource": {
             "type": "stackdriver",
@@ -3329,7 +3884,7 @@
               "sort": "desc"
             }
           },
-          "id": 29
+          "id": 35
         },
         {
           "type": "timeseries",
@@ -3339,7 +3894,7 @@
             "h": 7,
             "w": 6,
             "x": 18,
-            "y": 32
+            "y": 46
           },
           "datasource": {
             "type": "stackdriver",
@@ -3468,7 +4023,7 @@
               "sort": "desc"
             }
           },
-          "id": 30
+          "id": 36
         },
         {
           "type": "timeseries",
@@ -3478,7 +4033,7 @@
             "h": 7,
             "w": 8,
             "x": 0,
-            "y": 39
+            "y": 53
           },
           "datasource": {
             "type": "stackdriver",
@@ -3599,7 +4154,7 @@
               "sort": "desc"
             }
           },
-          "id": 31
+          "id": 37
         },
         {
           "type": "timeseries",
@@ -3609,7 +4164,7 @@
             "h": 7,
             "w": 8,
             "x": 8,
-            "y": 39
+            "y": 53
           },
           "datasource": {
             "type": "stackdriver",
@@ -3699,7 +4254,7 @@
               "sort": "desc"
             }
           },
-          "id": 32
+          "id": 38
         },
         {
           "type": "timeseries",
@@ -3709,7 +4264,7 @@
             "h": 7,
             "w": 8,
             "x": 16,
-            "y": 39
+            "y": 53
           },
           "datasource": {
             "type": "stackdriver",
@@ -3860,16 +4415,16 @@
               "sort": "desc"
             }
           },
-          "id": 33
+          "id": 39
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 45
       },
-      "id": 26
+      "id": 32
     },
     {
       "type": "row",
@@ -3880,9 +4435,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 46
       },
-      "id": 34
+      "id": 40
     },
     {
       "type": "timeseries",
@@ -3892,7 +4447,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 33
+        "y": 47
       },
       "datasource": {
         "type": "stackdriver",
@@ -3988,7 +4543,7 @@
           "sort": "desc"
         }
       },
-      "id": 35
+      "id": 41
     },
     {
       "type": "timeseries",
@@ -3998,7 +4553,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 33
+        "y": 47
       },
       "datasource": {
         "type": "stackdriver",
@@ -4181,7 +4736,7 @@
           }
         }
       ],
-      "id": 36
+      "id": 42
     },
     {
       "type": "state-timeline",
@@ -4191,7 +4746,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 39
+        "y": 53
       },
       "datasource": {
         "type": "stackdriver",
@@ -4290,7 +4845,7 @@
           "sort": "none"
         }
       },
-      "id": 37
+      "id": 43
     },
     {
       "type": "timeseries",
@@ -4300,7 +4855,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 39
+        "y": 53
       },
       "datasource": {
         "type": "stackdriver",
@@ -4400,7 +4955,7 @@
           "sort": "desc"
         }
       },
-      "id": 38
+      "id": 44
     },
     {
       "type": "timeseries",
@@ -4410,7 +4965,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 39
+        "y": 53
       },
       "datasource": {
         "type": "stackdriver",
@@ -4506,7 +5061,7 @@
           "sort": "desc"
         }
       },
-      "id": 39
+      "id": 45
     },
     {
       "type": "timeseries",
@@ -4516,7 +5071,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 45
+        "y": 59
       },
       "datasource": {
         "type": "stackdriver",
@@ -4621,7 +5176,7 @@
           "sort": "desc"
         }
       },
-      "id": 40
+      "id": 46
     },
     {
       "type": "timeseries",
@@ -4631,7 +5186,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 45
+        "y": 59
       },
       "datasource": {
         "type": "stackdriver",
@@ -4751,7 +5306,7 @@
           "sort": "desc"
         }
       },
-      "id": 41
+      "id": 47
     },
     {
       "type": "timeseries",
@@ -4761,7 +5316,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 45
+        "y": 59
       },
       "datasource": {
         "type": "stackdriver",
@@ -4881,7 +5436,7 @@
           "sort": "desc"
         }
       },
-      "id": 42
+      "id": 48
     },
     {
       "type": "timeseries",
@@ -4891,7 +5446,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 45
+        "y": 59
       },
       "datasource": {
         "type": "stackdriver",
@@ -5011,7 +5566,7 @@
           "sort": "desc"
         }
       },
-      "id": 43
+      "id": 49
     },
     {
       "type": "row",
@@ -5022,9 +5577,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 65
       },
-      "id": 44
+      "id": 50
     },
     {
       "type": "timeseries",
@@ -5034,7 +5589,7 @@
         "h": 7,
         "w": 4,
         "x": 0,
-        "y": 52
+        "y": 66
       },
       "datasource": {
         "type": "stackdriver",
@@ -5129,7 +5684,7 @@
           "sort": "desc"
         }
       },
-      "id": 45
+      "id": 51
     },
     {
       "type": "timeseries",
@@ -5139,7 +5694,7 @@
         "h": 7,
         "w": 5,
         "x": 4,
-        "y": 52
+        "y": 66
       },
       "datasource": {
         "type": "stackdriver",
@@ -5256,7 +5811,7 @@
           "sort": "desc"
         }
       },
-      "id": 46
+      "id": 52
     },
     {
       "type": "timeseries",
@@ -5266,7 +5821,7 @@
         "h": 7,
         "w": 5,
         "x": 9,
-        "y": 52
+        "y": 66
       },
       "datasource": {
         "type": "stackdriver",
@@ -5353,7 +5908,7 @@
           "sort": "desc"
         }
       },
-      "id": 47
+      "id": 53
     },
     {
       "type": "timeseries",
@@ -5363,7 +5918,7 @@
         "h": 7,
         "w": 5,
         "x": 14,
-        "y": 52
+        "y": 66
       },
       "datasource": {
         "type": "stackdriver",
@@ -5520,7 +6075,7 @@
           "sort": "desc"
         }
       },
-      "id": 48
+      "id": 54
     },
     {
       "type": "timeseries",
@@ -5530,7 +6085,7 @@
         "h": 7,
         "w": 5,
         "x": 19,
-        "y": 52
+        "y": 66
       },
       "datasource": {
         "type": "stackdriver",
@@ -5623,7 +6178,7 @@
           "sort": "desc"
         }
       },
-      "id": 49
+      "id": 55
     },
     {
       "type": "row",
@@ -5634,9 +6189,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 73
       },
-      "id": 50
+      "id": 56
     },
     {
       "type": "stat",
@@ -5646,7 +6201,7 @@
         "h": 7,
         "w": 6,
         "x": 0,
-        "y": 60
+        "y": 74
       },
       "datasource": {
         "type": "stackdriver",
@@ -5852,7 +6407,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 51
+      "id": 57
     },
     {
       "type": "timeseries",
@@ -5862,7 +6417,7 @@
         "h": 7,
         "w": 18,
         "x": 6,
-        "y": 60
+        "y": 74
       },
       "datasource": {
         "type": "stackdriver",
@@ -5954,7 +6509,7 @@
           "sort": "desc"
         }
       },
-      "id": 52
+      "id": 58
     }
   ]
 }

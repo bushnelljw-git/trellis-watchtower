@@ -558,7 +558,8 @@ def jobs_stat(title: str, ds: str, jobs: str, schedules: str | None, deps) -> di
     queries = [executions(jobs, "failed", "+3600s", by=(), name="failed")]
     if schedules:
         queries.append(schedule_failures(schedules, "+3600s", by=(), name="schedule failed"))
-    return stat(title, ds, queries, "Last 24 h: executions that failed after their retries (`jobs-failed`)" +
+    return stat(title, ds, queries, "Last 24 h: executions that failed after their retries (`jobs-failed`: in the app and CRM projects on the "
+                "second in a row, R380; in the PHI and call-centre projects on one)" +
                 (", and schedules that could not start their job (`scheduler-failed`)" if schedules else "") +
                 ". A missed run is the Scheduled runs row above.", time_from="24h", no_value="0",
                 text_mode="value_and_name", steps=thresholds(NEUTRAL, (1, "red")), deps=deps)
@@ -856,9 +857,12 @@ KEPT_WARM = {env: TERRAFORM_WARM[env] + tuple(s for s in DEPLOYMENT_WARM[env] if
              for env in TERRAFORM_WARM}
 # What each root builds that the environment does not run, and why: no tile for it, said here, so a service its
 # Terraform adds and nobody placed fails tests/cloud/test_overview.py.
+FILE_READER_OFF = ("file_reader_enabled off by default (D-154, the roster file reader): no digest and no page here "
+                   "yet; a switch turned on is a service with a page and a tile")
 NOT_RUN = {"beta": {"connectors": "connectors_enabled off: beta has no destination for it (R120)",
-                    "tpa-jobs-drains": "tpa_jobs_drains_enabled off: its loops wait, idempotent, until it is on"},
-           "production": {}}
+                    "tpa-jobs-drains": "tpa_jobs_drains_enabled off: its loops wait, idempotent, until it is on",
+                    "file-reader": FILE_READER_OFF},
+           "production": {"file-reader": FILE_READER_OFF}}
 # The module's `<service> has no instance` (its threshold condition; its absence one waits ten minutes): instance_count
 # the most in each minute, summed over revisions, below one for five minutes.
 NO_INSTANCE_POLICY = {"aligner": "ALIGN_MAX", "period": "60s", "reducer": "REDUCE_SUM", "below": 1, "duration": "300s"}
@@ -1855,8 +1859,8 @@ def sign_in() -> dict:
                bars=True),
         row("auth's jobs"),
         series("Executions, by job and result", APP, executions(AUTH_JOBS),
-               "Completed executions of auth's jobs per interval. A failed one opens `jobs-failed`, or the urgent "
-               "`audit-chain` for the audit jobs.", bars=True),
+               "Completed executions of auth's jobs per interval. Two failed in a row open `jobs-failed` (R380); one "
+               "opens the urgent `audit-chain` for the audit jobs.", bars=True),
         series("Schedules that could not start their job", APP, schedule_failures(AUTH_SCHEDULES),
                "Cloud Scheduler attempts for auth's schedules that finished in error, by schedule and status.",
                bars=True),
@@ -1958,6 +1962,49 @@ def records() -> dict:
                      "numbers only: no member data reaches a metric. " + NOTHING_BUT_METRICS, ["records"], items)
 
 
+def voice_loop() -> list[dict]:
+    """svc-voice's event-loop watchdog and its keep-warm (call-center ef3ad77; R5077, I-5133), each counter read as
+    `voice-loop-stall` and `voice-keep-warm-failing` read it, with their lines from the catalogue."""
+    held_5s, held_1s, dumps = (CATALOGUE.threshold("voice-loop-stall", "cc", condition=i) for i in range(3))
+    warm = CATALOGUE.threshold("voice-keep-warm-failing", "cc")
+
+    def as_policy(metric, policy, **kw):
+        return q(log(metric), REV, align=policy["per_series_aligner"], period=window(policy),
+                 reduce=policy["cross_series_reducer"], **kw)
+    return [
+        row("svc-voice: its event loop (the stall alarm) and its keep-warm"),
+        series(f"Loop held 5 s+, and stack dumps ({minutes(held_5s)} min)", CC,
+               [as_policy("voice_loop_lag_over_5s", held_5s, name="held 5 s or more"),
+                as_policy("voice_stack_dumps", dumps, name="stack dump")],
+               f"svc-voice's watchdog, in each {minutes(held_5s)} minutes: its loop's timer firing five seconds or more "
+               "late (`voice_loop_lag_over_5s`), and faulthandler's stack dumps, one per thread, written once the loop "
+               "has not beaten for five seconds whether or not it came back (`voice_stack_dumps`). Above "
+               f"{held_5s['threshold_value']:g} of either opens `voice-loop-stall`: a caller hears dead air. Nothing of "
+               "a call is on the lines.", w=6, h=7, bars=True),
+        series(f"Loop held 1 s+ ({minutes(held_1s)} min)", CC,
+               as_policy("voice_loop_lag_over_1s", held_1s, name="held 1 s or more"),
+               f"The loop's timer firing a second or more late (`voice_loop_lag_over_1s`), in each "
+               f"{minutes(held_1s)} minutes. The red line is `voice-loop-stall`'s: above "
+               f"{held_1s['threshold_value']:g} (three or more) opens it.", w=6, h=7, bars=True,
+               line=held_1s["threshold_value"]),
+        series("How late its timer fired (p99, p50)", CC,
+               [q(log("voice_loop_lag_ms"), REV, align=f"ALIGN_PERCENTILE_{n}", reduce="REDUCE_MAX", name=f"p{n}")
+                for n in (99, 50)],
+               "Each late timer's lag (`voice_loop_lag_ms`, a line's `lag_ms`): nothing drawn, no timer fired late. "
+               "No policy reads the distribution; it is for reading a stall afterwards.", w=6, h=7, unit="ms",
+               points=True),
+        series("Late timers, by where", CC, q(log("voice_loop_lag"), REV, by=("code",)),
+               "Every late-timer line (`voice_loop_lag`) by its closed `where` code: the kind of stall.", w=6, h=7,
+               bars=True),
+        series(f"Keep-warm steps that failed, by step ({minutes(warm)} min)", CC,
+               as_policy("voice_keep_warm_failures", warm, by=("code",)),
+               f"svc-voice's failed or timed-out keep-warm steps (`voice_keep_warm_failures`), by step, in each "
+               f"{minutes(warm)} minutes. The red line is `voice-keep-warm-failing`'s: above "
+               f"{warm['threshold_value']:g} of one step opens it; that path is cold for the next call.", w=24, h=6,
+               bars=True, line=warm["threshold_value"]),
+    ]
+
+
 def call_centre() -> dict:
     items = [
         row("Services"),
@@ -1979,6 +2026,7 @@ def call_centre() -> dict:
                [q(log("run_system_errors"), name="system log errors"),
                 q(log("sql_proxy_errors"), name="sql proxy refusals")],
                "`canary-startup` and `canary-sql` in the call-centre project.", bars=True),
+        *voice_loop(),
         *area_resources("callcentre"),
         *database_rows("cc-db", CC, "the staffed desk and svc-voice's hand-off ledger", now=False),
         *project_section(CC, "call-centre project", "cc-net-nat",
@@ -2033,8 +2081,8 @@ def crm() -> dict:
         row("Database and jobs"),
         db_stat("crm-db", CRM, "crm-db", w=6, h=7),
         series("CRM job executions", CRM, executions(CRM_JOBS),
-               "The CRM's migration and made-up data seed, each run by a person. A failure opens `jobs-failed` "
-               "(`crm-jobs-failed` in beta).", bars=True, w=18, h=7),
+               "The CRM's migration and made-up data seed, each run by a person. Two failures in a row open "
+               "`jobs-failed` (`crm-jobs-failed` in beta; R380).", bars=True, w=18, h=7),
     ]
     return dashboard("tw-cloud-crm", "CRM (cloud)",
                      "crm-web, engine and crm-db. In beta the CRM runs in the app project (R282), which `cloud-crm` "
@@ -2117,8 +2165,8 @@ def jobs(cc: bool = True) -> dict:
         series("Successful executions, by job", APP, executions(result="succeeded", by=("job_name",)),
                "A gap where a job's cadence says a run should be is a missed run.", bars=True),
         series("Failed executions, by job", APP, executions(result="failed", by=("job_name",)),
-               "Executions that failed after their retries (`jobs-failed`; `audit-chain` for the audit jobs, "
-               "urgent). For tpa-jobs a failed run is any tenant not `ok`.", bars=True),
+               "Executions that failed after their retries: two in a row open `jobs-failed` (R380); one opens "
+               "`audit-chain` for the audit jobs (urgent). For tpa-jobs a failed run is any tenant not `ok`.", bars=True),
         series("Schedules that could not start their job", APP, schedule_failures(),
                "Cloud Scheduler attempts that finished in error, by schedule and status (`scheduler-failed`). "
                "PERMISSION_DENIED means an invoker binding is not what the gate thinks.", bars=True),

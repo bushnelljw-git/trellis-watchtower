@@ -140,17 +140,42 @@ class Infra:
             values = []
             for key, default in zip(("max_instances", "concurrency"), defaults):
                 set_ = re.search(rf"^  {key}\s*=\s*(.+?)\s*$", body, re.M)
-                if set_ and not set_.group(1).isdigit():
+                expr = self.local(env, set_.group(1)) if set_ else None
+                if expr is not None and not expr.isdigit():
                     raise AssertionError(f"{env}: {name}'s {key} is `{set_.group(1)}`, not a number this reads")
-                values.append(int(set_.group(1)) if set_ else default)
+                values.append(int(expr) if expr is not None else default)
             out[name] = tuple(values)
         return out
+
+    # A switch whose "on" builds a service as something the pages do not chart it as: beta's code sender
+    # (textcodes.tf, D-158) builds connectors with one instance and no ceiling, where the pages chart connectors as
+    # its outbox lanes build it (B8's connectors_enabled: four, and `ceiling-connectors`). The two are never on
+    # together (beta's variables.tf), so a limit behind it is read with the switch off.
+    READ_OFF = ("var.beta_text_codes_enabled",)
+
+    def local(self, env: str, expr: str) -> str:
+        """`local.NAME` as the root's locals write it (a number, or `<switch> ? A : B`: A, or B for a READ_OFF
+        switch); anything else as it is."""
+        m = re.fullmatch(r"local\.([a-z_]+)", expr.strip())
+        if not m:
+            return expr.strip()
+        body = re.search(rf"^  {m.group(1)}\s*=\s*(.+?)\s*$", self.root_text(env), re.M).group(1)
+        cond = re.fullmatch(r"(var\.[a-z_]+)\s*\?\s*(\S+)\s*:\s*(\S+)", body)
+        if cond:
+            return cond.group(3) if cond.group(1) in self.READ_OFF else cond.group(2)
+        return body
 
     def ceilings(self, env: str) -> dict[str, int]:
         """The services the root asks the module for a `ceiling-<service>` policy for (instance_ceilings)."""
         text, out = self.root_text(env), {}
-        for m in re.finditer(r"\binstance_ceilings(?:_by_role)?\s*=\s*\{", text):
-            body = self.block(text[m.start():], m.group(0))
+        # A literal map, or a merge() of maps (production-full's app call since D-154: merge({ auth = 20, ... },
+        # var.file_reader_enabled ? { file-reader = 10 } : {})), read with every switch on.
+        for m in re.finditer(r"\binstance_ceilings(?:_by_role)?\s*=\s*(?:merge\()?\{", text):
+            if m.group(0).endswith("merge({"):
+                start = m.end() - 1
+                body = text[start:text.index("\n", start)]
+            else:
+                body = self.block(text[m.start():], m.group(0))
             out.update({k: int(v) for k, v in re.findall(r"\b([a-z][a-z0-9-]*)\s*=\s*(\d+)\b", body)})
         return out
 
@@ -280,9 +305,10 @@ class Infra:
         return out
 
     def latency_left_out(self, env: str) -> set[str]:
-        """The services the root's monitoring calls leave out of `canary-latency` (latency_excluded_services)."""
+        """The services the root's monitoring calls leave out of `canary-latency` (latency_excluded_services), of
+        those the pages chart (as limits() reads them: beta's file-reader, D-154, has no page)."""
         return {name for line in re.findall(r"\blatency_excluded_services\s*=\s*(.+)$", self.root_text(env), re.M)
-                for name in re.findall(r'"([a-z0-9-]+)"', line)}
+                for name in re.findall(r'"([a-z0-9-]+)"', line) if name in gen.SERVICES}
 
     def limits(self) -> dict:
         """LIMITS as tpa-platform's roots set them, for the services and instances the dashboards chart."""
