@@ -89,7 +89,7 @@
       "transparent": true,
       "options": {
         "mode": "html",
-        "content": "<div style=\"font-size:14px;line-height:1.5;color:#a7a9b3\">Counts only: no person, member, tenant or address is on this page. Who is held or frozen, and why: the ops portal, Compliance, Access limits. Alerts show here and on Home; nothing on this laptop pages anyone.</div>",
+        "content": "<div style=\"font-size:14px;line-height:1.5;color:#a7a9b3\">Counts only: no person, member, tenant or address is on this page. Who is held or frozen, and the limits: the ops portal, Admin → Security limits (and Compliance → Access limits). Alerts show here and on Home; nothing on this laptop pages anyone.</div>",
         "code": {
           "language": "plaintext",
           "showLineNumbers": false,
@@ -124,7 +124,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "records froze a staff account: every call that person makes in that tenant is refused until a TPA admin and a compliance officer both clear it. This counts freezes made in the range, not freezes still in force; who is frozen now is on the ops portal (Compliance, Access limits). Ending the person's sessions at auth comes with records' slice S2 and is not logged yet. 'none yet' until records writes its velocity lines (slice R1).",
+      "description": "records froze a staff account: every call that person makes in that tenant is refused until a TPA admin and a compliance officer both clear it. This counts freezes made in the range, not freezes still in force; who is frozen now is on the ops portal (Admin → Security limits, and Compliance → Access limits). Ending the person's sessions at auth comes with records' slice S2 and is not logged yet. 'none yet' until records writes its velocity lines (slice R1).",
       "targets": [
         {
           "refId": "A",
@@ -209,7 +209,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "records held a staff account past 1.5 times a budget: new members show without details, and lists, searches, downloads and reveals are refused until the window slides or a supervisor lifts it. 'none yet' until records writes its velocity lines.",
+      "description": "records held a staff account past 1.5 times a budget (the default): new members show without details, and lists, searches, downloads and reveals are refused until the window slides or a supervisor lifts it. 'none yet' until records writes its velocity lines.",
       "targets": [
         {
           "refId": "A",
@@ -294,7 +294,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "A staff account reached a budget (1.0 times): nothing is refused, compliance is told once. 'none yet' until records writes its velocity lines.",
+      "description": "A staff account reached a budget (1.0 times): nothing is refused. Compliance's in-app notice comes with records' slice S3. 'none yet' until records writes its velocity lines.",
       "targets": [
         {
           "refId": "A",
@@ -838,7 +838,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "Which staff role crossed which measure (members opened or listed, reveals, in the hour or the day), and what records did. A role reads 'other' when the line named something that is not a staff role (the scrub keeps role names only). No person: who it was is on the ops portal (Compliance, Access limits).",
+      "description": "Which staff role crossed which measure (members opened or listed, reveals, in the hour or the day), and what records did. A role reads 'other' when the line named something that is not a staff role (the scrub keeps role names only). No person: who it was is on the ops portal (Admin → Security limits, and Compliance → Access limits).",
       "targets": [
         {
           "refId": "A",

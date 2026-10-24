@@ -14,7 +14,8 @@ of bodyfirst tasks/security-watch PLAN §5, keyed to records' log lines in SPEC 
 
 No panel shows a person, member, tenant or address: Alloy strips them before Loki stores a line and rebuilds records'
 velocity lines from an allowlist (alloy/config.alloy, 4b), and scripts/dashboard_lint.py holds every query to listed
-labels. Who is held or frozen, and why, is on the ops portal's Access limits screen, behind records' own rules.
+labels. Who is held or frozen, and the limits, are on the ops portal (Admin → Security limits, and Compliance → Access
+limits), behind records' own rules.
 
 The velocity panels read "none yet" until records writes those lines (its slice R1); that is expected. A tile reads
 "? no records lines" (or auth's) when that service logged nothing in the range, so a blind page never reads "none".
@@ -140,15 +141,18 @@ def limits(y):
         tile(101, "Freezes", 0, y + 1, 4, f'{enforced} | code="velocity_freeze"', colour=RED_TEXT,
              description="records froze a staff account: every call that person makes in that tenant is refused "
                          "until a TPA admin and a compliance officer both clear it. This counts freezes made in the "
-                         "range, not freezes still in force; who is frozen now is on the ops portal (Compliance, "
-                         "Access limits). Ending the person's sessions at auth comes with records' slice S2 and is "
+                         "range, not freezes still in force; who is frozen now is on the ops portal (Admin → "
+                         "Security limits, and Compliance → Access limits). Ending the person's sessions at auth "
+                         "comes with records' slice S2 and is "
                          "not logged yet. 'none yet' until records writes its velocity lines (slice R1)."),
         tile(102, "Holds", 4, y + 1, 4, f'{enforced} | code="velocity_hold"', colour=WARN,
-             description="records held a staff account past 1.5 times a budget: new members show without details, "
+             description="records held a staff account past 1.5 times a budget (the default): new members show "
+                         "without details, "
                          "and lists, searches, downloads and reveals are refused until the window slides or a "
                          "supervisor lifts it. 'none yet' until records writes its velocity lines."),
         tile(103, "Flags", 8, y + 1, 4, f'{enforced} | code="velocity_flag"', colour=INK,
-             description="A staff account reached a budget (1.0 times): nothing is refused, compliance is told once. "
+             description="A staff account reached a budget (1.0 times): nothing is refused. Compliance's in-app notice "
+                         "comes with records' slice S3. "
                          "'none yet' until records writes its velocity lines."),
         tile(104, "Report only", 12, y + 1, 4, f'{VELOCITY_STATES} | decision="report"', colour=WARN,
              description="Flags, holds and freezes records would have made in report-only mode (it refuses nothing). "
@@ -193,7 +197,7 @@ def limits(y):
         description="Which staff role crossed which measure (members opened or listed, reveals, in the hour or the "
                     "day), and what records did. A role reads 'other' when the line named something that is not a "
                     "staff role (the scrub keeps role names only). No person: who it was is on the ops portal "
-                    "(Compliance, Access limits).",
+                    "(Admin → Security limits, and Compliance → Access limits).",
         no_value=NONE_YET, rename={"role": "Role", "code": "State", "measure": "Measure", "decision": "Mode"},
         order=["role", "code", "measure", "decision"],
         overrides=[words("State", STATE_WORDS), words("Measure", REASON_WORDS), words("Mode", MODE_WORDS),
@@ -360,7 +364,8 @@ def findings(y):
 
 
 INTRO = ("<div style=\"font-size:14px;line-height:1.5;color:" + INK_2 + "\">Counts only: no person, member, tenant "
-         "or address is on this page. Who is held or frozen, and why: the ops portal, Compliance, Access limits. "
+         "or address is on this page. Who is held or frozen, and the limits: the ops portal, Admin → Security limits "
+         "(and Compliance → Access limits). "
          "Alerts show here and on Home; nothing on this laptop pages anyone.</div>")
 
 

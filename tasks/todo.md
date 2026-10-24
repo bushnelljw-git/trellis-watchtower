@@ -200,7 +200,7 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     "none yet" until records R1 lands; a tile reads "? no records lines" when records logged nothing.
   - [x] Alloy 4b rebuilds records' velocity lines from an allowlist (closed message, code, decision, reason and role
     words, else "other"); `member_id`/`subject_member_id` join the id strip. `scrub_check.sh`: 11 new fixture lines,
-    13 new checks (49 in all); against master's config the new ones fail (member ids, a name, extra fields leak).
+    13 new checks (46 in all: 44 counts plus the label and metadata checks); against master's config the new ones fail (member ids, a name, extra fields leak).
   - [x] Alerts, `gen_home.py`'s pattern: Loki records `tw:velocity_lines:count10m`; `StaffAccountFrozen` (red, 24 h)
     and `StaffAccountHeld` (amber, 1 h, also a report-only freeze) in `prometheus/rules/home.yml`, promtool-tested.
     Home shows held alerts amber (a new `AW` row) and links both to the Security page; drill-down chip added. Shown,

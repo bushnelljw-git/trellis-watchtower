@@ -26,11 +26,11 @@ groups:
           severity: "page"
         annotations:
           summary: "a staff account was frozen"
-          description: "records froze a staff account in the last 24 hours: it refuses every call that person makes in that tenant. Who and why: the ops portal, Compliance, Access limits. A freeze stays until a TPA admin and a compliance officer clear it; the clear's line does not say whose freeze it ended, so this alert holds for 24 hours rather than go quiet on the wrong one. Counted from records' velocity lines by Loki's ruler; nothing is paged from this laptop."
+          description: "records froze a staff account in the last 24 hours: it refuses every call that person makes in that tenant. Who, and the limits: the ops portal, Admin → Security limits (and Compliance → Access limits). A freeze stays until a TPA admin and a compliance officer clear it; the clear's line does not say whose freeze it ended, so this alert holds for 24 hours rather than go quiet on the wrong one. Counted from records' velocity lines by Loki's ruler; nothing is paged from this laptop."
       - alert: StaffAccountHeld
         expr: "max by (code, decision) (max_over_time(tw:velocity_lines:count10m{code=\"velocity_hold\"}[1h]) or max_over_time(tw:velocity_lines:count10m{code=\"velocity_freeze\", decision=\"report\"}[1h])) > 0"
         labels:
           severity: "warning"
         annotations:
           summary: "{{ if eq $labels.code \"velocity_freeze\" }}a staff account would have been frozen{{ else }}a staff account was held{{ end }}{{ if eq $labels.decision \"report\" }} (report only){{ end }}"
-          description: "records held a staff account in the last hour (new members show without details; lists, searches, downloads and reveals are refused until the window slides or a supervisor lifts it), or, in report-only mode, would have held or frozen one. Who and why: the ops portal, Compliance, Access limits. Counted from records' velocity lines by Loki's ruler; nothing is paged from this laptop."
+          description: "records held a staff account in the last hour (new members show without details; lists, searches, downloads and reveals are refused until the window slides or a supervisor lifts it), or, in report-only mode, would have held or frozen one. Who, and the limits: the ops portal, Admin → Security limits (and Compliance → Access limits). Counted from records' velocity lines by Loki's ruler; nothing is paged from this laptop."

@@ -38,7 +38,7 @@ takes anything that touches its security rules. The :4310 stack is shared: bring
 | auth-db card | Recorded: `tw:auth_not_ready:sum30s{reason_code="database"}` | auth refused `/ready` naming the database in the last 2 min | auth's scrubbed lines in Explore | auth-notary |
 | `AuthNotReady` rule | Recorded | auth logged `not_ready` (any reason) for 1 min | Same | auth-notary |
 | `WorkerStale` rule | Recorded: `tw:worker_ok_ms:max` | A worker's last INFO tick or summary line is older than its limit (connectors 120 s, each drain 180 s, auth-publisher 150 s, auth-sweeper 900 s) for 1 min, while lines are reaching Loki | The worker's scrubbed lines in Explore | tpa-platform (connectors, drains) or auth-notary |
-| `StaffAccountFrozen` rule (red) | Recorded: `tw:velocity_lines:count10m{code="velocity_freeze"}`, decision not `report` | records froze a staff account in the last 24 h (a freeze stays until two people clear it; no line says when, so the alert holds a day) | The Security page; who and why on the ops portal, Compliance, Access limits | records-service (the limits); the owner and compliance decide on the person |
+| `StaffAccountFrozen` rule (red) | Recorded: `tw:velocity_lines:count10m{code="velocity_freeze"}`, decision not `report` | records froze a staff account in the last 24 h (a freeze stays until two people clear it; no line says when, so the alert holds a day) | The Security page; who, and the limits, on the ops portal, Admin → Security limits (and Compliance → Access limits) | records-service (the limits); the owner and compliance decide on the person |
 | `StaffAccountHeld` rule (amber) | Recorded: the same series, `velocity_hold`, or a report-only `velocity_freeze` | records held a staff account in the last hour, or would have frozen one in report-only mode | Same | Same |
 
 ## Every stack (Stack overview, `tw-overview`)
@@ -118,8 +118,8 @@ the range. Shown, never sent: nothing on this laptop pages anyone (the cloud pag
 
 | Signal | Source | Red means | First check | Who fixes |
 |---|---|---|---|---|
-| Freezes, holds, flags, report only | LogQL: records `"message":"velocity"`, `code`, `decision` | A freeze (red) or a hold (amber): records stopped or limited one staff account's reading | The ops portal, Compliance, Access limits (who, why, clear or lift) | records-service; the people decide |
-| By role and budget | LogQL: the same lines' `role` and `reason` (as `measure`: members opened or listed in the hour or day, reveals in the day) | One role keeps crossing one budget: its limit may be wrong, or someone is reading too much | The Access limits screen's history | records-service (the limits, OD-2); the owner (the people) |
+| Freezes, holds, flags, report only | LogQL: records `"message":"velocity"`, `code`, `decision` | A freeze (red) or a hold (amber): records stopped or limited one staff account's reading | The ops portal, Admin → Security limits (and Compliance → Access limits): who, the limits, clear or lift | records-service; the people decide |
+| By role and budget | LogQL: the same lines' `role` and `reason` (as `measure`: members opened or listed in the hour or day, reveals in the day) | One role keeps crossing one budget: its limit may be wrong, or someone is reading too much | The ops portal's Admin → Security limits | records-service (the limits, OD-2); the owner (the people) |
 | Calls refused while held or frozen | LogQL: records `refused` lines, `reason` velocity_hold or velocity_freeze, by operation | A held or frozen person kept trying | Same | Same |
 | Limit changes | LogQL: records `velocity_settings_changed` | A TPA admin changed a limit (audited in records; the cloud pages on it at normal urgency) | Was the change expected? records' audit names who | records-service |
 | Alerts | Prometheus `ALERTS` for the two rules above | ✕ frozen or ▲ held is firing | Grafana's alert list (the tile's link) | as above |
