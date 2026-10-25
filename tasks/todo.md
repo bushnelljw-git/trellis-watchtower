@@ -377,7 +377,13 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     a new counter misnamed, the importer dropped from "App jobs (24 h)", a name kept ahead of the catalogue). `make
     cloud-image-check` refused by its build guard again (3,301 MB available, under 6,144). Pixels again, the stat now
     "App jobs (24 h)": the five states as before.
-  - [ ] Owed: the re-vendor at the landed tpa-platform commit; the image deployed in the one apply that moves
+  - [x] The second review (CHANGES, documentation): "Deploy order, both ways" names the seven counters this image
+    charts (records' `source_sync_alerts` and the records limit's six, all 404 on beta on 2026-10-25), the records
+    limit's own pages step first, then tpa-platform's D-181 by resource with the plan's three changes. tpa-platform's
+    branch rebased onto its origin/master `5cd14f6a` (the CRM sign-in, D-182, P170; D-181 and P169 left to this lane);
+    the catalogue re-vendored at its head `1f465e98`, the same blob `e6e7b94a`. `make lint` 0.
+  - [ ] Owed: the re-vendor at the landed tpa-platform commit; the records limit's pages step on beta before this image;
+    the image deployed in the one apply that moves
     tpa-platform's watch change and counter with it (cloud/README.md, "Deploy order, both ways").
 
 ## Review

@@ -73,11 +73,29 @@ as it refuses the other two lists.
 **Deploy order, both ways.** An image from before this change ignores `TPA_NOT_DEPLOYED_JOBS` and refuses the
 importer's name in `TPA_PAUSED_JOBS`: it does not start, Cloud Run keeps the old revision serving and the apply fails.
 This image under a tpa-platform that writes neither list (before its D-181) reads the importer as built: MISSED in red
-while it is not built or paused, and Member records' sync alerts chart a failed query until beta makes that counter. So
-**one apply moves both**: tpa-platform's watch change and `source_sync_alerts` counter (its D-181) with
-`image_digests["watchtower"]` at this image's digest. While the importer is not built, tpa-platform's change alone is
-safe first on the live image (only `TPA_NOT_DEPLOYED_JOBS` appears, which it ignores), and this image follows; once the
-importer is built and paused, only the apply that moves both works.
+while it is not built or paused. This image also charts seven counters that must exist before it is deployed, or each
+chart is a failed query (Cloud Monitoring's 404 "Cannot find metric(s)"; on beta on 2026-10-25 all seven answered
+that): records' `source_sync_alerts` (tpa-platform's D-181) and six the records limit added (its D-180):
+`records_velocity`, `records_velocity_settings_changes`, `records_reveals` and `records_staff_member_reads` (PHI
+project; Member records' new row) and `auth_stepup_failures` and `auth_admin_revocations` (app project; Sign-in). So,
+in order (tpa-platform's infra/README.md, "The order, both ways"):
+
+1. **The records limit's pages step**, that lane's own and run by it before or with its images:
+   `-target='module.monitoring_own["phi"]' -target=module.monitoring_app` on beta (tpa-platform's infra/README.md, "The
+   records limit"). It makes the six counters (and that lane's four PHI policies and `records_critical`'s filter
+   change). Run once tpa-platform's D-181 is on its master, it also carries step 2's first two targets.
+2. **tpa-platform's D-181 by resource, in one apply with `image_digests["watchtower"]` at this image's digest:**
+   `-target='module.monitoring_own["phi"].google_logging_metric.this["source_sync_alerts"]'`,
+   `-target='module.monitoring_app.google_monitoring_alert_policy.catalogue["scheduler-failed"]'` and
+   `-target=module.watchtower`. The plan shows exactly three changes: the counter created in the PHI project (none if
+   an apply with the importer built already made it); `scheduler-failed` updated in place (its `one_of(...)` gains
+   `"feed-ingest-everon-sync"`, its documentation the row 205 sentence); and `module.watchtower[0].google_cloud_run_v2_service.this`
+   updated in place (the image's digest, `TPA_NOT_DEPLOYED_JOBS` added, and `TPA_PAUSED_JOBS` gaining the importer only
+   while it is built and paused). Anything else in that plan is another change's drift: stop.
+
+While the importer is not built, tpa-platform's change without the digest is safe first on the live image (only
+`TPA_NOT_DEPLOYED_JOBS` appears, which it ignores), and this image follows; once the importer is built and paused, only
+the apply that moves both works.
 
 The image does not refuse an unset `TPA_NOT_DEPLOYED_JOBS` on beta, though tpa-platform always writes the name: it is
 often empty, and whether Cloud Run hands a container an empty value as set has not been checked here, so a refusal
