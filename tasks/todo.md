@@ -370,6 +370,13 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     - The catalogue re-vendored at the rebased tpa-platform branch head `1ac0ae4a` (blob `e6e7b94a`), so
       `AHEAD_OF_THE_CATALOGUE` is empty and `test_importer.WATCH_STATE_AHEAD_OF_THE_PIN` False; the coordinator
       re-vendors at the commit it lands as.
+  - [x] Gates of the review round (on `10fefb4`): `cloud_dashboards.py --check` 0; `make check` 0 (dashboard lint, 158
+    cloud tests, 76 PagerDuty, 112 synthetics; the synthetics' label allowlist re-vendored at tpa-platform origin/master
+    `7e5814d1` in its own commit, since T1 added `role` and `direction` and the test reads origin/master). 17 mutants,
+    each red (the twelve before, and the production records row, the records limit's row, production's records page,
+    a new counter misnamed, the importer dropped from "App jobs (24 h)", a name kept ahead of the catalogue). `make
+    cloud-image-check` refused by its build guard again (3,301 MB available, under 6,144). Pixels again, the stat now
+    "App jobs (24 h)": the five states as before.
   - [ ] Owed: the re-vendor at the landed tpa-platform commit; the image deployed in the one apply that moves
     tpa-platform's watch change and counter with it (cloud/README.md, "Deploy order, both ways").
 
