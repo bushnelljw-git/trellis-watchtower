@@ -1,8 +1,8 @@
 # The metric catalogue the cloud dashboards are checked against (tests/cloud/test_catalogue.py).
 # Written by scripts/vendor_catalogue.sh; monitoring.yml beside it is that blob, verbatim.
 repository=tpa-platform
-ref=1f465e98
-commit=1f465e9841cd876190c195030add888b32af54c7
+ref=6bdb46ac
+commit=6bdb46ac70d792fdb85c3df180563a7bf6226c90
 path=infra/monitoring.yml
 blob=e6e7b94a1fa8c2279e076e41a6bcc3eafdff956e
 vendored=2026-10-25
