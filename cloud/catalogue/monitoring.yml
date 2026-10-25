@@ -16,8 +16,11 @@
 #   beta's text sender's, read by beta's textcodes.tf alone into the
 #   member-data project, and only while var.beta_text_codes_enabled is on.
 # - A label is one of service, operation, gate, code, outcome, status_class,
-#   job, lane, class, sqlstate, and no extractor reads a tenant, request,
-#   session, principal, member, row, address or URL field.
+#   job, lane, class, sqlstate, role, direction, and no extractor reads a
+#   tenant, request, session, principal, member, row, address or URL field.
+#   `role` (2026-10-24, the records limit; OD-4's (b)) is one of the twelve
+#   staff role names, held to that list by its REGEXP_EXTRACT alternation;
+#   `direction` is records' closed `raise` or `lower`.
 # - Filters match on the formatters' own field names, which differ by repo:
 #   this repository's lines carry `service`, `message`, `operation`, `reason`
 #   and `exc.class` (tpa_common/logging.py); the gateway's carry `service`,
@@ -822,6 +825,42 @@ projects:
           AND jsonPayload.msg="request"
           AND jsonPayload.status=423
 
+      # T4 (2026-10-24, D-180; PLAN §5 panels 7 and 8): two more of auth's
+      # request lines the hosted security page charts. The line carries the
+      # route's template (`POST /auth/admin/principals/{sub}/revoke-all`, never
+      # the person) and the status, and nothing else is read.
+      auth_stepup_failures:
+        description: >-
+          A refused step-up: auth's request line for POST /auth/step-up
+          answering 401 (a wrong code, password or passkey, or no factor), 403
+          (a CSRF or session refusal) or 410 (a challenge expired, spent or
+          not the session's own), by that status (`code`). Five in fifteen
+          minutes revoke the session (CONTRACT §4).
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="auth"
+          AND jsonPayload.msg="request"
+          AND jsonPayload.route="POST /auth/step-up"
+          AND (jsonPayload.status=401 OR jsonPayload.status=403 OR jsonPayload.status=410)
+        labels:
+          code: 'EXTRACT(jsonPayload.status)'
+
+      auth_admin_revocations:
+        description: >-
+          An administrator ending a person's access: auth's request line for
+          POST /auth/admin/principals/{sub}/revoke-all (every session ended)
+          or /suspend (the login suspended too) answering 204, by which
+          (`operation`: `revoke-all` or `suspend`). Who and why are in auth's
+          audit chain, never here.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="auth"
+          AND jsonPayload.msg="request"
+          AND (jsonPayload.route="POST /auth/admin/principals/{sub}/revoke-all" OR jsonPayload.route="POST /auth/admin/principals/{sub}/suspend")
+          AND jsonPayload.status=204
+        labels:
+          operation: 'REGEXP_EXTRACT(jsonPayload.route, "/(revoke-all|suspend)$")'
+
       auth_not_ready:
         description: >-
           auth's `/ready` refusing, by the first check that failed (signer,
@@ -1284,13 +1323,19 @@ projects:
         documentation: >-
           Cloud Scheduler's attempt to start a job finished in error. The
           status code says why; PERMISSION_DENIED means row 8 or row 74 of the
-          inventory is not what the gate thinks it is.
+          inventory (row 205 for the administrator-feed importer's) is not what
+          the gate thinks it is.
         conditions:
           - name: "a failed attempt"
             threshold:
+              # feed-ingest-everon-sync: the importer's schedule on beta
+              # (feedingest.tf; D-181), named here so a schedule that cannot
+              # start it pages as every other schedule's does. It exists only
+              # with feed_ingest_enabled, and a paused schedule makes no
+              # attempt; production-full builds none.
               filter: >-
                 metric.type = "logging.googleapis.com/user/scheduler_failures" AND resource.type = "cloud_scheduler_job"
-                AND resource.labels.job_id = one_of("erisa-clocks", "nightly-anomalies", "stoploss-surveillance", "accumulator-reconcile", "workload-audit", "member-access", "auth-publish", "auth-sweep")
+                AND resource.labels.job_id = one_of("erisa-clocks", "nightly-anomalies", "stoploss-surveillance", "accumulator-reconcile", "workload-audit", "member-access", "auth-publish", "auth-sweep", "feed-ingest-everon-sync")
               group_by_fields: ["resource.label.job_id", "metric.label.code"]
 
       jobs-alerts:
@@ -1597,15 +1642,20 @@ projects:
 
       records_critical:
         description: >-
-          The two lines that mean the gateway is failing its promise: a
-          refusal's audit rows did not land (`audit flush failed`) or the
-          database did not answer (`database unreachable`). URGENT.
+          The lines that mean the gateway is failing its promise: a refusal's
+          audit rows did not land (`audit flush failed`), the database did not
+          answer (`database unreachable`), and since the records limit
+          (2026-10-24, D-180; records 624206d9, SPEC §7.3, §7.4) the meter
+          could not count, so the call was refused (`velocity meter failed`),
+          or a freeze's row could not be written, so the next call is judged
+          again rather than refused by the stored freeze (`velocity freeze
+          unwritten`). URGENT.
         filter: |
           (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
           AND jsonPayload.service="records"
-          AND jsonPayload.message=~"^(audit flush failed|database unreachable)$"
+          AND jsonPayload.message=~"^(audit flush failed|database unreachable|velocity meter failed|velocity freeze unwritten)$"
         labels:
-          code: 'REGEXP_EXTRACT(jsonPayload.message, "^(audit flush failed|database unreachable)$")'
+          code: 'REGEXP_EXTRACT(jsonPayload.message, "^(audit flush failed|database unreachable|velocity meter failed|velocity freeze unwritten)$")'
 
       records_mirror_problems:
         description: >-
@@ -1640,6 +1690,85 @@ projects:
           AND resource.labels.job_name="records-chain-head"
           AND jsonPayload.code="chain_head_exists"
           AND jsonPayload.level="WARNING"
+
+      # The records limit (2026-10-24, RS-02 slice 1; the owner's R-1 and R-7,
+      # the orchestrator's OD-4, OD-6, OD-9 and OD-21 under the owner's "build
+      # it"; records 624206d9, OWNER-R3-507, -508; the workspace's
+      # security-watch SPEC §7; D-180). Records writes `level`, never
+      # `severity`, and these filters read neither: each line is matched by its
+      # `message`. Every label is a closed REGEXP_EXTRACT alternation, so a
+      # value off its list reads empty: `role` is one of the twelve staff role
+      # names records meters (records' `velocity.DEFAULT_ROLE_LIMITS`), never a
+      # person (OD-4's (b): "The role name may be a metric label"). The
+      # principal and tenant on each line are never read.
+      records_velocity:
+        description: >-
+          A state change of the records limit (records' `velocity` line, SPEC
+          §7.1): one staff person's reads crossed a line, and which (`code`:
+          `velocity_flag`, `velocity_hold` or `velocity_freeze`), whether
+          records enforced it or only reported it (`outcome`, the line's
+          `decision`: `enforce` or `report`), and the role whose limit applied
+          (`role`). Never the person, a member, the measure or the count.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="records"
+          AND jsonPayload.message="velocity"
+        labels:
+          code: 'REGEXP_EXTRACT(jsonPayload.code, "^(velocity_flag|velocity_hold|velocity_freeze)$")'
+          outcome: 'REGEXP_EXTRACT(jsonPayload.decision, "^(enforce|report)$")'
+          role: 'REGEXP_EXTRACT(jsonPayload.role, "^(claims_examiner|claims_supervisor|eligibility_specialist|member_services|care_navigator|ops_agent|ops_supervisor|ops_admin|finance|tpa_admin|compliance_officer|plan_administrator)$")'
+
+      records_velocity_settings_changes:
+        description: >-
+          A TPA administrator's saved change to the records limit (records'
+          `velocity settings changed`, SPEC §7.2), one per changed field:
+          which way it moves the limit (`direction`: `raise` loosens it, a
+          figure or a multiplier up or the mode toward less enforcement;
+          `lower` tightens it; RS-495), and the role a per-role figure belongs
+          to (`role`, empty for a tenant setting). Never the value, the
+          administrator or the tenant.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="records"
+          AND jsonPayload.message="velocity settings changed"
+        labels:
+          direction: 'REGEXP_EXTRACT(jsonPayload.direction, "^(raise|lower)$")'
+          role: 'REGEXP_EXTRACT(jsonPayload.role, "^(claims_examiner|claims_supervisor|eligibility_specialist|member_services|care_navigator|ops_agent|ops_supervisor|ops_admin|finance|tpa_admin|compliance_officer|plan_administrator)$")'
+
+      # T4 (PLAN §5, panels 4 and 11): two reads the hosted security page
+      # charts, from records' "operation served" line (records/gates/
+      # g8_bind.py), which names the operation, the door and the decision.
+      records_reveals:
+        description: >-
+          A reveal records served (`operation served` for
+          `eligibility.reveal` or `network.reveal_field`, the two operations
+          that reveal), by operation. Who revealed what is in the audit chain
+          and the ops portal's Access limits, never here.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="records"
+          AND jsonPayload.message="operation served"
+          AND jsonPayload.op=~"^(eligibility\\.reveal|network\\.reveal_field)$"
+        labels:
+          operation: 'REGEXP_EXTRACT(jsonPayload.op, "^(eligibility\\.reveal|network\\.reveal_field)$")'
+
+      records_staff_member_reads:
+        description: >-
+          A member read records served to staff (`operation served` at a staff
+          door, `door_internal`, `door_agent`, `door_compliance` or
+          `door_finance`, for one of the eleven operations whose records entry
+          decides a read or a list of a member), by operation: the hosted
+          security page's reads by hour, where night activity shows. Never
+          the member, the person or the tenant; an after-hours flag on a
+          tenant's own hours is a later slice's (S6).
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="records"
+          AND jsonPayload.message="operation served"
+          AND jsonPayload.door=~"^door_(internal|agent|compliance|finance)$"
+          AND jsonPayload.op=~"^(eligibility\\.get_member|eligibility\\.list_members|eligibility\\.search_members|eligibility\\.member_coverage|eligibility\\.member_id_card|claims\\.accumulators|claims\\.list_other_coverages|contactcenter\\.member|contactcenter\\.member_coverage|contactcenter\\.member_balances|implementations\\.enrollment_provenance)$"
+        labels:
+          operation: 'REGEXP_EXTRACT(jsonPayload.op, "^(eligibility\\.get_member|eligibility\\.list_members|eligibility\\.search_members|eligibility\\.member_coverage|eligibility\\.member_id_card|claims\\.accumulators|claims\\.list_other_coverages|contactcenter\\.member|contactcenter\\.member_coverage|contactcenter\\.member_balances|implementations\\.enrollment_provenance)$")'
 
       connectors_passes:
         description: >-
@@ -1838,6 +1967,99 @@ projects:
             threshold:
               filter: >-
                 metric.type = "logging.googleapis.com/user/records_chain_head_exists" AND resource.type = "cloud_run_job"
+
+      # The records limit's pages (2026-10-24, D-180; OD-4: a freeze pages
+      # URGENT on the PHI project's "TPA beta · Member records" escalation; a
+      # hold pages normal; a flag pages nobody; OD-9 as amended for RS-495 and OD-21: a
+      # raise pages URGENT, a lowering normal). A freeze is the owner's
+      # "security freeze" (docs/infra/monitoring.md §9, 2026-09-24). Each page
+      # names a role at most, never a person or a member: who and why are in
+      # the ops portal's Compliance → Access limits, behind records' own rules.
+      records-velocity-freeze:
+        display_name: "URGENT records limit: a staff account was frozen"
+        subject: "records limit: a ${metric_or_resource.label.role} account was frozen"
+        urgent: true
+        documentation: >-
+          Records froze one staff person in one tenant: their reads reached
+          twice their role's limit (or a role whose limit is 0 opened a
+          member), and records now refuses every call they make, on every
+          instance, until two people clear it. First steps: open the ops
+          portal's Compliance, Access limits to see who, which measure and
+          when. Until records ends their sessions at auth itself (a later
+          slice), suspend the login in the ops portal (Admin, the person,
+          Suspend). Ask the person's supervisor whether the reads were their
+          work. To clear it, a TPA administrator and a compliance officer,
+          neither of them the frozen person, each sign their half on Access
+          limits with a reason.
+        conditions:
+          - name: "a freeze, enforced"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_velocity" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = "velocity_freeze" AND metric.labels.outcome = "enforce"
+              group_by_fields: ["metric.label.role"]
+
+      records-velocity-hold:
+        display_name: "records limit: a staff account is held"
+        subject: "records limit: a ${metric_or_resource.label.role} account is held"
+        documentation: >-
+          Records held one staff person in one tenant: their reads reached one
+          and a half times their role's limit, so members they have not opened
+          today show without details, and lists, searches, downloads and
+          reveals are refused until the window slides or a supervisor lifts it.
+          (In report mode, a freeze records would have made is told here too.)
+          First steps: open the ops portal's Compliance, Access limits to see
+          who and which measure. If it is their work, their supervisor, never
+          the person, lifts it for an hour with a reason; if not, watch for the
+          freeze.
+        conditions:
+          - name: "a hold"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_velocity" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = "velocity_hold"
+              group_by_fields: ["metric.label.role"]
+          - name: "a freeze, reported only"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_velocity" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = "velocity_freeze" AND metric.labels.outcome = "report"
+              group_by_fields: ["metric.label.role"]
+
+      records-velocity-raised:
+        display_name: "URGENT records limit: a limit was raised"
+        urgent: true
+        documentation: >-
+          A TPA administrator saved a looser records limit: a role's figure or
+          a multiplier went up, a lift got longer or more frequent, or the mode
+          moved toward less enforcement. One administrator may do it alone,
+          their own role's limits included (RS-495), so this page is the
+          check. First steps: open the ops portal's Admin, Security limits to
+          see what changed and who saved it; ask that administrator why; if
+          nobody can say, put the limit back (a lowering pages normal) and
+          suspend the login that saved it.
+        conditions:
+          - name: "a limit raised"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_velocity_settings_changes" AND resource.type = "cloud_run_revision"
+                AND metric.labels.direction = "raise"
+
+      records-velocity-lowered:
+        display_name: "records limit: a limit was lowered"
+        documentation: >-
+          A TPA administrator saved a tighter records limit: a role's figure or
+          a multiplier went down, or a lift got shorter or rarer. People may
+          now be held or frozen sooner. First steps: open the ops portal's
+          Admin, Security limits to see what changed and who saved it, and
+          confirm it was meant; a limit set to 0 freezes that role on its next
+          member opened.
+        conditions:
+          - name: "a limit lowered"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_velocity_settings_changes" AND resource.type = "cloud_run_revision"
+                AND metric.labels.direction = "lower"
 
       jobs-failed:
         display_name: "a protected job's execution failed"
@@ -3182,8 +3404,11 @@ perimeter_dry_run:
 # The administrator-feed importer on beta (OWNER-EV-10, OWNER-EV-12: "51.8
 # sure", Cloud Monitoring alerts until the staff alert lane delivers records'
 # own alert; the importer review's F7). Beta's alone and only with
-# var.feed_ingest_enabled (beta's feedingest.tf); production-full reads none of
-# it. `feed_ingest` is the app role's (the project that runs the job and
+# var.feed_ingest_enabled (beta's feedingest.tf), but for the count of
+# records' source_sync.alert lines, which beta makes whatever the switch says
+# (D-181: the monitoring website charts it, and a chart over a counter that
+# does not exist is a failed query); production-full reads none of it.
+# `feed_ingest` is the app role's (the project that runs the job and
 # receives its logs); `feed_ingest_records` is the PHI role's (the project
 # that receives records' logs). Codes and counts only: no run id, tenant,
 # employer, member or count of people is read into a label or a

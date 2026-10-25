@@ -359,7 +359,7 @@ class OverviewTest(unittest.TestCase):
         # Beta's Portal & API stat reads the widened pattern; production's, which builds no importer, the old one.
         for env, jobs in (("beta", WIDENED[gen.TPA_JOBS]), ("production", gen.TPA_JOBS)):
             row = next(ps for title, ps in sections(RENDERED[env]["overview"]).items() if title.startswith("Portal"))
-            stat_ = next(p for p in row if p["title"] == ("Jobs (24 h)" if env == "beta" else "tpa-jobs (24 h)"))
+            stat_ = next(p for p in row if p["title"] == ("App jobs (24 h)" if env == "beta" else "tpa-jobs (24 h)"))
             self.assertEqual([v for k, _op, v in facts(stat_["targets"][0])["filters"]
                               if k == "resource.label.job_name"], [jobs], env)
 

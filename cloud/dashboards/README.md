@@ -5,8 +5,9 @@ The production dashboards, baked into the image and loaded read-only. **Generate
 
 `no-cc/` holds the pages with a call-centre part written again without it. `render-dashboards.sh` uses them, and leaves
 out the pages that read the call centre alone, when the service has no call-centre project. `production/` holds the
-overview and the Jobs page written again for production (the services and scheduled jobs production-full runs: no
-administrator-feed importer); `render-dashboards.sh` uses them whenever `TPA_ENVIRONMENT` is production.
+overview, the Jobs page and Member records written again for production (the services, scheduled jobs and counters
+production-full runs: no administrator-feed importer); `render-dashboards.sh` uses them whenever `TPA_ENVIRONMENT` is
+production.
 
 Two kinds of mark in the JSON are settled when the container starts (`cloud/render-dashboards.sh`):
 - each query's project placeholder (`__TPA_APP_PROJECT_ID__`, ...);

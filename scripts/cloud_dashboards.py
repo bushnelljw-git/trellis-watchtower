@@ -2004,7 +2004,7 @@ def overview(cc: bool = True, env: str = "beta") -> dict:
                    "is how a scale-to-zero service idles; a service kept warm with none is the urgent `no instance` "
                    "policy. The link by the title opens each service's own page.", calc="lastNotNull",
                    time_from="15m", no_value="0", links=service_links(*[s_ for s_ in APP_SERVICES.split("|") if s_ in RUNS[env]])),
-              jobs_stat("Jobs (24 h)", APP, f"{TPA_JOBS}|{IMPORTER}", f"{TPA_SCHEDULES}|{IMPORTER}", SWEEP_DBS,
+              jobs_stat("App jobs (24 h)", APP, f"{TPA_JOBS}|{IMPORTER}", f"{TPA_SCHEDULES}|{IMPORTER}", SWEEP_DBS,
                         IMPORTER_FAILS) if importer else
               jobs_stat("tpa-jobs (24 h)", APP, TPA_JOBS, TPA_SCHEDULES, SWEEP_DBS)),
         *area("Sign-in (auth, its messenger and jobs)", APP, AUTH_SERVICES, ("auth-db",), p95("auth", "+3600s"),
@@ -2155,6 +2155,15 @@ def sign_in() -> dict:
                "auth-outbox-publisher's instances. With none, no sign-in message is sent: `auth-messages-lag` opens "
                "on that too."),
         row("Audit and credentials"),
+        series("Step-up refused, by status", APP, q(log("auth_stepup_failures"), REV, by=("code",)),
+               "auth refusing a step-up (`auth_stepup_failures`, POST /auth/step-up): 401 a wrong code, password or "
+               "passkey; 403 a CSRF or session refusal; 410 a challenge expired, spent or not the session's. Five in "
+               "fifteen minutes revoke the session.", bars=True),
+        series("Access ended by an administrator", APP, q(log("auth_admin_revocations"), REV, by=(), name="ended"),
+               "An administrator ending a person's sessions or suspending the login (`auth_admin_revocations`), "
+               "counted: its `operation` label's extractor is anchored at the end alone, so this repository's rule "
+               "keeps it off the page until the catalogue anchors it at the start. Who and why are in auth's audit "
+               "chain, never here.", bars=True),
         series("Credential or workload tags that failed at use", APP,
                q(log("auth_credential_tag_invalid"), by=("code", "gate"),
                  name=alias("code") + " at " + alias("gate")),
@@ -2186,7 +2195,8 @@ def sign_in() -> dict:
                      ["sign-in"], items)
 
 
-def records() -> dict:
+def records(env: str = "beta") -> dict:
+    importer = env == "beta" or IMPORTER not in BETA_ONLY_JOBS   # production-full makes no source_sync_alerts
     items = [
         row("The Records Gateway"),
         series("Requests, by status class", PHI, requests("records", by=("response_code_class",)),
@@ -2253,7 +2263,8 @@ def records() -> dict:
                "A row settled dead (`connectors-dead-letters`), a destination outside the allowlist "
                "(`connectors-destination-refused`) and a claimed row with no signature "
                "(`connectors-envelope-unsigned`).", bars=True),
-        *administrator_sync(),
+        *(administrator_sync() if importer else []),
+        *records_limit(),
         row("Perimeter and alert changes"),
         series("Perimeter violations", PHI,
                q(log("perimeter_violations"), AUDITED, by=("code", "service", "outcome"),
@@ -2282,7 +2293,9 @@ def records() -> dict:
 def administrator_sync() -> list[dict]:
     """records' side of the administrator-feed importer's runs (OWNER-EV-12, "51.8 sure": Cloud Monitoring alerts until
     the staff alert lane delivers records' own): the count of its value-free `source_sync.alert` lines, read with
-    `cloud-phi` alone. It reads zero until records logs that line (TP-249)."""
+    `cloud-phi` alone. It reads zero until records logs that line (TP-249). Beta makes the counter whatever the importer's
+    switch says (tpa-platform D-181), so the chart is never a failed query there; production-full makes none, so
+    production's Member records page (PRODUCTION) has no such row."""
     metric = "source_sync_alerts"
     policy = CATALOGUE.policy("records-source-sync-alert", section="feed_ingest_records")
     return [
@@ -2293,13 +2306,34 @@ def administrator_sync() -> list[dict]:
                f"or expired, or new problems in its log (`{metric}`; `records-source-sync-alert`, "
                f"{policy['display_name'].strip(chr(34))}, pages on one). **It reads zero until records logs that "
                "line (TP-249):** records writes the alert's outbox row and logs nothing today, so this chart cannot "
-               "show an alert yet. " + per_environment(
-                   "production-full builds none of the importer (OWNER-EV-12: beta's alone), so nothing writes "
-                   "this line here.",
-                   "Zero too while the importer is not deployed (beta's feed_ingest_enabled off) or its schedule is "
-                   "paused.") + " A count with no label: never the run, the tenant, an employer or a count of "
-               "people. The run itself, its counts and its issues are on the ops portal's sync runs and data issues "
+               "show an alert yet. Zero too while the importer is not deployed (feed_ingest_enabled off) or its "
+               "schedule is paused: beta makes the counter whatever that switch says (tpa-platform D-181). A count "
+               "with no label: never the run, the tenant, an employer or a count of people. The run itself, its counts and its issues are on the ops portal's sync runs and data issues "
                "pages.", w=24, h=6, bars=True),
+    ]
+
+
+def records_limit() -> list[dict]:
+    """records' limit and the reads the hosted Security page (W1b, not built) will chart from tpa-platform's T1 and T4
+    counters, charted here minimally so every catalogue metric is on a page: counts by the labels the lint allows (the
+    limit's `role` and a setting's `direction` stay off until W1b decides them)."""
+    return [
+        row("The records limit, reveals and staff member reads (counts; the Security page's in full)"),
+        series("Limit state changes, by kind and mode", PHI,
+               q(log("records_velocity"), REV, by=("code", "outcome"), name=alias("code", "outcome")),
+               "records' limit crossing one staff person's line (`records_velocity`): a flag, a hold or a freeze "
+               "(`code`), enforced or reported only (`outcome`). Never the person, a member, the measure or the "
+               "count; who, and the limits, are on the ops portal's Admin, Security limits.", w=6, h=7, bars=True),
+        series("Limit settings changed", PHI, q(log("records_velocity_settings_changes"), REV, by=(), name="changes"),
+               "A TPA administrator's saved change to the records limit, one per changed field "
+               "(`records_velocity_settings_changes`). Which way and whose role are the Security page's; never the "
+               "value, the administrator or the tenant.", w=6, h=7, bars=True),
+        series("Reveals served, by operation", PHI, q(log("records_reveals"), REV, by=("operation",)),
+               "A reveal records served (`records_reveals`: `eligibility.reveal`, `network.reveal_field`). Who "
+               "revealed what is in the audit chain and the ops portal's Access limits.", w=6, h=7, bars=True),
+        series("Staff member reads, by operation", PHI, q(log("records_staff_member_reads"), REV, by=("operation",)),
+               "A member read records served at a staff door (`records_staff_member_reads`), by operation; night "
+               "activity shows by the hour. Never the member, the person or the tenant.", w=6, h=7, bars=True),
     ]
 
 
@@ -2590,9 +2624,11 @@ NO_CC = {"overview": overview, "errors": errors, "databases": databases, "jobs":
 CC_ONLY = ["callcentre", *[f"service-{service}" for service, (ds, _page) in SERVICES.items() if ds == CC]]
 # The pages written again for production (render-dashboards.sh uses production/<page> when TPA_ENVIRONMENT is
 # production): the overview tiles only the services production-full runs, the overview and Jobs only the scheduled
-# jobs it builds (BETA_ONLY_JOBS), and production has no call centre.
+# jobs it builds (BETA_ONLY_JOBS), Member records leaves out the importer's sync alerts (a counter production-full
+# never makes), and production has no call centre.
 PRODUCTION = {"overview": lambda: overview(cc=False, env="production"),
-              "jobs": lambda: jobs(cc=False, env="production")}
+              "jobs": lambda: jobs(cc=False, env="production"),
+              "records": lambda: records(env="production")}
 VARIANT_DIRS = ("no-cc", "production")
 
 

@@ -7826,7 +7826,7 @@
     {
       "type": "timeseries",
       "title": "Sync alerts records raised",
-      "description": "One per `source_sync.alert` line records writes when an administrator sync run (the Everon importer's, `feed-ingest-everon-sync`) ends with something staff must see: a run that failed, closed incomplete or expired, or new problems in its log (`source_sync_alerts`; `records-source-sync-alert`, records raised an administrator sync alert, pages on one). **It reads zero until records logs that line (TP-249):** records writes the alert's outbox row and logs nothing today, so this chart cannot show an alert yet. @@E@@production-full builds none of the importer (OWNER-EV-12: beta's alone), so nothing writes this line here.@@Zero too while the importer is not deployed (beta's feed_ingest_enabled off) or its schedule is paused.@@ A count with no label: never the run, the tenant, an employer or a count of people. The run itself, its counts and its issues are on the ops portal's sync runs and data issues pages.",
+      "description": "One per `source_sync.alert` line records writes when an administrator sync run (the Everon importer's, `feed-ingest-everon-sync`) ends with something staff must see: a run that failed, closed incomplete or expired, or new problems in its log (`source_sync_alerts`; `records-source-sync-alert`, records raised an administrator sync alert, pages on one). **It reads zero until records logs that line (TP-249):** records writes the alert's outbox row and logs nothing today, so this chart cannot show an alert yet. Zero too while the importer is not deployed (feed_ingest_enabled off) or its schedule is paused: beta makes the counter whatever that switch says (tpa-platform D-181). A count with no label: never the run, the tenant, an employer or a count of people. The run itself, its counts and its issues are on the ops portal's sync runs and data issues pages.",
       "gridPos": {
         "h": 6,
         "w": 24,
@@ -7920,7 +7920,7 @@
     },
     {
       "type": "row",
-      "title": "Perimeter and alert changes",
+      "title": "The records limit, reveals and staff member reads (counts; the Security page's in full)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -7933,13 +7933,413 @@
     },
     {
       "type": "timeseries",
+      "title": "Limit state changes, by kind and mode",
+      "description": "records' limit crossing one staff person's line (`records_velocity`): a flag, a hold or a freeze (`code`), enforced or reported only (`outcome`). Never the person, a member, the measure or the count; who, and the limits, are on the ops portal's Admin, Security limits.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 128
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/records_velocity",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code",
+              "metric.label.outcome"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}} {{metric.label.outcome}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 66
+    },
+    {
+      "type": "timeseries",
+      "title": "Limit settings changed",
+      "description": "A TPA administrator's saved change to the records limit, one per changed field (`records_velocity_settings_changes`). Which way and whose role are the Security page's; never the value, the administrator or the tenant.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 6,
+        "y": 128
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/records_velocity_settings_changes",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "changes"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 67
+    },
+    {
+      "type": "timeseries",
+      "title": "Reveals served, by operation",
+      "description": "A reveal records served (`records_reveals`: `eligibility.reveal`, `network.reveal_field`). Who revealed what is in the audit chain and the ops portal's Access limits.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 128
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/records_reveals",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.operation"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.operation}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 68
+    },
+    {
+      "type": "timeseries",
+      "title": "Staff member reads, by operation",
+      "description": "A member read records served at a staff door (`records_staff_member_reads`), by operation; night activity shows by the hour. Never the member, the person or the tenant.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 128
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/records_staff_member_reads",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.operation"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.operation}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 69
+    },
+    {
+      "type": "row",
+      "title": "Perimeter and alert changes",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 135
+      },
+      "id": 70
+    },
+    {
+      "type": "timeseries",
       "title": "Perimeter violations",
       "description": "VPC Service Controls violations logged in this project, by reason, service and whether it was a dry run (`perimeter-violations`).",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 128
+        "y": 136
       },
       "datasource": {
         "type": "stackdriver",
@@ -8028,7 +8428,7 @@
           "sort": "desc"
         }
       },
-      "id": 66
+      "id": 71
     },
     {
       "type": "timeseries",
@@ -8038,7 +8438,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 128
+        "y": 136
       },
       "datasource": {
         "type": "stackdriver",
@@ -8146,7 +8546,7 @@
           "sort": "desc"
         }
       },
-      "id": 67
+      "id": 72
     },
     {
       "type": "row",
@@ -8157,9 +8557,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 136
+        "y": 144
       },
-      "id": 68
+      "id": 73
     },
     {
       "type": "timeseries",
@@ -8169,7 +8569,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 137
+        "y": 145
       },
       "datasource": {
         "type": "stackdriver",
@@ -8261,7 +8661,7 @@
           "sort": "desc"
         }
       },
-      "id": 69
+      "id": 74
     },
     {
       "type": "timeseries",
@@ -8271,7 +8671,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 137
+        "y": 145
       },
       "datasource": {
         "type": "stackdriver",
@@ -8363,7 +8763,7 @@
           "sort": "desc"
         }
       },
-      "id": 70
+      "id": 75
     }
   ]
 }

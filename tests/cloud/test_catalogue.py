@@ -160,11 +160,10 @@ NAMES = {
 }
 
 
-# Names a page reads ahead of the vendored catalogue: tpa-platform's branch watch/feed-ingest adds the importer's
-# schedule to the app project's `scheduler-failed` (a schedule that cannot start it pages, as every other schedule's
-# does). test_names_agree_with_the_catalogue refuses a name here that the vendored catalogue already names, so the
-# re-vendor at the commit that lands it empties this.
-AHEAD_OF_THE_CATALOGUE = {"job_id": {"feed-ingest-everon-sync"}}
+# Names a page reads ahead of the vendored catalogue (none today: the catalogue names the importer's schedule since
+# tpa-platform's watch/feed-ingest, D-181). test_names_agree_with_the_catalogue refuses a name here that the vendored
+# catalogue already names, so a re-vendor that lands one empties this.
+AHEAD_OF_THE_CATALOGUE: dict[str, set[str]] = {}
 
 
 def queries(paths=None):

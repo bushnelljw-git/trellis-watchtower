@@ -318,7 +318,7 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
 - [x] FI (2026-10-25, the owner: "Ok, i think we need to update watchtower with the enrollment portal and we need it
   treated just like all the other services. Same with feed-ingest if its not already Both will be deployed in GCP")
   the administrator-feed importer on the cloud pages, branch `watch/feed-ingest`; the enrollment portal waits on the
-  owner's decisions (it has no Terraform yet). tpa-platform's half (its branch `watch/feed-ingest`, D-180, P168):
+  owner's decisions (it has no Terraform yet). tpa-platform's half (its branch `watch/feed-ingest`, D-181, P169):
   watch.tf writes the importer's state, and the app project's `scheduler-failed` names its schedule.
   - [x] The catalogue at tpa-platform origin/master `a8714d70` (from `df912877`; the only change between is the
     importer's `feed_ingest` and `feed_ingest_records` sections). The reader reads those two sections as the app and
@@ -327,7 +327,7 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     the catalogue, `AHEAD_OF_THE_CATALOGUE`, until the re-vendor at tpa-platform's landing); a deadline tile titled
     `feed-ingest` (723 min: its 43200 s missed run plus three; it reads auth-db and tpa-db) on the overview and Jobs;
     its failed run a problem row of the app area (the area tile and What's wrong now); beta's Portal & API row's
-    "Jobs (24 h)" counting it and its schedule (`feed-ingest-failed` on one); its own row on Jobs (executions by
+    "App jobs (24 h)" counting it and its schedule (`feed-ingest-failed` on one); its own row on Jobs (executions by
     result, its schedule's failures, its run against its 2h10m limit); the app project's job resources. Records'
     `source_sync_alerts` on Member records, saying it reads zero until records logs the line (TP-249).
   - [x] Its state: `TPA_NOT_DEPLOYED_JOBS` (new; the importer alone, `KNOWN_NOT_DEPLOYED_JOBS`) reads "not deployed",
@@ -348,9 +348,30 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     (by digest, testdata, removed after) fed the importer's deadline tile and "Jobs (24 h)" as each state renders
     them: running ok (1, green; 0), failed (MISSED, red; failed 1, red), missed (MISSED, red; 0), paused ("paused",
     no colour; 0), not deployed ("not deployed", no colour; 0).
-  - [ ] Owed: the re-vendor at the tpa-platform commit `watch/feed-ingest` lands as (drop the schedule from
-    `AHEAD_OF_THE_CATALOGUE`, set `test_importer.WATCH_STATE_AHEAD_OF_THE_PIN` False); the image built and deployed
-    before any apply that builds the importer paused (an older image refuses its name in `TPA_PAUSED_JOBS`).
+  - [x] The independent review (CHANGES), as new commits:
+    - Must-fix 1: the Member records chart over `source_sync_alerts` was a failed query (Cloud Monitoring's 404
+      "Cannot find metric(s)") wherever the importer is not built, the counter being made only with
+      `feed_ingest_enabled`. tpa-platform makes it on beta whatever the switch says (its D-181); production-full makes
+      none, so production's Member records page (`production/records.json`, new) has no such row; the chart's words
+      say zero while the importer is not built or paused. `test_importer` holds tpa-platform's ungated counter.
+    - Must-fix 2: tpa-platform renumbered D-181, P169 (D-180 and P168 are the records limit's on its master).
+    - Should-fix (a): the order both ways in cloud/README.md (one apply moves tpa-platform's change and this image;
+      tpa-platform's alone is safe first only while the importer is not built). No refusal of an unset
+      `TPA_NOT_DEPLOYED_JOBS`: tpa-platform writes it always but often empty, and whether Cloud Run hands an empty value
+      to the container as set is unchecked, so a refusal could take the site down while the importer runs.
+    - Should-fix (b): trellis-watchtower origin/master had nothing past `b677c63`, so no other lane charts tpa-platform
+      master's new counters (T1's and T4's: `auth_stepup_failures`, `auth_admin_revocations`, `records_velocity`,
+      `records_velocity_settings_changes`, `records_reveals`, `records_staff_member_reads`). Charted minimally so the
+      every-metric rule holds: Sign-in's audit row (step-up refused by status; access ended, counted: its `operation`
+      extractor is anchored at the end alone) and Member records' new row (the limit by kind and mode, settings
+      changes counted, reveals and staff member reads by operation). The limit's `role` and a setting's `direction`
+      are not on the lint's label list: **for the W1b lane (the hosted Security page)** to decide and chart in full.
+    - The nit: beta's Portal & API stat is "App jobs (24 h)", apart from Member records' "Jobs (24 h)".
+    - The catalogue re-vendored at the rebased tpa-platform branch head `1ac0ae4a` (blob `e6e7b94a`), so
+      `AHEAD_OF_THE_CATALOGUE` is empty and `test_importer.WATCH_STATE_AHEAD_OF_THE_PIN` False; the coordinator
+      re-vendors at the commit it lands as.
+  - [ ] Owed: the re-vendor at the landed tpa-platform commit; the image deployed in the one apply that moves
+    tpa-platform's watch change and counter with it (cloud/README.md, "Deploy order, both ways").
 
 ## Review
 

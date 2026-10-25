@@ -40,10 +40,9 @@ from test_resources import CHECKOUT_PRESENT, INFRA, INFRA_SOURCE, RENDERED, sect
 IMPORTER = gen.IMPORTER
 TILE = gen.deadline_title(IMPORTER)
 CATALOGUE = cat.Catalogue()
-# tpa-platform's half (watch.tf writing the importer's state into the website's environment) is on its branch
-# watch/feed-ingest, after the catalogue's pinned commit. True until the re-vendor at the commit that lands it, when
-# test_tpa_platform_writes_the_importers_state turns red until this is False.
-WATCH_STATE_AHEAD_OF_THE_PIN = True
+# tpa-platform's half (watch.tf writing the importer's state into the website's environment): at the catalogue's
+# pinned commit since tpa-platform's watch/feed-ingest (D-181). True would hold a pin that predates it.
+WATCH_STATE_AHEAD_OF_THE_PIN = False
 
 
 def deadline(job: str) -> tuple:
@@ -103,6 +102,11 @@ class TerraformTest(unittest.TestCase):
             self.assertRegex(self.main, rf"in local\.{local[section]} : name => \w+ if contains\(roles, \"{role}\"\)",
                              section)
 
+    def test_records_count_is_made_on_beta_whatever_the_switch_says(self):
+        # The Member records chart over it is never a failed query on beta (tpa-platform D-181).
+        self.assertIn("feed_ingest_records_log_metrics = local.monitoring.feed_ingest_records.log_metrics", self.feed)
+        self.assertRegex(self.feed, r"feed_ingest_records_policies\s*=\s*\{[^}]*if var\.feed_ingest_enabled \}")
+
     def test_production_full_builds_none_of_it(self):
         # Its inventory renders feed-ingest's image-signing rows (the bootstrap's key), and nothing of the importer.
         text = INFRA.root_text("production")
@@ -114,9 +118,8 @@ class TerraformTest(unittest.TestCase):
     def test_tpa_platform_writes_the_importers_state(self):
         watch = INFRA.show("infra/envs/beta/watch.tf")
         if WATCH_STATE_AHEAD_OF_THE_PIN:
-            self.assertNotIn("TPA_NOT_DEPLOYED_JOBS", watch,
-                             "the pinned watch.tf writes the importer's state now: set WATCH_STATE_AHEAD_OF_THE_PIN "
-                             "False")
+            self.assertFalse("TPA_NOT_DEPLOYED_JOBS" in watch, "the pinned watch.tf writes the importer's state now: "
+                             "set WATCH_STATE_AHEAD_OF_THE_PIN False")
             return
         squashed = " ".join(watch.split())
         for line in ('TPA_PAUSED_JOBS = join(",", local.watch_paused_jobs)',
@@ -141,6 +144,8 @@ class CatalogueTest(unittest.TestCase):
             RENDERED["beta"][page]) for t in p.get("targets") or []
                  if "user/source_sync_alerts" in json.dumps(t["timeSeriesList"])]
         self.assertEqual(found, [("records", "Sync alerts records raised", "cloud-phi")])
+        # production-full makes no such counter: its Member records page has no such chart (a failed query there).
+        self.assertNotIn("source_sync_alerts", json.dumps(RENDERED["production"]["records"]))
 
 
 class PagesTest(unittest.TestCase):
@@ -174,7 +179,7 @@ class PagesTest(unittest.TestCase):
     def test_the_portal_rows_24_hour_jobs_stat_counts_it_in_beta(self):
         row = next(ps for title, ps in sections(RENDERED["beta"]["overview"]).items()
                    if title.startswith("Portal & API"))
-        stat = next(p for p in row if p["title"] == "Jobs (24 h)")
+        stat = next(p for p in row if p["title"] == "App jobs (24 h)")
         self.assertEqual(job_filters(stat), [f"{gen.TPA_JOBS}|{IMPORTER}"])
         schedules = [v for t in stat["targets"] for k, _o, v in lint.query_facts(t["timeSeriesList"])["filters"]
                      if k == "resource.label.job_id"]

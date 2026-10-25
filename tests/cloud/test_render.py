@@ -162,7 +162,7 @@ class RenderTest(unittest.TestCase):
             for title in ("5xx (1 h)", "Error groups (24 h)"):
                 self.assertEqual(shown(stat(overview, row, title))[:3], ("value_and_name", "database stopped",
                                                                          "database stopped"), (row, title))
-        self.assertEqual(shown(stat(overview, "Portal & API", "Jobs (24 h)")),
+        self.assertEqual(shown(stat(overview, "Portal & API", "App jobs (24 h)")),
                          ("value_and_name", "database stopped", "database stopped", ["text", "text"]))
         # The importer is not built: its tile says so, whatever its databases say.
         self.assertEqual(shown(stat(overview, "Scheduled", TILE)), QUIET("not deployed"))
@@ -196,7 +196,7 @@ class RenderTest(unittest.TestCase):
         overview = self.rendered(BETA, TPA_NOT_DEPLOYED_JOBS=IMPORTER)["overview.json"]
         # Nothing else is quieted: another job, and the app area's jobs stat that counts the importer's failures.
         self.assertEqual(shown(stat(overview, "Scheduled", "erisa-clocks")), AS_BUILT)
-        self.assertEqual(shown(stat(overview, "Portal & API", "Jobs (24 h)"))[:3],
+        self.assertEqual(shown(stat(overview, "Portal & API", "App jobs (24 h)"))[:3],
                          ("value_and_name", "", "0"))
         self.assertIn('"not deployed"', stat(overview, "Scheduled", TILE)["description"])
         self.assertIn(f"`{IMPORTER}`", stat(overview, "Scheduled", TILE)["description"])
@@ -224,12 +224,9 @@ class RenderTest(unittest.TestCase):
         own = [p["title"] for page in pages.values() for p in lint_panels(page) for t in p.get("targets") or []
                if f'"=~", "{IMPORTER}"' in json.dumps(t) or f'"=", "{IMPORTER}"' in json.dumps(t)]
         self.assertEqual(own, [])
-        self.assertEqual([t for t in titles if "importer" in t], ["Administrator sync (the importer's runs, records' "
-                                                                  "side)"], "records' own line alone")
+        self.assertEqual([t for t in titles if "importer" in t or "Sync alerts" in t], [])
         self.assertIn("nightly-anomalies", [p["title"] for p in lint_panels(pages["jobs.json"])])
         self.assertIn("nightly-anomalies", [p["title"] for p in lint_panels(pages["overview.json"])])
-        sync = stat(pages["records.json"], "Administrator sync", "Sync alerts records raised")["description"]
-        self.assertIn("production-full builds none of the importer", sync)
         beta = stat(self.rendered(BETA)["records.json"], "Administrator sync", "Sync alerts records raised")
         self.assertIn("Zero too while the importer is not deployed", beta["description"])
         self.assertIn("reads zero until records logs that line (TP-249)", beta["description"])

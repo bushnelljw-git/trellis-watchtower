@@ -6297,13 +6297,205 @@
     },
     {
       "type": "timeseries",
+      "title": "Step-up refused, by status",
+      "description": "auth refusing a step-up (`auth_stepup_failures`, POST /auth/step-up): 401 a wrong code, password or passkey; 403 a CSRF or session refusal; 410 a challenge expired, spent or not the session's. Five in fifteen minutes revoke the session.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 80
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_stepup_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 48
+    },
+    {
+      "type": "timeseries",
+      "title": "Access ended by an administrator",
+      "description": "An administrator ending a person's sessions or suspending the login (`auth_admin_revocations`), counted: its `operation` label's extractor is anchored at the end alone, so this repository's rule keeps it off the page until the catalogue anchors it at the start. Who and why are in auth's audit chain, never here.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 80
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_admin_revocations",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "ended"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 49
+    },
+    {
+      "type": "timeseries",
       "title": "Credential or workload tags that failed at use",
       "description": "A stored factor, workload, key or bearer row whose tag failed when a door used it, by kind and door (`audit-credential-tag`, urgent: forgery or tampering until shown otherwise).",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 80
+        "y": 88
       },
       "datasource": {
         "type": "stackdriver",
@@ -6387,7 +6579,7 @@
           "sort": "desc"
         }
       },
-      "id": 48
+      "id": 50
     },
     {
       "type": "timeseries",
@@ -6397,7 +6589,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 80
+        "y": 88
       },
       "datasource": {
         "type": "stackdriver",
@@ -6511,7 +6703,7 @@
           "sort": "desc"
         }
       },
-      "id": 49
+      "id": 51
     },
     {
       "type": "timeseries",
@@ -6521,7 +6713,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 88
+        "y": 96
       },
       "datasource": {
         "type": "stackdriver",
@@ -6637,7 +6829,7 @@
           "sort": "desc"
         }
       },
-      "id": 50
+      "id": 52
     },
     {
       "type": "timeseries",
@@ -6647,7 +6839,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 88
+        "y": 96
       },
       "datasource": {
         "type": "stackdriver",
@@ -6734,7 +6926,7 @@
           "sort": "desc"
         }
       },
-      "id": 51
+      "id": 53
     },
     {
       "type": "row",
@@ -6745,9 +6937,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 96
+        "y": 104
       },
-      "id": 52
+      "id": 54
     },
     {
       "type": "timeseries",
@@ -6757,7 +6949,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 97
+        "y": 105
       },
       "datasource": {
         "type": "stackdriver",
@@ -6849,7 +7041,7 @@
           "sort": "desc"
         }
       },
-      "id": 53
+      "id": 55
     },
     {
       "type": "timeseries",
@@ -6859,7 +7051,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 97
+        "y": 105
       },
       "datasource": {
         "type": "stackdriver",
@@ -6951,7 +7143,7 @@
           "sort": "desc"
         }
       },
-      "id": 54
+      "id": 56
     }
   ]
 }
