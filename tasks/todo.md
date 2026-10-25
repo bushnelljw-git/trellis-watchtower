@@ -339,7 +339,15 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     importer", the environment, beta at rest), REQUESTS.md's environment table, PAGERDUTY.md, the local feed-ingest
     page's note, grafana.ini. `scripts/cloud_image_check.sh` starts beta at rest with the importer not built and reads
     the Scheduled runs row inside its shut row (it had read only the overview's top panels since the calm overview).
-  - [x] Gates: see the review (below).
+  - [x] Gates (on `bae4d8d`): `python3 scripts/cloud_dashboards.py --check` 0; `make lint` 0; `make check` 0
+    (compose config, promtool, blackbox, alloy, loki, `bash -n`, dashboard lint, 157 cloud tests, 76 PagerDuty, 112
+    synthetics). 12 mutants (the render's not-deployed rules, its both-lists and production refusals, a wider known
+    list, the app area's pattern, the importer's deadline, deps and its production filter, the records row, the
+    reader's section map, the switched list), each red. `make cloud-image-check` refused by its own build guard (the
+    Docker VM had 3,405 MB of memory available, under its 6,144), so not run. Pixels: a throwaway Grafana 12.4.11
+    (by digest, testdata, removed after) fed the importer's deadline tile and "Jobs (24 h)" as each state renders
+    them: running ok (1, green; 0), failed (MISSED, red; failed 1, red), missed (MISSED, red; 0), paused ("paused",
+    no colour; 0), not deployed ("not deployed", no colour; 0).
   - [ ] Owed: the re-vendor at the tpa-platform commit `watch/feed-ingest` lands as (drop the schedule from
     `AHEAD_OF_THE_CATALOGUE`, set `test_importer.WATCH_STATE_AHEAD_OF_THE_PIN` False); the image built and deployed
     before any apply that builds the importer paused (an older image refuses its name in `TPA_PAUSED_JOBS`).
