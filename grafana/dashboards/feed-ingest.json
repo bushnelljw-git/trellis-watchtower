@@ -423,7 +423,7 @@
       "title": "Signals",
       "options": {
         "mode": "markdown",
-        "content": "feed-ingest runs as a host process (console on :8099). It has no cloud deployment by design, so this probe is its only signal.\n\nLogs from this host process are not shipped yet. docs/SPEC.md W2: host-process logs stay out until each is shown clean (their JSON formatters put the full traceback and every extra field on the line). See docs/REQUESTS.md \u00a73.",
+        "content": "feed-ingest runs here as a host process (console on :8099), and this probe is its only signal on this laptop. Beta runs its scheduled Everon sync in GCP as the Cloud Run job feed-ingest-everon-sync (tpa-platform's beta feedingest.tf), which the hosted cloud pages chart (cloud/README.md, \"The administrator-feed importer\").\n\nLogs from this host process are not shipped yet. docs/SPEC.md W2: host-process logs stay out until each is shown clean (their JSON formatters put the full traceback and every extra field on the line). See docs/REQUESTS.md \u00a73.",
         "code": {
           "language": "plaintext",
           "showLineNumbers": false,

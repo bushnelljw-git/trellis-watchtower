@@ -1,6 +1,7 @@
 """cloud/render-dashboards.sh settles the dashboards from the service's environment: each query's project, the
-uptime wording per environment, the call-centre parts (left out with no call-centre project), and the tiles of a
-paused sweep or a stopped database (neutral "paused" / "database stopped"). It refuses anything it does not know.
+uptime wording per environment, the call-centre parts (left out with no call-centre project), and the tiles of a job
+not built, a paused job or a stopped database (neutral "not deployed" / "paused" / "database stopped"). It refuses
+anything it does not know.
 
 Run: python3 -m unittest discover -s tests/cloud -v
 """
@@ -26,9 +27,15 @@ BETA = {"TPA_APP_PROJECT_ID": "beta-tpa-app", "TPA_CRM_PROJECT_ID": "beta-tpa-ap
         "TPA_PHI_PROJECT_ID": "beta-tpa-phi", "TPA_CC_PROJECT_ID": "beta-callcentre", "TPA_ENVIRONMENT": "beta"}
 PRODUCTION = {"TPA_APP_PROJECT_ID": "prod-tpa-app", "TPA_CRM_PROJECT_ID": "prod-crm",
               "TPA_PHI_PROJECT_ID": "prod-tpa-phi", "TPA_CC_PROJECT_ID": "", "TPA_ENVIRONMENT": "production"}
-# Beta's documented resting state: every database stopped between sessions, the two O143 sweeps paused.
+# Beta's documented resting state: every database stopped between sessions, the two O143 sweeps paused, and the
+# administrator-feed importer not built (feed_ingest_enabled false, its default).
 RESTING = {"TPA_PAUSED_JOBS": "nightly-anomalies,accumulator-reconcile",
+           "TPA_NOT_DEPLOYED_JOBS": "feed-ingest-everon-sync",
            "TPA_STOPPED_DATABASES": "auth_db,tpa_db,crm_db,cc_db"}
+IMPORTER = gen.IMPORTER
+TILE = gen.deadline_title(IMPORTER)   # "feed-ingest": the whole job name does not fit a tile
+QUIET = lambda word: ("value_and_name", word, word, ["text", "text"])  # noqa: E731
+AS_BUILT = ("auto", "", "MISSED", ["red", "green"])
 
 
 def stat(dashboard: dict, row: str | None, title: str) -> dict:
@@ -43,6 +50,11 @@ def stat(dashboard: dict, row: str | None, title: str) -> dict:
             elif p["title"] == title and (row is None or (current or "").startswith(row)):
                 return p
     raise KeyError((row, title))
+
+
+def lint_panels(dashboard: dict) -> list[dict]:
+    """Every panel, a shut row's included."""
+    return [p for panel in dashboard["panels"] for p in [panel, *(panel.get("panels") or [])]]
 
 
 def shown(panel: dict) -> tuple:
@@ -150,8 +162,11 @@ class RenderTest(unittest.TestCase):
             for title in ("5xx (1 h)", "Error groups (24 h)"):
                 self.assertEqual(shown(stat(overview, row, title))[:3], ("value_and_name", "database stopped",
                                                                          "database stopped"), (row, title))
-        self.assertEqual(shown(stat(overview, "Portal & API", "tpa-jobs (24 h)")),
+        self.assertEqual(shown(stat(overview, "Portal & API", "Jobs (24 h)")),
                          ("value_and_name", "database stopped", "database stopped", ["text", "text"]))
+        # The importer is not built: its tile says so, whatever its databases say.
+        self.assertEqual(shown(stat(overview, "Scheduled", TILE)), QUIET("not deployed"))
+        self.assertEqual(shown(stat(pages["jobs.json"], None, TILE)), QUIET("not deployed"))
         self.assertEqual(stat(overview, "Sign-in", "auth-db")["fieldConfig"]["defaults"]["noValue"],
                          "database stopped")
         # The Jobs page's deadline tiles are the same tiles.
@@ -170,6 +185,54 @@ class RenderTest(unittest.TestCase):
     def test_paused_wins_over_stopped(self):
         overview = self.rendered(BETA, **RESTING)["overview.json"]
         self.assertEqual(shown(stat(overview, "Scheduled", "nightly-anomalies"))[2], "paused")
+
+    # ---- the administrator-feed importer (OWNER-EV-12): not deployed, paused, running --------------------------
+    def importer_tiles(self, **env) -> list[tuple]:
+        pages = self.rendered(BETA, **env)
+        return [shown(stat(pages["overview.json"], "Scheduled", TILE)), shown(stat(pages["jobs.json"], None, TILE))]
+
+    def test_the_importer_not_built_reads_not_deployed_in_no_colour(self):
+        self.assertEqual(self.importer_tiles(TPA_NOT_DEPLOYED_JOBS=IMPORTER), [QUIET("not deployed")] * 2)
+        overview = self.rendered(BETA, TPA_NOT_DEPLOYED_JOBS=IMPORTER)["overview.json"]
+        # Nothing else is quieted: another job, and the app area's jobs stat that counts the importer's failures.
+        self.assertEqual(shown(stat(overview, "Scheduled", "erisa-clocks")), AS_BUILT)
+        self.assertEqual(shown(stat(overview, "Portal & API", "Jobs (24 h)"))[:3],
+                         ("value_and_name", "", "0"))
+        self.assertIn('"not deployed"', stat(overview, "Scheduled", TILE)["description"])
+        self.assertIn(f"`{IMPORTER}`", stat(overview, "Scheduled", TILE)["description"])
+
+    def test_the_importer_paused_reads_paused_in_no_colour(self):
+        self.assertEqual(self.importer_tiles(TPA_PAUSED_JOBS=IMPORTER), [QUIET("paused")] * 2)
+        both = self.importer_tiles(TPA_PAUSED_JOBS=f"nightly-anomalies,{IMPORTER}", TPA_STOPPED_DATABASES="auth-db")
+        self.assertEqual(both, [QUIET("paused")] * 2, "paused wins over a stopped database")
+
+    def test_the_importer_built_and_running_reads_as_every_other_job(self):
+        # Neither list names it: MISSED in red with no successful run in its deadline, green with one.
+        self.assertEqual(self.importer_tiles(), [AS_BUILT] * 2)
+        self.assertEqual(self.importer_tiles(TPA_STOPPED_DATABASES="tpa-db"), [QUIET("database stopped")] * 2)
+
+    def test_not_deployed_wins_over_a_stopped_database(self):
+        self.assertEqual(self.importer_tiles(TPA_NOT_DEPLOYED_JOBS=IMPORTER, TPA_STOPPED_DATABASES="auth-db,tpa-db"),
+                         [QUIET("not deployed")] * 2)
+
+    def test_production_has_no_importer_tile(self):
+        # production-full builds none of the importer, so its pages tile none of it (and no list can quiet one).
+        pages = self.rendered(PRODUCTION)
+        titles = [p["title"] for page in pages.values() for p in lint_panels(page)]
+        self.assertNotIn(TILE, titles)
+        # No query of the importer's own (the app area's job pattern names it among the others, and reads nothing).
+        own = [p["title"] for page in pages.values() for p in lint_panels(page) for t in p.get("targets") or []
+               if f'"=~", "{IMPORTER}"' in json.dumps(t) or f'"=", "{IMPORTER}"' in json.dumps(t)]
+        self.assertEqual(own, [])
+        self.assertEqual([t for t in titles if "importer" in t], ["Administrator sync (the importer's runs, records' "
+                                                                  "side)"], "records' own line alone")
+        self.assertIn("nightly-anomalies", [p["title"] for p in lint_panels(pages["jobs.json"])])
+        self.assertIn("nightly-anomalies", [p["title"] for p in lint_panels(pages["overview.json"])])
+        sync = stat(pages["records.json"], "Administrator sync", "Sync alerts records raised")["description"]
+        self.assertIn("production-full builds none of the importer", sync)
+        beta = stat(self.rendered(BETA)["records.json"], "Administrator sync", "Sync alerts records raised")
+        self.assertIn("Zero too while the importer is not deployed", beta["description"])
+        self.assertIn("reads zero until records logs that line (TP-249)", beta["description"])
 
     def test_names_are_trimmed_and_underscores_read_as_hyphens(self):
         overview = self.rendered(BETA, TPA_STOPPED_DATABASES=" auth_db , tpa-db ,")["overview.json"]
@@ -190,6 +253,17 @@ class RenderTest(unittest.TestCase):
     def test_a_job_that_is_not_a_sweep_is_refused(self):
         self.assertRefused(BETA, "TPA_PAUSED_JOBS names 'auth-publisher'", TPA_PAUSED_JOBS="auth-publisher")
 
+    def test_only_a_switched_job_can_be_not_deployed(self):
+        # A sweep is always built; a typo, a database or the schedule's own wording are refused.
+        for name in ("nightly-anomalies", "feed-ingest", "feed-ingest-everon", "tpa-db", "auth-publisher"):
+            self.assertRefused(BETA, f"TPA_NOT_DEPLOYED_JOBS names '{name}', which is not one of",
+                               TPA_NOT_DEPLOYED_JOBS=f"{IMPORTER},{name}")
+        self.assertRefused(BETA, f"TPA_STOPPED_DATABASES names '{IMPORTER}'", TPA_STOPPED_DATABASES=IMPORTER)
+
+    def test_a_job_both_not_deployed_and_paused_is_refused(self):
+        self.assertRefused(BETA, f"TPA_NOT_DEPLOYED_JOBS and TPA_PAUSED_JOBS both name '{IMPORTER}'",
+                           TPA_NOT_DEPLOYED_JOBS=IMPORTER, TPA_PAUSED_JOBS=f"nightly-anomalies,{IMPORTER}")
+
     def test_an_unknown_database_is_refused(self):
         self.assertRefused(BETA, "TPA_STOPPED_DATABASES names 'records-db'", TPA_STOPPED_DATABASES="auth-db,records-db")
 
@@ -203,9 +277,12 @@ class RenderTest(unittest.TestCase):
                            TPA_PAUSED_JOBS="nightly-anomalies")
         self.assertRefused(PRODUCTION, "TPA_STOPPED_DATABASES must be empty with TPA_ENVIRONMENT=production",
                            TPA_STOPPED_DATABASES="tpa-db")
+        self.assertRefused(PRODUCTION, "TPA_NOT_DEPLOYED_JOBS must be empty with TPA_ENVIRONMENT=production",
+                           TPA_NOT_DEPLOYED_JOBS=IMPORTER)
         # Refused before the names are read: even one the image would not know.
         self.assertRefused(PRODUCTION, "TPA_STOPPED_DATABASES must be empty", TPA_STOPPED_DATABASES=",")
-        self.assertEqual(self.render(PRODUCTION, TPA_PAUSED_JOBS="", TPA_STOPPED_DATABASES="").returncode, 0)
+        self.assertEqual(self.render(PRODUCTION, TPA_PAUSED_JOBS="", TPA_NOT_DEPLOYED_JOBS="",
+                                     TPA_STOPPED_DATABASES="").returncode, 0)
 
     def test_an_unknown_environment_is_refused(self):
         self.assertRefused({**BETA, "TPA_ENVIRONMENT": "staging"}, "TPA_ENVIRONMENT must be 'beta' or 'production'")

@@ -356,7 +356,10 @@ event carries the policy and condition names, the policy's documentation, the me
 resource labels (project, service, job). tpa-platform's monitoring module refuses any metric label outside the closed
 allowlist (`service`, `operation`, `gate`, `code`, `outcome`, `status_class`, `job`, `lane`, `class`, `sqlstate`), and
 any extractor that reads a tenant, member, request, row or URL field (SPEC.md, "No PHI anywhere in monitoring").
-A new alert policy's documentation must keep to the same rule. Each service's description says so too.
+A new alert policy's documentation must keep to the same rule. Each service's description says so too. Beta's
+administrator-feed importer (2026-10-25) keeps it: `feed-ingest-failed` (the app project, "TPA beta · Portal & API")
+names the job alone, and records' `records-source-sync-alert` (the PHI project, "· Member records") counts a
+value-free line, never its run, tenant or counts.
 
 ## Verified live (2026-10-11)
 

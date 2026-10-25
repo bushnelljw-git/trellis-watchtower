@@ -7812,7 +7812,7 @@
     },
     {
       "type": "row",
-      "title": "Perimeter and alert changes",
+      "title": "Administrator sync (the importer's runs, records' side)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -7825,13 +7825,121 @@
     },
     {
       "type": "timeseries",
+      "title": "Sync alerts records raised",
+      "description": "One per `source_sync.alert` line records writes when an administrator sync run (the Everon importer's, `feed-ingest-everon-sync`) ends with something staff must see: a run that failed, closed incomplete or expired, or new problems in its log (`source_sync_alerts`; `records-source-sync-alert`, records raised an administrator sync alert, pages on one). **It reads zero until records logs that line (TP-249):** records writes the alert's outbox row and logs nothing today, so this chart cannot show an alert yet. @@E@@production-full builds none of the importer (OWNER-EV-12: beta's alone), so nothing writes this line here.@@Zero too while the importer is not deployed (beta's feed_ingest_enabled off) or its schedule is paused.@@ A count with no label: never the run, the tenant, an employer or a count of people. The run itself, its counts and its issues are on the ops portal's sync runs and data issues pages.",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 121
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/source_sync_alerts",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "alerts"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 64
+    },
+    {
+      "type": "row",
+      "title": "Perimeter and alert changes",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 127
+      },
+      "id": 65
+    },
+    {
+      "type": "timeseries",
       "title": "Perimeter violations",
       "description": "VPC Service Controls violations logged in this project, by reason, service and whether it was a dry run (`perimeter-violations`).",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 121
+        "y": 128
       },
       "datasource": {
         "type": "stackdriver",
@@ -7920,7 +8028,7 @@
           "sort": "desc"
         }
       },
-      "id": 64
+      "id": 66
     },
     {
       "type": "timeseries",
@@ -7930,7 +8038,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 121
+        "y": 128
       },
       "datasource": {
         "type": "stackdriver",
@@ -8038,7 +8146,7 @@
           "sort": "desc"
         }
       },
-      "id": 65
+      "id": 67
     },
     {
       "type": "row",
@@ -8049,9 +8157,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 129
+        "y": 136
       },
-      "id": 66
+      "id": 68
     },
     {
       "type": "timeseries",
@@ -8061,7 +8169,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 130
+        "y": 137
       },
       "datasource": {
         "type": "stackdriver",
@@ -8153,7 +8261,7 @@
           "sort": "desc"
         }
       },
-      "id": 67
+      "id": 69
     },
     {
       "type": "timeseries",
@@ -8163,7 +8271,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 130
+        "y": 137
       },
       "datasource": {
         "type": "stackdriver",
@@ -8255,7 +8363,7 @@
           "sort": "desc"
         }
       },
-      "id": 68
+      "id": 70
     }
   ]
 }

@@ -492,7 +492,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "tpa-jobs-.*|migrate-auth|auth-.*"
+              "tpa-jobs-.*|migrate-auth|auth-.*|feed-ingest-everon-sync"
             ],
             "groupBys": [
               "resource.label.job_name"
@@ -525,7 +525,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "tpa-jobs-.*|migrate-auth|auth-.*",
+              "tpa-jobs-.*|migrate-auth|auth-.*|feed-ingest-everon-sync",
               "AND",
               "metric.label.result",
               "=",
@@ -15350,7 +15350,7 @@
                   "AND",
                   "resource.label.job_name",
                   "=~",
-                  "tpa-jobs-.*|migrate-auth|auth-.*"
+                  "tpa-jobs-.*|migrate-auth|auth-.*|feed-ingest-everon-sync"
                 ],
                 "groupBys": [
                   "resource.label.job_name"
@@ -15383,7 +15383,7 @@
                   "AND",
                   "resource.label.job_name",
                   "=~",
-                  "tpa-jobs-.*|migrate-auth|auth-.*",
+                  "tpa-jobs-.*|migrate-auth|auth-.*|feed-ingest-everon-sync",
                   "AND",
                   "metric.label.result",
                   "=",

@@ -13,9 +13,9 @@
 #     entrypoint are root's and read-only to it, and nothing in the image is writable by it but /tmp and
 #     /var/lib/grafana. The image's grafana.ini and iap_keys.json are the committed ones: the key set is read from the
 #     file (jwk_set_file), never fetched, and a token under a pinned kid but signed by another key answers 401.
-#  2. As beta at rest (every database stopped, the O143 sweeps paused), signed in the way IAP signs people in: the
-#     shipped grafana.ini unchanged, with the baked key file (/etc/grafana/iap_keys.json) replaced by a set holding a
-#     throwaway ES256 key, and tokens signed here with it. Checks:
+#  2. As beta at rest (every database stopped, the O143 sweeps paused, the importer not built), signed in the way IAP
+#     signs people in: the shipped grafana.ini unchanged, with the baked key file (/etc/grafana/iap_keys.json)
+#     replaced by a set holding a throwaway ES256 key, and tokens signed here with it. Checks:
 #     - a wrong audience, a wrong issuer, an expired token or another key's signature answer 401;
 #     - the right token signs a Viewer in, with no Explore permission, and every write answers 403;
 #     - the dashboards and datasources are there, rendered for beta at rest;
@@ -45,6 +45,7 @@ production=(-e TPA_ENVIRONMENT=production -e TPA_APP_PROJECT_ID=check-tpa-app -e
 beta_at_rest=(-e TPA_ENVIRONMENT=beta -e TPA_APP_PROJECT_ID=check-tpa-app -e TPA_CRM_PROJECT_ID=check-tpa-app
               -e TPA_PHI_PROJECT_ID=check-tpa-phi -e TPA_CC_PROJECT_ID=check-callcentre
               -e TPA_PAUSED_JOBS=nightly-anomalies,accumulator-reconcile
+              -e TPA_NOT_DEPLOYED_JOBS=feed-ingest-everon-sync
               -e TPA_STOPPED_DATABASES=auth_db,tpa_db,crm_db,cc_db)
 
 wait_up() {
@@ -329,10 +330,13 @@ if home.get("uid") != "tw-cloud-overview":
     problems.append(f"the home page is {home.get('uid')}")
 if sources != projects:
     problems.append(f"the datasources' projects are {sources}")
-resting = {p["title"]: p["fieldConfig"]["defaults"].get("noValue") for p in home["panels"]
-           if p["title"] in ("nightly-anomalies", "erisa-clocks")}
+# The scheduled runs' tiles are in a shut row: its panels are inside it.
+resting = {p["title"]: p["fieldConfig"]["defaults"].get("noValue")
+           for p in [q for r in home["panels"] for q in (r, *(r.get("panels") or []))]
+           if p["title"] in ("nightly-anomalies", "erisa-clocks", "feed-ingest")}
 print(f"   at rest: {resting}")
-if resting != {"nightly-anomalies": "paused", "erisa-clocks": "database stopped"}:
+if resting != {"nightly-anomalies": "paused", "erisa-clocks": "database stopped",
+               "feed-ingest": "not deployed"}:
     problems.append(f"beta at rest renders {resting}")
 
 counted = {}

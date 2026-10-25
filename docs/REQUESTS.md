@@ -159,11 +159,13 @@ bound it.
    | `TPA_PHI_PROJECT_ID` | the PHI project | the PHI project |
    | `TPA_CC_PROJECT_ID` | the call-centre project | empty (no call-centre project: its page and parts are left out) |
    | `TPA_ENVIRONMENT` | `beta` | `production` (`local.env`) |
-   | `TPA_PAUSED_JOBS` | `join(",", var.tpa_jobs_paused)` | empty: refused otherwise |
+   | `TPA_PAUSED_JOBS` | `join(",", var.tpa_jobs_paused)`; since 2026-10-25 also `feed-ingest-everon-sync` while the importer is built and paused (`local.watch_paused_jobs`) | empty: refused otherwise |
+   | `TPA_NOT_DEPLOYED_JOBS` (2026-10-25) | `feed-ingest-everon-sync` while `feed_ingest_enabled` is off, else empty (`local.watch_not_deployed_jobs`) | empty: refused otherwise |
    | `TPA_STOPPED_DATABASES` | `join(",", [for db, stopped in local.database_stopped : db if stopped])` | empty: refused otherwise |
 
-   The last two come from the same variables that pause the sweeps and stop the databases, so the pages follow each
-   apply. In beta at rest the affected tiles read "paused" or "database stopped" instead of red.
+   The last three come from the same variables that pause the sweeps, build and pause the administrator-feed importer
+   and stop the databases, so the pages follow each apply. In beta at rest the affected tiles read "paused", "not
+   deployed" or "database stopped" instead of red.
 6. **Query Insights: turn it off on auth-db, crm-db and cc-db, or accept the residual.** With ask 1 a viewer can still
    read every metric in the four projects, and Query Insights' per-query metrics carry normalised query text as a
    label. It is already off on tpa-db (`insights_config`, "a sampled query text is a member id in a Google console").

@@ -315,6 +315,34 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     records.json's refusal and decision panels leave the velocity lines out.
   - [ ] W1b (hosted page) after tpa-platform's T1/T4 metrics: a `security()` builder in `cloud_dashboards.py`, the
     catalogue re-vendored, Cloud Armor in the lint's metric types. `gen_home.VELOCITY_*` is the local contract only.
+- [x] FI (2026-10-25, the owner: "Ok, i think we need to update watchtower with the enrollment portal and we need it
+  treated just like all the other services. Same with feed-ingest if its not already Both will be deployed in GCP")
+  the administrator-feed importer on the cloud pages, branch `watch/feed-ingest`; the enrollment portal waits on the
+  owner's decisions (it has no Terraform yet). tpa-platform's half (its branch `watch/feed-ingest`, D-180, P168):
+  watch.tf writes the importer's state, and the app project's `scheduler-failed` names its schedule.
+  - [x] The catalogue at tpa-platform origin/master `a8714d70` (from `df912877`; the only change between is the
+    importer's `feed_ingest` and `feed_ingest_records` sections). The reader reads those two sections as the app and
+    PHI roles' (`catalogue.SECTIONS`, held to beta's main.tf); the other optional sections stay unread.
+  - [x] `feed-ingest-everon-sync` as every other scheduled job: in `NAMES` (job and schedule; the schedule ahead of
+    the catalogue, `AHEAD_OF_THE_CATALOGUE`, until the re-vendor at tpa-platform's landing); a deadline tile titled
+    `feed-ingest` (723 min: its 43200 s missed run plus three; it reads auth-db and tpa-db) on the overview and Jobs;
+    its failed run a problem row of the app area (the area tile and What's wrong now); beta's Portal & API row's
+    "Jobs (24 h)" counting it and its schedule (`feed-ingest-failed` on one); its own row on Jobs (executions by
+    result, its schedule's failures, its run against its 2h10m limit); the app project's job resources. Records'
+    `source_sync_alerts` on Member records, saying it reads zero until records logs the line (TP-249).
+  - [x] Its state: `TPA_NOT_DEPLOYED_JOBS` (new; the importer alone, `KNOWN_NOT_DEPLOYED_JOBS`) reads "not deployed",
+    and the importer in `TPA_PAUSED_JOBS` (`KNOWN_PAUSED_JOBS`, the six sweeps and it) reads "paused", in no colour;
+    not deployed wins over paused, paused over a stopped database. Refused: an unknown name for its list, one name in
+    both lists, and any of the three lists in production. production-full builds none of the importer, so its
+    overview and its Jobs page (`production/jobs.json`, new) carry no tile of it.
+  - [x] Docs: SPEC.md's feed-ingest row (it runs in GCP now), SIGNALS.md, cloud/README.md ("The administrator-feed
+    importer", the environment, beta at rest), REQUESTS.md's environment table, PAGERDUTY.md, the local feed-ingest
+    page's note, grafana.ini. `scripts/cloud_image_check.sh` starts beta at rest with the importer not built and reads
+    the Scheduled runs row inside its shut row (it had read only the overview's top panels since the calm overview).
+  - [x] Gates: see the review (below).
+  - [ ] Owed: the re-vendor at the tpa-platform commit `watch/feed-ingest` lands as (drop the schedule from
+    `AHEAD_OF_THE_CATALOGUE`, set `test_importer.WATCH_STATE_AHEAD_OF_THE_PIN` False); the image built and deployed
+    before any apply that builds the importer paused (an older image refuses its name in `TPA_PAUSED_JOBS`).
 
 ## Review
 

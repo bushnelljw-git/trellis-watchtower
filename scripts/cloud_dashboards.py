@@ -13,14 +13,15 @@ Not MQL: Google has deprecated it. Every metric a query names is checked against
 its datasource's project as a placeholder, which the image fills in at start (cloud/render-dashboards.sh).
 
 The image also settles three things at start, from the service's environment, so that one image serves every
-environment: tiles of a sweep that is paused (TPA_PAUSED_JOBS) or of a database that is stopped
-(TPA_STOPPED_DATABASES) read neutral "paused" or "database stopped" instead of red; the uptime tile's wording
-(TPA_ENVIRONMENT), and the limits each environment's Terraform sets (a service's max_instances, its ceiling policy, a
-database's max_connections: LIMITS); and, with no call-centre project (TPA_CC_PROJECT_ID empty, production-full), the
-variants in cloud/dashboards/no-cc/ replace the pages that have a call-centre part, and the pages that read the call
-centre alone are left out. Each such string is a token, `@@R,deps,@@normal@@`, `@@F,deps,@@quiet@@normal@@`,
-`@@E@@production@@beta@@`, or, for a number, `"@@N@@production@@beta@@"` (its quotes go with it), that the render step
-resolves (when_quiet, per_environment, per_env_number below).
+environment: tiles of a scheduled job that is not built (TPA_NOT_DEPLOYED_JOBS: the administrator-feed importer,
+while beta's switch is off), of a job that is paused (TPA_PAUSED_JOBS) or of a database that is stopped
+(TPA_STOPPED_DATABASES) read neutral "not deployed", "paused" or "database stopped" instead of red; the uptime tile's
+wording (TPA_ENVIRONMENT), and the limits each environment's Terraform sets (a service's max_instances, its ceiling
+policy, a database's max_connections: LIMITS); and, with no call-centre project (TPA_CC_PROJECT_ID empty,
+production-full), the variants in cloud/dashboards/no-cc/ replace the pages that have a call-centre part, and the
+pages that read the call centre alone are left out. Each such string is a token, `@@R,deps,@@normal@@`,
+`@@F,deps,@@quiet@@normal@@`, `@@E@@production@@beta@@`, or, for a number, `"@@N@@production@@beta@@"` (its quotes go
+with it), that the render step resolves (when_quiet, per_environment, per_env_number below).
 
 Usage:
   scripts/cloud_dashboards.py           write cloud/dashboards/*.json
@@ -58,27 +59,41 @@ CC_SERVICES = "svc-voice|svc-ops|svc-twilio-rest"
 TPA_SCHEDULES = "erisa-clocks|nightly-anomalies|stoploss-surveillance|accumulator-reconcile|workload-audit|member-access"
 AUTH_SCHEDULES = "auth-.*"
 PHI_SCHEDULES = "tpa-db-export|records-chain-head|restore-drill"
-# What TPA_PAUSED_JOBS and TPA_STOPPED_DATABASES may name (render-dashboards.sh refuses anything else; the render
-# test holds its lists to these): the sweeps tpa-platform's beta can pause (var.tpa_jobs_paused, keys of
-# local.sweeps) and the four Cloud SQL instances (local.database_stopped, auth_db as auth-db).
+# The administrator-feed importer's scheduled Everon sync (OWNER-EV-10, OWNER-EV-12; tpa-platform's beta feedingest.tf,
+# local.feed_ingest_job): its Cloud Run job and its Cloud Scheduler job have this one name, in the app project. Beta
+# builds it only with feed_ingest_enabled (false by default) and pauses its schedule while feed_ingest_paused (true by
+# default); production-full builds none of it (BETA_ONLY_JOBS).
+IMPORTER = "feed-ingest-everon-sync"
+# What TPA_PAUSED_JOBS, TPA_NOT_DEPLOYED_JOBS and TPA_STOPPED_DATABASES may name (render-dashboards.sh refuses anything
+# else; the render test holds its lists to these): the sweeps tpa-platform's beta can pause (var.tpa_jobs_paused, keys
+# of local.sweeps) and the importer while its schedule is paused (PAUSABLE); the scheduled jobs beta builds only behind
+# a switch, the importer alone (SWITCHED); and the four Cloud SQL instances (local.database_stopped, auth_db as
+# auth-db).
 SWEEPS = ("erisa-clocks", "nightly-anomalies", "stoploss-surveillance", "accumulator-reconcile", "workload-audit",
           "member-access")
+PAUSABLE = (*SWEEPS, IMPORTER)
+SWITCHED = (IMPORTER,)
 DATABASES = ("auth-db", "tpa-db", "crm-db", "cc-db")
 SWEEP_DBS = ("auth-db", "tpa-db")   # a sweep's run needs auth (its token) and records (tpa-db)
 # Each scheduled job's missed-run deadline in minutes (beta's terraform.tfvars.example `missed_run_after`, about one
-# and a half times its cadence; docs/infra/monitoring.md §5), and what it needs to run: its sweep's name while it can
-# be paused, and the databases it reads (tpa-platform's database_dependent_jobs). The monthly verify and the
-# quarterly drill have none.
+# and a half times its cadence; docs/infra/monitoring.md §5; the importer's, feedingest.tf's
+# local.feed_ingest_missed_run_after, 43200 s), and what it needs to run: its own name while it can be paused or not be
+# built, and the databases it reads (tpa-platform's database_dependent_jobs; the importer's missed run is gated on
+# auth-db and tpa-db, main.tf's monitoring inputs). The monthly verify and the quarterly drill have none.
 DEADLINES = [(APP, "auth-publisher", 3, ("auth-db",)),
              (APP, "tpa-jobs-erisa-clocks", 23, ("erisa-clocks", *SWEEP_DBS)),
              (APP, "tpa-jobs-nightly-anomalies", 90, ("nightly-anomalies", *SWEEP_DBS)),
              (APP, "auth-sweeper", 90, ("auth-db",)),
+             (APP, IMPORTER, 720, (IMPORTER, *SWEEP_DBS)),
              (APP, "tpa-jobs-stoploss-surveillance", 2160, ("stoploss-surveillance", *SWEEP_DBS)),
              (APP, "tpa-jobs-accumulator-reconcile", 2160, ("accumulator-reconcile", *SWEEP_DBS)),
              (APP, "tpa-jobs-workload-audit", 2160, ("workload-audit", *SWEEP_DBS)),
              (APP, "tpa-jobs-member-access", 2160, ("member-access", *SWEEP_DBS)),
              (APP, "auth-audit-head", 2160, ("auth-db",)), (APP, "auth-audit-verify", 2160, ("auth-db",)),
              (PHI, "tpa-db-export", 2160, ("tpa-db",)), (PHI, "records-chain-head", 2160, ("tpa-db",))]
+# The scheduled jobs one environment builds and the other does not, with why: their tiles are on that environment's
+# pages alone (production's overview and Jobs page are written again for it, PRODUCTION below).
+BETA_ONLY_JOBS = {IMPORTER: "production-full builds none of the importer (OWNER-EV-12: beta's alone)"}
 # Cloud Run's job metrics can reach Cloud Monitoring up to 180 s after the run, so a deadline tile looks back its
 # deadline plus this, or a run on time would read MISSED for up to three minutes.
 METRIC_DELAY_MINUTES = 3
@@ -294,9 +309,9 @@ def by_ref(ref: str, **props) -> dict:
 NEUTRAL = "text"
 
 def when_quiet(deps, normal: str, quiet: str | None = None) -> str:
-    """A string render-dashboards.sh settles at start: `normal`, or, while one of `deps` (a sweep in
-    TPA_PAUSED_JOBS, a database in TPA_STOPPED_DATABASES) is quiet, `quiet`, or by default the reason ("paused",
-    "database stopped")."""
+    """A string render-dashboards.sh settles at start: `normal`, or, while one of `deps` (a job in
+    TPA_NOT_DEPLOYED_JOBS or TPA_PAUSED_JOBS, a database in TPA_STOPPED_DATABASES) is quiet, `quiet`, or by default the
+    reason ("not deployed", "paused", "database stopped", in that order when several hold)."""
     names = "," + ",".join(deps) + ","
     for text in (normal, quiet or ""):
         assert "@" not in text, text
@@ -342,8 +357,13 @@ def quieten(p: dict, deps) -> dict:
             elif prop["id"] == "thresholds":
                 for step in prop["value"]["steps"]:
                     step["color"] = when_quiet(deps, step["color"], NEUTRAL)
-    paused = [d for d in deps if d in SWEEPS]
+    switched = [d for d in deps if d in SWITCHED]
+    paused = [d for d in deps if d in PAUSABLE]
     stopped = [d for d in deps if d in DATABASES]
+    if switched:
+        p["description"] += (" Reads \"not deployed\", in no colour, while " + " or ".join(f"`{d}`" for d in switched)
+                             + " is not built (beta's switch off; the service's TPA_NOT_DEPLOYED_JOBS), whatever else "
+                             "holds.")
     p["description"] += (" Reads \"paused\" or \"database stopped\", in no colour, while " +
                          " or ".join(f"`{d}`" for d in paused + stopped) + " is " +
                          ("paused or stopped" if paused and stopped else "paused" if paused else "stopped") +
@@ -554,14 +574,14 @@ def db_stat(title: str, ds: str, instance: str, *, w=4, h=5) -> dict:
                                   thresholds=thresholds("green", (0.75, "orange"), (0.85, "red")))])
 
 
-def jobs_stat(title: str, ds: str, jobs: str, schedules: str | None, deps) -> dict:
+def jobs_stat(title: str, ds: str, jobs: str, schedules: str | None, deps, note: str = "") -> dict:
     queries = [executions(jobs, "failed", "+3600s", by=(), name="failed")]
     if schedules:
         queries.append(schedule_failures(schedules, "+3600s", by=(), name="schedule failed"))
     return stat(title, ds, queries, "Last 24 h: executions that failed after their retries (`jobs-failed`: in the "
                 "app and CRM projects on the second in a row, R380; in the PHI and call-centre projects on one)" +
                 (", and schedules that could not start their job (`scheduler-failed`)" if schedules else "") +
-                ". A missed run is the Scheduled runs row above.", time_from="24h", no_value="0",
+                ". " + note + "A missed run is the Scheduled runs row above.", time_from="24h", no_value="0",
                 text_mode="value_and_name", steps=thresholds(NEUTRAL, (1, "red")), deps=deps)
 
 
@@ -573,18 +593,40 @@ def groups_stat(title: str, ds: str, queries: list[dict], counter: str, deps) ->
                 steps=thresholds(NEUTRAL, (1, "orange")), deps=deps)
 
 
-def deadline_stats(w: int, h: int) -> list[dict]:
-    """One stat per scheduled job: its successful executions within its missed-run deadline, the module's own
-    condition (`missed run (<job>)`). None at all reads MISSED."""
+# What the app project's 24-hour jobs stat says of the importer beside the generic words.
+IMPORTER_FAILS = ("The administrator-feed importer (`feed-ingest-everon-sync`, beta) opens `feed-ingest-failed` on one "
+                  "failed run, never retried. ")
+# A scheduled job's deadline tile is titled by its job's name without tpa-jobs' prefix; the importer's by its repository's
+# name, so it fits a tile four columns wide (the whole name is in its description).
+DEADLINE_TITLES = {IMPORTER: "feed-ingest"}
+
+
+def deadline_title(job: str) -> str:
+    return DEADLINE_TITLES.get(job, job.removeprefix("tpa-jobs-"))
+
+
+# What a scheduled job's deadline tile says beside the generic words.
+DEADLINE_NOTES = {
+    IMPORTER: ("The administrator-feed importer's Everon sync runs at 06:00, 14:00 and 22:00 Chicago time, never "
+               "retried, and alerts on one failure (`feed-ingest-failed`); its `missed run` policy exists only while "
+               "its schedule is unpaused. Beta's alone: production-full builds none of it.")}
+
+
+def deadline_stats(w: int, h: int, env: str = "beta") -> list[dict]:
+    """One stat per scheduled job the environment builds: its successful executions within its missed-run deadline,
+    the module's own condition (`missed run (<job>)`). None at all reads MISSED."""
     out = []
     for ds, job, deadline, deps in DEADLINES:
+        if env != "beta" and job in BETA_ONLY_JOBS:
+            continue
         window = deadline + METRIC_DELAY_MINUTES
-        out.append(stat(job.removeprefix("tpa-jobs-"), ds,
+        note = f" {DEADLINE_NOTES[job]}" if job in DEADLINE_NOTES else ""
+        out.append(stat(deadline_title(job), ds,
                         executions(job, "succeeded", "+60s" if window <= 120 else "+3600s", by=(), name="runs"),
                         f"Successful executions of `{job}` in the last {window} minutes: its missed-run deadline "
                         f"({deadline} minutes, about one and a half cadences) plus three, because Cloud Run's job "
                         "metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is "
-                        "open or about to be.", w=w, h=h, time_from=f"{window}m", no_value="MISSED",
+                        f"open or about to be.{note}", w=w, h=h, time_from=f"{window}m", no_value="MISSED",
                         steps=thresholds("red", (1, "green")), deps=deps))
     return out
 
@@ -762,9 +804,10 @@ def area_count(db: str, reporting: str, checks: bool = False, warm: tuple[str, .
 
 
 AREAS = [
-    # (key, headline title, datasource, services, jobs, database, the reporting row's words, has the checks)
-    ("app", "TPA · portal and sign-in", APP, f"{WEB_API}|{AUTH_SERVICES}|tpa-jobs-drains", f"{TPA_JOBS}|{AUTH_JOBS}",
-     "auth-db", "✓ portal and sign-in", True),
+    # (key, headline title, datasource, services, jobs, database, the reporting row's words, has the checks). The app
+    # project's jobs: tpa-jobs, auth's, and the administrator-feed importer (its failed run a problem row here).
+    ("app", "TPA · portal and sign-in", APP, f"{WEB_API}|{AUTH_SERVICES}|tpa-jobs-drains",
+     f"{TPA_JOBS}|{AUTH_JOBS}|{IMPORTER}", "auth-db", "✓ portal and sign-in", True),
     ("phi", "TPA · member records", PHI, PHI_SERVICES, PHI_JOBS, "tpa-db", "✓ member records", False),
     ("cc", "Call centre", CC, CC_SERVICES, "migrate-cc", "cc-db", "✓ call centre", False),
     ("crm", "CRM", CRM, CRM_SERVICES, CRM_JOBS, "crm-db", "✓ CRM", False),
@@ -1910,6 +1953,7 @@ def overview(cc: bool = True, env: str = "beta") -> dict:
             groups, fifth, jobs])
 
     areas = [a for a in AREAS if cc or a[0] != "cc"]
+    importer = env == "beta" or IMPORTER not in BETA_ONLY_JOBS   # production-full builds no importer
     span = 24 // len(areas)
     dbs = [(db, ds) for _k, _t, ds, _s, _j, db, _r, _c in areas]
     deps = {"portal-api": SWEEP_DBS, "sign-in": ("auth-db",), "records": ("tpa-db",), "callcentre": ("cc-db",),
@@ -1946,8 +1990,10 @@ def overview(cc: bool = True, env: str = "beta") -> dict:
                          w=12, h=6, calc="lastNotNull", time_from="15m", unit="percentunit", decimals=0,
                          no_value="no uptime checks", text_mode="value_and_name",
                          steps=thresholds(RED, (0.999, TEAL)))]),
-        *collapsed([row("Scheduled runs: a successful run within each job's deadline"), *deadline_stats(w=4, h=4)]),
-        *area("Portal & API (web, tpa-api, model-gateway; tpa-jobs)", APP, WEB_API, SWEEP_DBS, tpa_api_p95("+3600s"),
+        *collapsed([row("Scheduled runs: a successful run within each job's deadline"),
+                    *deadline_stats(w=4, h=4, env=env)]),
+        *area("Portal & API (web, tpa-api, model-gateway; tpa-jobs" + (", the importer)" if importer else ")"), APP,
+              WEB_API, SWEEP_DBS, tpa_api_p95("+3600s"),
               "tpa-api's own p95 time to answer (its request line, without the streams, the file transfers and the "
               "model-backed rows): `tpa-api-latency` opens above 2 s for ten minutes. Cloud Run's own p95 for web "
               "and tpa-api counts the desk's 40-second streams, so it is on the Portal & API page only.",
@@ -1958,6 +2004,8 @@ def overview(cc: bool = True, env: str = "beta") -> dict:
                    "is how a scale-to-zero service idles; a service kept warm with none is the urgent `no instance` "
                    "policy. The link by the title opens each service's own page.", calc="lastNotNull",
                    time_from="15m", no_value="0", links=service_links(*[s_ for s_ in APP_SERVICES.split("|") if s_ in RUNS[env]])),
+              jobs_stat("Jobs (24 h)", APP, f"{TPA_JOBS}|{IMPORTER}", f"{TPA_SCHEDULES}|{IMPORTER}", SWEEP_DBS,
+                        IMPORTER_FAILS) if importer else
               jobs_stat("tpa-jobs (24 h)", APP, TPA_JOBS, TPA_SCHEDULES, SWEEP_DBS)),
         *area("Sign-in (auth, its messenger and jobs)", APP, AUTH_SERVICES, ("auth-db",), p95("auth", "+3600s"),
               "auth's p95 request latency from Cloud Run. `canary-latency` opens above 2 s for ten minutes.",
@@ -2205,6 +2253,7 @@ def records() -> dict:
                "A row settled dead (`connectors-dead-letters`), a destination outside the allowlist "
                "(`connectors-destination-refused`) and a claimed row with no signature "
                "(`connectors-envelope-unsigned`).", bars=True),
+        *administrator_sync(),
         row("Perimeter and alert changes"),
         series("Perimeter violations", PHI,
                q(log("perimeter_violations"), AUDITED, by=("code", "service", "outcome"),
@@ -2228,6 +2277,30 @@ def records() -> dict:
     return dashboard("tw-cloud-records", "Member records (cloud)",
                      "records, connectors and their jobs in the PHI project, read with `cloud-phi` alone. Health "
                      "numbers only: no member data reaches a metric. " + NOTHING_BUT_METRICS, ["records"], items)
+
+
+def administrator_sync() -> list[dict]:
+    """records' side of the administrator-feed importer's runs (OWNER-EV-12, "51.8 sure": Cloud Monitoring alerts until
+    the staff alert lane delivers records' own): the count of its value-free `source_sync.alert` lines, read with
+    `cloud-phi` alone. It reads zero until records logs that line (TP-249)."""
+    metric = "source_sync_alerts"
+    policy = CATALOGUE.policy("records-source-sync-alert", section="feed_ingest_records")
+    return [
+        row("Administrator sync (the importer's runs, records' side)"),
+        series("Sync alerts records raised", PHI, q(log(metric), REV, by=(), name="alerts"),
+               f"One per `source_sync.alert` line records writes when an administrator sync run (the Everon "
+               f"importer's, `{IMPORTER}`) ends with something staff must see: a run that failed, closed incomplete "
+               f"or expired, or new problems in its log (`{metric}`; `records-source-sync-alert`, "
+               f"{policy['display_name'].strip(chr(34))}, pages on one). **It reads zero until records logs that "
+               "line (TP-249):** records writes the alert's outbox row and logs nothing today, so this chart cannot "
+               "show an alert yet. " + per_environment(
+                   "production-full builds none of the importer (OWNER-EV-12: beta's alone), so nothing writes "
+                   "this line here.",
+                   "Zero too while the importer is not deployed (beta's feed_ingest_enabled off) or its schedule is "
+                   "paused.") + " A count with no label: never the run, the tenant, an employer or a count of "
+               "people. The run itself, its counts and its issues are on the ops portal's sync runs and data issues "
+               "pages.", w=24, h=6, bars=True),
+    ]
 
 
 def voice_loop() -> list[dict]:
@@ -2426,16 +2499,19 @@ def databases(cc: bool = True) -> dict:
                      + STOPPED_DB, ["databases"], items, time="now-24h")
 
 
-def jobs(cc: bool = True) -> dict:
+def jobs(cc: bool = True, env: str = "beta") -> dict:
+    importer = env == "beta" or IMPORTER not in BETA_ONLY_JOBS   # production-full builds no importer
     items = [
         row("Scheduled runs: a successful run within each job's deadline"),
-        *deadline_stats(w=4, h=4),
-        row("App project jobs (tpa-jobs, auth)"),
+        *deadline_stats(w=4, h=4, env=env),
+        row("App project jobs (tpa-jobs, auth" + (", the importer)" if importer else ")")),
         series("Successful executions, by job", APP, executions(result="succeeded", by=("job_name",)),
                "A gap where a job's cadence says a run should be is a missed run.", bars=True),
         series("Failed executions, by job", APP, executions(result="failed", by=("job_name",)),
                "Executions that failed after their retries: two in a row open `jobs-failed` (R380); one opens "
-               "`audit-chain` for the audit jobs (urgent). For tpa-jobs a failed run is any tenant not `ok`.", bars=True),
+               "`audit-chain` for the audit jobs (urgent)" +
+               (" and `feed-ingest-failed` for the importer" if importer else "") +
+               ". For tpa-jobs a failed run is any tenant not `ok`.", bars=True),
         series("Schedules that could not start their job", APP, schedule_failures(),
                "Cloud Scheduler attempts that finished in error, by schedule and status (`scheduler-failed`). "
                "PERMISSION_DENIED means an invoker binding is not what the gate thinks.", bars=True),
@@ -2452,6 +2528,7 @@ def jobs(cc: bool = True) -> dict:
                   by=("job",), name=alias("job", prefix="largest (p99): "))],
                "The outstanding reconciliations accumulator_reconcile left open, one point per tenant per run. "
                "`accumulator-backlog-growing` opens when tonight's total is above last night's."),
+        *(importer_rows() if importer else []),
         row("PHI project jobs"),
         series("Executions, by job and result", PHI, executions(PHI_JOBS),
                "migrate-tpa, seed-tpa, tpa-db-export, records-chain-head and the restore drill.", bars=True),
@@ -2462,7 +2539,8 @@ def jobs(cc: bool = True) -> dict:
           if cc else []),
         series("migrate-crm and seed-crm", CRM, executions(CRM_JOBS), "The CRM's jobs, each run by a person.",
                bars=True),
-        *job_resources(APP, "app project (tpa-jobs, auth's jobs, the synthetic journeys; the CRM's in beta)"),
+        *job_resources(APP, "app project (tpa-jobs, auth's jobs, " + ("the importer, " if importer else "") +
+                       "the synthetic journeys; the CRM's in beta)"),
         *job_resources(PHI, "PHI project"),
         *(job_resources(CC, "call-centre project") if cc else []),
         *job_resources(CRM, "the CRM's jobs", jobs=CRM_JOBS),
@@ -2471,6 +2549,32 @@ def jobs(cc: bool = True) -> dict:
                      "Every scheduled and person-run Cloud Run job: executions, failures, schedules and missed runs, "
                      "then each project's task attempts, run lengths, CPU and memory.", ["jobs"], items,
                      time="now-24h")
+
+
+def importer_rows() -> list[dict]:
+    """The administrator-feed importer's own row on the Jobs page (beta's alone): its executions by result, its
+    schedule's failures, and how long each run's task ran against its 2h10m limit. Its deadline tile is in the
+    Scheduled runs row, its failures count in the app area's tile and What's wrong now, and records' side of its runs
+    is on Member records (Administrator sync)."""
+    failed = CATALOGUE.policy("feed-ingest-failed", section="feed_ingest")
+    return [
+        row(f"The administrator-feed importer ({IMPORTER}; beta)"),
+        series("Executions, by result", APP, executions(IMPORTER, by=("result",)),
+               f"Completed executions of `{IMPORTER}` (`feeds everon sync --scheduled`), by result. One failed run "
+               f"opens `feed-ingest-failed` ({failed['display_name'].strip(chr(34))}), never retried: the next slot "
+               "(06:00, 14:00, 22:00 Chicago time) is the retry. None at all: not deployed (beta's "
+               "feed_ingest_enabled off), its schedule paused (feed_ingest_paused), or no run yet; its deadline tile "
+               "above says which.", bars=True, w=8, h=7),
+        series("Its schedule could not start it", APP, schedule_failures(IMPORTER, by=("code",)),
+               "Cloud Scheduler's attempts to start the importer that finished in error, by status "
+               "(`scheduler-failed` pages on one). PERMISSION_DENIED means its runner binding (row 205) is not what "
+               "the gate thinks.", bars=True, w=8, h=7),
+        series("Its run, while it runs", APP,
+               q(RUN_TASKS_RUNNING, JOB, align="ALIGN_MAX", by=("job_name",), job_name=IMPORTER),
+               "The importer's task while it runs (`job/running_task_attempts`, the most in each interval): a run's "
+               "bar lasts as long as it ran. Its limit is 2h10m (7800 s); `job-timeout-feed-ingest-everon-sync` "
+               "opens at 80% of it.", bars=True, decimals=0, w=8, h=7),
+    ]
 
 
 PAGES = {"overview": overview, "portal-api": portal_api, "sign-in": sign_in, "records": records,
@@ -2485,8 +2589,10 @@ NO_CC = {"overview": overview, "errors": errors, "databases": databases, "jobs":
 # (its CC_ONLY_PAGES; tests/cloud hold the two lists together).
 CC_ONLY = ["callcentre", *[f"service-{service}" for service, (ds, _page) in SERVICES.items() if ds == CC]]
 # The pages written again for production (render-dashboards.sh uses production/<page> when TPA_ENVIRONMENT is
-# production): the overview tiles only the services production-full runs, and production has no call centre.
-PRODUCTION = {"overview": lambda: overview(cc=False, env="production")}
+# production): the overview tiles only the services production-full runs, the overview and Jobs only the scheduled
+# jobs it builds (BETA_ONLY_JOBS), and production has no call centre.
+PRODUCTION = {"overview": lambda: overview(cc=False, env="production"),
+              "jobs": lambda: jobs(cc=False, env="production")}
 VARIANT_DIRS = ("no-cc", "production")
 
 

@@ -166,6 +166,15 @@ def linked(overview: dict) -> set[str]:
     return {u.split("/d/tw-cloud-", 1)[1].split("?")[0] for u in urls if "/d/tw-cloud-" in u}
 
 
+# Replaced on purpose: the app area's jobs pattern, and beta's Portal & API 24-hour jobs stat, gained the
+# administrator-feed importer (the owner, 2026-10-25: "we need it treated just like all the other services"), so a
+# query the overview made with an old pattern is kept when the same query with the new one is made
+# (test_the_app_jobs_gained_the_importer_alone holds each new pattern to its old one and the importer's name).
+APP_JOBS_BEFORE = "tpa-jobs-.*|migrate-auth|auth-.*"
+WIDENED = {APP_JOBS_BEFORE: next(a[4] for a in gen.AREAS if a[0] == "app"),
+           gen.TPA_JOBS: f"{gen.TPA_JOBS}|{gen.IMPORTER}", gen.TPA_SCHEDULES: f"{gen.TPA_SCHEDULES}|{gen.IMPORTER}"}
+
+
 def check_queries_kept(env: str, pages: dict[str, dict]) -> list[str]:
     """Each query the overview made before is made by the overview itself or a page it links to by name, unless
     replaced on purpose (and then its replacement is there)."""
@@ -175,7 +184,9 @@ def check_queries_kept(env: str, pages: dict[str, dict]) -> list[str]:
     tiles = {p["title"]: p for p in services_row(overview)}
     problems = []
     for q in BEFORE["queries"]:
-        if env not in q["environments"] or key(q["datasource"], q["timeSeriesList"]) in have:
+        widened = {**q["timeSeriesList"], "filters": [WIDENED.get(v, v) for v in q["timeSeriesList"]["filters"]]}
+        if env not in q["environments"] or key(q["datasource"], q["timeSeriesList"]) in have \
+                or key(q["datasource"], widened) in have:
             continue
         tsl, where = q["timeSeriesList"], f"{env}: {q['panels'][0]}"
         resource = lint.query_facts(tsl)["resource"]
@@ -340,6 +351,17 @@ class OverviewTest(unittest.TestCase):
                 self.assertEqual(check_inside(page, f"{env} {name}"), [])
         for env in RENDERED:
             self.assertTrue(inside_queries(RENDERED[env]["overview"]), env)
+
+    def test_the_app_jobs_gained_the_importer_alone(self):
+        self.assertEqual(WIDENED[APP_JOBS_BEFORE], f"{APP_JOBS_BEFORE}|{gen.IMPORTER}")
+        for before in WIDENED:
+            self.assertIn(json.dumps(before), json.dumps(BEFORE), "the fixture's queries moved; update WIDENED")
+        # Beta's Portal & API stat reads the widened pattern; production's, which builds no importer, the old one.
+        for env, jobs in (("beta", WIDENED[gen.TPA_JOBS]), ("production", gen.TPA_JOBS)):
+            row = next(ps for title, ps in sections(RENDERED[env]["overview"]).items() if title.startswith("Portal"))
+            stat_ = next(p for p in row if p["title"] == ("Jobs (24 h)" if env == "beta" else "tpa-jobs (24 h)"))
+            self.assertEqual([v for k, _op, v in facts(stat_["targets"][0])["filters"]
+                              if k == "resource.label.job_name"], [jobs], env)
 
     def test_every_query_the_overview_made_is_still_made(self):
         for env, pages in RENDERED.items():

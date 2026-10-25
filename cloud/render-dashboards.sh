@@ -14,21 +14,25 @@
 #   TPA_ENVIRONMENT     required, `beta` or `production` (tpa-platform's local.env): the uptime tiles' wording, and
 #                       the limits each environment's Terraform sets (a service's max_instances and ceiling policy, a
 #                       database's max_connections): a line drawn in beta and not in production, or at another value.
-#   TPA_PAUSED_JOBS     comma list, may be empty: sweeps paused on purpose (tpa-platform's var.tpa_jobs_paused).
+#   TPA_PAUSED_JOBS     comma list, may be empty: scheduled jobs paused on purpose (tpa-platform's
+#                       var.tpa_jobs_paused, and the administrator-feed importer while beta's feed_ingest_paused).
+#   TPA_NOT_DEPLOYED_JOBS  comma list, may be empty: scheduled jobs beta builds only behind a switch that is off (the
+#                       importer while feed_ingest_enabled is false). A job is never in both lists.
 #   TPA_STOPPED_DATABASES  comma list, may be empty: Cloud SQL instances stopped on purpose (tpa-platform's
 #                       local.database_stopped; `auth_db` and `auth-db` both name auth-db).
-#                       Both are beta's alone: with TPA_ENVIRONMENT=production either one set is refused, so
+#                       All three are beta's alone: with TPA_ENVIRONMENT=production any one set is refused, so
 #                       production's tiles can never be quieted.
-#                       Their tiles, and the tiles of what reads them, read "paused" or "database stopped" in no
-#                       colour instead of red (scripts/cloud_dashboards.py, when_quiet).
+#                       Their tiles, and the tiles of what reads them, read "not deployed", "paused" or "database
+#                       stopped" in no colour instead of red (scripts/cloud_dashboards.py, when_quiet), in that order
+#                       when several hold.
 #
 #   render-dashboards.sh [ARGS...]               render /etc/grafana/dashboards into /var/lib/grafana/dashboards,
 #                                                then exec /run.sh ARGS (the base image's entrypoint)
 #   render-dashboards.sh --render-only SRC DST   render only (tests/cloud/test_render.py)
 #
 # Every value is checked before it is written into the JSON: a project id must look like one, the environment is one
-# of two words, and a paused or stopped name must be one this image knows (anything else is refused, so a typo can
-# never quietly turn a red tile neutral).
+# of two words, and a not-deployed, paused or stopped name must be one this image knows for its list (anything else
+# is refused, so a typo can never quietly turn a red tile neutral).
 set -eu
 
 src=/etc/grafana/dashboards
@@ -40,9 +44,10 @@ if [ "${1:-}" = "--render-only" ]; then
   dst="${3:?--render-only SRC DST}"
 fi
 
-# What TPA_PAUSED_JOBS and TPA_STOPPED_DATABASES may name (scripts/cloud_dashboards.py SWEEPS and DATABASES; the
-# render test holds these to them).
-KNOWN_SWEEPS="erisa-clocks nightly-anomalies stoploss-surveillance accumulator-reconcile workload-audit member-access"
+# What TPA_PAUSED_JOBS, TPA_NOT_DEPLOYED_JOBS and TPA_STOPPED_DATABASES may name (scripts/cloud_dashboards.py
+# PAUSABLE, SWITCHED and DATABASES; the render test holds these to them).
+KNOWN_PAUSED_JOBS="erisa-clocks nightly-anomalies stoploss-surveillance accumulator-reconcile workload-audit member-access feed-ingest-everon-sync"
+KNOWN_NOT_DEPLOYED_JOBS="feed-ingest-everon-sync"
 KNOWN_DATABASES="auth-db tpa-db crm-db cc-db"
 # The pages that read the call-centre project alone (scripts/cloud_dashboards.py CC_ONLY): the Call centre page and
 # its services' own pages. With no call-centre project they are left out.
@@ -88,22 +93,34 @@ case "$environment" in
               settle_numbers='s/"@@N@@\([^@"]*\)@@[^@"]*@@"/\1/g' ;;
   *) refuse "TPA_ENVIRONMENT must be 'beta' or 'production', got '${environment}'" ;;
 esac
-# Production pauses and stops nothing on purpose, so a quiet tile there would hide a real failure.
+# Production pauses, stops and switches off nothing on purpose (and its pages carry no tile of a job it does not
+# build), so a quiet tile there would hide a real failure.
 if [ "$environment" = production ]; then
-  for var in TPA_PAUSED_JOBS TPA_STOPPED_DATABASES; do
+  for var in TPA_PAUSED_JOBS TPA_NOT_DEPLOYED_JOBS TPA_STOPPED_DATABASES; do
     eval "value=\${$var:-}"
     [ -z "$value" ] || refuse "$var must be empty with TPA_ENVIRONMENT=production, got '${value}'"
   done
 fi
-paused="$(names TPA_PAUSED_JOBS $KNOWN_SWEEPS)"
+paused="$(names TPA_PAUSED_JOBS $KNOWN_PAUSED_JOBS)"
+not_deployed="$(names TPA_NOT_DEPLOYED_JOBS $KNOWN_NOT_DEPLOYED_JOBS)"
 stopped="$(names TPA_STOPPED_DATABASES $KNOWN_DATABASES)"
+# A job that is not built has no schedule to pause: a name in both lists is a mistake in what set them.
+for name in $not_deployed; do
+  case " $(echo $paused) " in
+    *" $name "*) refuse "TPA_NOT_DEPLOYED_JOBS and TPA_PAUSED_JOBS both name '$name': a job is not deployed or paused, never both" ;;
+  esac
+done
 
-# One sed program: a quiet name settles each token that lists it (a paused sweep first, so a tile both paused and
-# stopped reads "paused"), then every token left settles to its normal text.
+# One sed program: a quiet name settles each token that lists it (a job not deployed first, then a paused one, so a
+# tile both paused and stopped reads "paused"), then every token left settles to its normal text.
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 program="$work/program.sed"
 {
+  for name in $not_deployed; do
+    printf 's/@@R[a-z0-9,-]*,%s,[a-z0-9,-]*@@[^@]*@@/not deployed/g\n' "$name"
+    printf 's/@@F[a-z0-9,-]*,%s,[a-z0-9,-]*@@\\([^@]*\\)@@[^@]*@@/\\1/g\n' "$name"
+  done
   for name in $paused; do
     printf 's/@@R[a-z0-9,-]*,%s,[a-z0-9,-]*@@[^@]*@@/paused/g\n' "$name"
     printf 's/@@F[a-z0-9,-]*,%s,[a-z0-9,-]*@@\\([^@]*\\)@@[^@]*@@/\\1/g\n' "$name"
@@ -146,7 +163,8 @@ mkdir -p "$dst"
 rm -f "$dst"/*.json
 mv "$work"/out/*.json "$dst"/
 echo "render-dashboards: rendered $(ls "$dst"/*.json | wc -l | tr -d ' ') dashboard(s) into $dst" \
-  "(environment $environment; paused: $(echo $paused | tr ' ' ',' | sed 's/^$/none/');" \
+  "(environment $environment; not deployed: $(echo $not_deployed | tr ' ' ',' | sed 's/^$/none/');" \
+  "paused: $(echo $paused | tr ' ' ',' | sed 's/^$/none/');" \
   "stopped: $(echo $stopped | tr ' ' ',' | sed 's/^$/none/'); call centre: $([ -n "$cc" ] && echo yes || echo no))"
 
 [ "$render_only" = 1 ] && exit 0

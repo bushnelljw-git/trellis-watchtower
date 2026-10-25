@@ -3177,3 +3177,78 @@ perimeter_dry_run:
               sum(increase(logging_googleapis_com:user_perimeter_violations{monitored_resource="audited_resource"}[24h])) > 0
               and on() (hour() == 14 and minute() < 10)
             evaluation_interval: "300s"
+
+# =============================================================================
+# The administrator-feed importer on beta (OWNER-EV-10, OWNER-EV-12: "51.8
+# sure", Cloud Monitoring alerts until the staff alert lane delivers records'
+# own alert; the importer review's F7). Beta's alone and only with
+# var.feed_ingest_enabled (beta's feedingest.tf); production-full reads none of
+# it. `feed_ingest` is the app role's (the project that runs the job and
+# receives its logs); `feed_ingest_records` is the PHI role's (the project
+# that receives records' logs). Codes and counts only: no run id, tenant,
+# employer, member or count of people is read into a label or a
+# notification. The missed-run policy is the module's own, from beta's
+# local.feed_ingest_missed_runs (43200s, one and a half times the eight hours
+# between runs), while the schedule is unpaused.
+# =============================================================================
+feed_ingest:
+  alert_policies:
+    feed-ingest-failed:
+      display_name: "the Everon importer's run failed"
+      subject: "Everon importer run failed: ${metric_or_resource.label.job_name}"
+      documentation: >-
+        An execution of the administrator-feed importer's scheduled Everon sync
+        (feed-ingest-everon-sync, 06:00, 14:00 and 22:00 Chicago time, never
+        retried) failed. One failure opens it: each run is the book's next
+        reconciliation. A run fails when it raised, when records or auth
+        refused it (a refused mint, a 403, records not ready), when records
+        still held another run open (its `run.skipped.run_open` alarm), when
+        it ran out of its 2h10m, or while feed-ingest's RECORDS_READY or
+        RECORDS_EXPIRES_AT is still False (each refuses before reading). Read
+        the execution's own lines (codes and counts; no member, employer or
+        key is ever in them), then records' sync runs page in the ops portal
+        (list_sync_runs) for the run and its issues. The next slot runs on its
+        own; pause the schedule (feed_ingest_paused) to stop it.
+      conditions:
+        - name: "a failed execution"
+          threshold:
+            filter: >-
+              metric.type = "run.googleapis.com/job/completed_execution_count" AND resource.type = "cloud_run_job"
+              AND metric.labels.result = "failed"
+              AND resource.labels.job_name = "feed-ingest-everon-sync"
+            group_by_fields: ["resource.label.job_name"]
+
+feed_ingest_records:
+  log_metrics:
+    source_sync_alerts:
+      description: >-
+        One per value-free `source_sync.alert` line records writes when a sync
+        run ends with something staff must see (records' slice C, the
+        staff alert outbox lane's one alert, undeliverable until connectors'
+        staff alert lane exists). A counter with no label: the line's run, tenant
+        and counts are never read. NEEDS records' log line: today records
+        writes the outbox row and logs nothing (records/ops/sources/alert.py),
+        so this counter reads zero until records logs
+        `{"message": "source_sync.alert", "op": ...}` beside the row.
+      filter: |
+        resource.type="cloud_run_revision"
+        AND resource.labels.service_name="records"
+        AND jsonPayload.message="source_sync.alert"
+
+  alert_policies:
+    records-source-sync-alert:
+      display_name: "records raised an administrator sync alert"
+      subject: "records raised an administrator sync alert"
+      documentation: >-
+        records ended an administrator sync run (the Everon importer's) with
+        an alert for staff: a run that failed, closed incomplete or expired, or
+        new problems in its log. Until connectors' staff alert lane delivers
+        records' own alert, this is how staff hear of it (OWNER-EV-12, "51.8
+        sure"). Nothing about the run is in this notification: open the ops
+        portal's sync runs and data issues pages (list_sync_runs,
+        list_data_issues) for the run, its counts and its issues.
+      conditions:
+        - name: "an alert line"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/source_sync_alerts" AND resource.type = "cloud_run_revision"

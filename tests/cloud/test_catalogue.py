@@ -131,13 +131,16 @@ NAMES = {
     "app": {
         "service_name": {"web", "auth", "auth-outbox-publisher", "tpa-api", "model-gateway", "tpa-jobs-drains",
                          "watchtower"},
+        # feed-ingest-everon-sync: the administrator-feed importer (feedingest.tf, OWNER-EV-12), its Cloud Run job
+        # and its Cloud Scheduler job, built only behind feed_ingest_enabled.
         "job_name": {"migrate-auth", "auth-publisher", "auth-sweeper", "auth-audit-head", "auth-audit-verify",
                      "auth-audit-verify-monthly", "auth-bootstrap", "auth-tag-credentials", "auth-retag-bearer-key",
                      "tpa-jobs-erisa-clocks", "tpa-jobs-nightly-anomalies", "tpa-jobs-stoploss-surveillance",
-                     "tpa-jobs-accumulator-reconcile", "tpa-jobs-workload-audit", "tpa-jobs-member-access"},
+                     "tpa-jobs-accumulator-reconcile", "tpa-jobs-workload-audit", "tpa-jobs-member-access",
+                     "feed-ingest-everon-sync"},
         "job_id": {"erisa-clocks", "nightly-anomalies", "stoploss-surveillance", "accumulator-reconcile",
                    "workload-audit", "member-access", "auth-publish", "auth-sweep", "auth-audit-head",
-                   "auth-audit-verify", "auth-audit-verify-monthly"},
+                   "auth-audit-verify", "auth-audit-verify-monthly", "feed-ingest-everon-sync"},
         "database_id": {"auth-db"},
     },
     "phi": {
@@ -155,6 +158,13 @@ NAMES = {
     "cc": {"service_name": {"svc-voice", "svc-ops", "svc-twilio-rest"}, "job_name": {"migrate-cc"}, "job_id": set(),
            "database_id": {"cc-db"}},
 }
+
+
+# Names a page reads ahead of the vendored catalogue: tpa-platform's branch watch/feed-ingest adds the importer's
+# schedule to the app project's `scheduler-failed` (a schedule that cannot start it pages, as every other schedule's
+# does). test_names_agree_with_the_catalogue refuses a name here that the vendored catalogue already names, so the
+# re-vendor at the commit that lands it empties this.
+AHEAD_OF_THE_CATALOGUE = {"job_id": {"feed-ingest-everon-sync"}}
 
 
 def queries(paths=None):
@@ -198,6 +208,20 @@ class CatalogueTest(unittest.TestCase):
                                                       "kms_version_changes"})
         # The synthetic journeys' section is read, as the app role's (their result lines land in the app project).
         self.assertEqual(set(self.catalogue.synthetics), {"synthetic_results"})
+        # The importer's two sections (OWNER-EV-12): records' count is the PHI role's, the failed run's policy the
+        # app section's, and the others are not read.
+        self.assertEqual(cat.SECTIONS, {"feed_ingest": "app", "feed_ingest_records": "phi"})
+        self.assertEqual({k: set(v) for k, v in self.catalogue.sections.items()},
+                         {"feed_ingest": set(), "feed_ingest_records": {"source_sync_alerts"}})
+        self.assertEqual(self.catalogue.roles["phi"]["source_sync_alerts"]["labels"], set())
+        self.assertFalse(self.catalogue.roles["phi"]["source_sync_alerts"]["distribution"])
+        self.assertNotIn("source_sync_alerts", self.catalogue.roles["app"])
+        self.assertIn("display_name", self.catalogue.policy("feed-ingest-failed", section="feed_ingest"))
+        self.assertIn("display_name", self.catalogue.policy("records-source-sync-alert",
+                                                            section="feed_ingest_records"))
+        for unread in ("beta_text_codes", "crm_lane_send", "crm_lane_comp", "crm_lane_statements"):
+            self.assertIn(unread, self.catalogue.tree)
+            self.assertNotIn(unread, cat.SECTIONS)
         self.assertEqual(self.catalogue.roles["app"]["synthetic_results"]["labels"],
                          {"job", "outcome", "code", "status_class"})
         self.assertEqual(self.catalogue.roles["phi"]["errors"]["labels"],
@@ -279,9 +303,16 @@ class CatalogueTest(unittest.TestCase):
         jobs = set().union(*(n["job_name"] for n in NAMES.values()))
         schedules = set().union(*(n["job_id"] for n in NAMES.values()))
         databases = set().union(*(n["database_id"] for n in NAMES.values()))
-        self.assertEqual(jobs, self.catalogue.jobs_named())
-        self.assertEqual(schedules, self.catalogue.schedules_named())
-        self.assertEqual(databases, self.catalogue.databases_named())
+        ahead = AHEAD_OF_THE_CATALOGUE
+        self.assertLessEqual(set(ahead), {"job_name", "job_id", "database_id"})
+        for label, named in (("job_name", self.catalogue.jobs_named()), ("job_id", self.catalogue.schedules_named()),
+                             ("database_id", self.catalogue.databases_named())):
+            self.assertFalse(ahead.get(label, set()) & named,
+                             f"the vendored catalogue names {sorted(ahead.get(label, set()) & named)} now: drop them "
+                             "from AHEAD_OF_THE_CATALOGUE")
+        self.assertEqual(jobs - ahead.get("job_name", set()), self.catalogue.jobs_named())
+        self.assertEqual(schedules - ahead.get("job_id", set()), self.catalogue.schedules_named())
+        self.assertEqual(databases - ahead.get("database_id", set()), self.catalogue.databases_named())
 
     def test_every_catalogue_metric_is_charted(self):
         charted: dict[str, set[str]] = {role: set() for role in ROLE.values()}
@@ -321,8 +352,8 @@ class CatalogueTest(unittest.TestCase):
             path.write_text(unanchored)
             self.assertEqual(cat.Catalogue(path).unanchored_labels("crm", "errors"), {"class"})
 
-    def test_every_quiet_token_names_a_known_sweep_or_database(self):
-        known = set(gen.SWEEPS) | set(gen.DATABASES)
+    def test_every_quiet_token_names_a_known_job_or_database(self):
+        known = set(gen.PAUSABLE) | set(gen.SWITCHED) | set(gen.DATABASES)
         problems = []
         for path in DASHBOARDS:
             for token in re.findall(r"@@[RF](,[a-z0-9,-]*,)@@", path.read_text()):
@@ -333,11 +364,16 @@ class CatalogueTest(unittest.TestCase):
 
     def test_the_render_script_knows_exactly_the_generators_names(self):
         script = (ROOT / "cloud" / "render-dashboards.sh").read_text()
-        sweeps = re.search(r'^KNOWN_SWEEPS="([^"]*)"', script, re.M).group(1).split()
+        paused = re.search(r'^KNOWN_PAUSED_JOBS="([^"]*)"', script, re.M).group(1).split()
+        not_deployed = re.search(r'^KNOWN_NOT_DEPLOYED_JOBS="([^"]*)"', script, re.M).group(1).split()
         databases = re.search(r'^KNOWN_DATABASES="([^"]*)"', script, re.M).group(1).split()
         cc_only = re.search(r'^CC_ONLY_PAGES="([^"]*)"', script, re.M).group(1).split()
-        self.assertEqual(sweeps, list(gen.SWEEPS))
+        self.assertEqual(paused, list(gen.PAUSABLE))
+        self.assertEqual(not_deployed, list(gen.SWITCHED))
         self.assertEqual(databases, list(gen.DATABASES))
+        # A job the image may call not deployed is one with a deadline tile, and pausable once it is built.
+        self.assertLessEqual(set(gen.SWITCHED), {job for _ds, job, _d, _deps in gen.DEADLINES})
+        self.assertLessEqual(set(gen.SWITCHED), set(gen.PAUSABLE))
         self.assertEqual(cc_only, [f"{page}.json" for page in gen.CC_ONLY])
 
     def test_the_call_centre_only_pages_are_exactly_those_with_no_way_to_render_without_it(self):

@@ -26,6 +26,13 @@ ANCHORS = ("^", r"(?:^|\\n)", r"(?:^|\n)", "(?m)^")
 THRESHOLD_DEFAULTS = {"comparison": "COMPARISON_GT", "threshold_value": "0", "duration": "0s",
                       "alignment_period": "300s", "per_series_aligner": "ALIGN_DELTA",
                       "cross_series_reducer": "REDUCE_SUM"}
+# The catalogue's optional sections this reader reads, each as the role whose project beta's root places it in (beta's
+# main.tf, local.monitoring_inputs; held to it by tests/cloud/test_importer.py): the administrator-feed importer's
+# (OWNER-EV-12, feedingest.tf), `feed_ingest` the app role's (the project that runs the job) and `feed_ingest_records`
+# the PHI role's (records' line). Every log metric of a section read here must be charted, as a role's are
+# (tests/cloud/test_catalogue.py). The other optional sections (`beta_text_codes`, `crm_lane_*`, `perimeter_dry_run`)
+# are not read.
+SECTIONS = {"feed_ingest": "app", "feed_ingest_records": "phi"}
 
 
 def git_blob_sha(data: bytes) -> str:
@@ -97,6 +104,15 @@ class Catalogue:
         # the app project (the runner is an app-project job), so its metrics are the app role's.
         self.synthetics = self._metrics((tree.get("synthetics") or {}).get("log_metrics", {}))
         self.roles.setdefault("app", {}).update(self.synthetics)
+        # The optional sections read (SECTIONS), each a role's: its metrics join the role's. A name a role already has
+        # would be two counters under one name in one project, so it is refused here.
+        self.sections: dict[str, dict[str, dict]] = {}
+        for section, role in SECTIONS.items():
+            metrics = self._metrics((tree.get(section) or {}).get("log_metrics", {}))
+            clash = set(metrics) & set(self.roles.setdefault(role, {}))
+            assert not clash, f"{section}'s log metrics {sorted(clash)} are already the {role} role's"
+            self.sections[section] = metrics
+            self.roles[role].update(metrics)
 
     @staticmethod
     def _metrics(section: dict) -> dict[str, dict]:
@@ -119,16 +135,20 @@ class Catalogue:
     def metric(self, role: str, name: str) -> dict | None:
         return self.roles.get(role, {}).get(name) or self.shared.get(name)
 
-    def policy(self, name: str, role: str | None = None) -> dict:
-        """An alert policy as the reader keeps it: the shared list's, or a role's own (`<instance>-disk` is the
-        role's whose project holds the instance). KeyError when the catalogue has no such policy."""
+    def policy(self, name: str, role: str | None = None, section: str | None = None) -> dict:
+        """An alert policy as the reader keeps it: the shared list's, a role's own (`<instance>-disk` is the
+        role's whose project holds the instance), or an optional section's (SECTIONS). KeyError when the catalogue
+        has no such policy."""
+        if section:
+            assert section in SECTIONS, section
+            return self.tree[section]["alert_policies"][name]
         return (self.tree["projects"][role] if role else self.tree["shared"])["alert_policies"][name]
 
-    def threshold(self, name: str, role: str | None = None, condition: int = 0) -> dict:
+    def threshold(self, name: str, role: str | None = None, condition: int = 0, section: str | None = None) -> dict:
         """A policy's threshold condition, as the module applies it: every field a string with the module's defaults
         filled in (THRESHOLD_DEFAULTS), and `threshold_value` a number. The dashboards draw this value as the line
         the pager uses, aggregated as the condition aggregates it."""
-        found = self.policy(name, role)["conditions"][f"-{condition}"]["threshold"]
+        found = self.policy(name, role, section)["conditions"][f"-{condition}"]["threshold"]
         out = {**THRESHOLD_DEFAULTS, **{key: str(value).strip("'\"") for key, value in found.items()
                                         if value != "<block>"}}
         out["threshold_value"] = float(out["threshold_value"])

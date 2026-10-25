@@ -492,7 +492,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "tpa-jobs-.*|migrate-auth|auth-.*"
+              "tpa-jobs-.*|migrate-auth|auth-.*|feed-ingest-everon-sync"
             ],
             "groupBys": [
               "resource.label.job_name"
@@ -525,7 +525,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "tpa-jobs-.*|migrate-auth|auth-.*",
+              "tpa-jobs-.*|migrate-auth|auth-.*|feed-ingest-everon-sync",
               "AND",
               "metric.label.result",
               "=",
@@ -15756,7 +15756,7 @@
                   "AND",
                   "resource.label.job_name",
                   "=~",
-                  "tpa-jobs-.*|migrate-auth|auth-.*"
+                  "tpa-jobs-.*|migrate-auth|auth-.*|feed-ingest-everon-sync"
                 ],
                 "groupBys": [
                   "resource.label.job_name"
@@ -15789,7 +15789,7 @@
                   "AND",
                   "resource.label.job_name",
                   "=~",
-                  "tpa-jobs-.*|migrate-auth|auth-.*",
+                  "tpa-jobs-.*|migrate-auth|auth-.*|feed-ingest-everon-sync",
                   "AND",
                   "metric.label.result",
                   "=",
@@ -23525,12 +23525,109 @@
         },
         {
           "type": "stat",
+          "title": "feed-ingest",
+          "description": "Successful executions of `feed-ingest-everon-sync` in the last 723 minutes: its missed-run deadline (720 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. The administrator-feed importer's Everon sync runs at 06:00, 14:00 and 22:00 Chicago time, never retried, and alerts on one failure (`feed-ingest-failed`); its `missed run` policy exists only while its schedule is unpaused. Beta's alone: production-full builds none of it. Reads \"not deployed\", in no colour, while `feed-ingest-everon-sync` is not built (beta's switch off; the service's TPA_NOT_DEPLOYED_JOBS), whatever else holds. Reads \"paused\" or \"database stopped\", in no colour, while `feed-ingest-everon-sync` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 16,
+            "y": 32
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/job/completed_execution_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_job",
+                  "AND",
+                  "resource.label.job_name",
+                  "=~",
+                  "feed-ingest-everon-sync",
+                  "AND",
+                  "metric.label.result",
+                  "=",
+                  "succeeded"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "+3600s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "runs"
+            }
+          ],
+          "interval": "1m",
+          "timeFrom": "723m",
+          "hideTimeOverride": true,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "@@F,feed-ingest-everon-sync,auth-db,tpa-db,@@text@@red@@",
+                    "value": null
+                  },
+                  {
+                    "color": "@@F,feed-ingest-everon-sync,auth-db,tpa-db,@@text@@green@@",
+                    "value": 1
+                  }
+                ]
+              },
+              "mappings": [],
+              "noValue": "@@R,feed-ingest-everon-sync,auth-db,tpa-db,@@MISSED@@",
+              "displayName": "@@R,feed-ingest-everon-sync,auth-db,tpa-db,@@@@"
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "orientation": "auto",
+            "textMode": "@@F,feed-ingest-everon-sync,auth-db,tpa-db,@@value_and_name@@auto@@",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "wideLayout": true,
+            "showPercentChange": false
+          },
+          "id": 46
+        },
+        {
+          "type": "stat",
           "title": "stoploss-surveillance",
           "description": "Successful executions of `tpa-jobs-stoploss-surveillance` in the last 2163 minutes: its missed-run deadline (2160 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `stoploss-surveillance` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 16,
+            "x": 20,
             "y": 32
           },
           "datasource": {
@@ -23618,7 +23715,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 46
+          "id": 47
         },
         {
           "type": "stat",
@@ -23627,8 +23724,8 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 20,
-            "y": 32
+            "x": 0,
+            "y": 36
           },
           "datasource": {
             "type": "stackdriver",
@@ -23715,7 +23812,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 47
+          "id": 48
         },
         {
           "type": "stat",
@@ -23724,7 +23821,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 0,
+            "x": 4,
             "y": 36
           },
           "datasource": {
@@ -23812,7 +23909,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 48
+          "id": 49
         },
         {
           "type": "stat",
@@ -23821,7 +23918,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 4,
+            "x": 8,
             "y": 36
           },
           "datasource": {
@@ -23909,7 +24006,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 49
+          "id": 50
         },
         {
           "type": "stat",
@@ -23918,7 +24015,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 8,
+            "x": 12,
             "y": 36
           },
           "datasource": {
@@ -24006,7 +24103,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 50
+          "id": 51
         },
         {
           "type": "stat",
@@ -24015,7 +24112,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 12,
+            "x": 16,
             "y": 36
           },
           "datasource": {
@@ -24103,7 +24200,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 51
+          "id": 52
         },
         {
           "type": "stat",
@@ -24112,7 +24209,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 16,
+            "x": 20,
             "y": 36
           },
           "datasource": {
@@ -24200,7 +24297,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 52
+          "id": 53
         },
         {
           "type": "stat",
@@ -24209,8 +24306,8 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 20,
-            "y": 36
+            "x": 0,
+            "y": 40
           },
           "datasource": {
             "type": "stackdriver",
@@ -24297,7 +24394,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 53
+          "id": 54
         }
       ],
       "gridPos": {
@@ -24310,7 +24407,7 @@
     },
     {
       "type": "row",
-      "title": "Portal & API (web, tpa-api, model-gateway; tpa-jobs)",
+      "title": "Portal & API (web, tpa-api, model-gateway; tpa-jobs, the importer)",
       "collapsed": true,
       "panels": [
         {
@@ -24401,7 +24498,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 55
+          "id": 56
         },
         {
           "type": "stat",
@@ -24504,7 +24601,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 56
+          "id": 57
         },
         {
           "type": "stat",
@@ -24598,7 +24695,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 57
+          "id": 58
         },
         {
           "type": "stat",
@@ -24734,7 +24831,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 58
+          "id": 59
         },
         {
           "type": "stat",
@@ -24841,12 +24938,12 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 59
+          "id": 60
         },
         {
           "type": "stat",
-          "title": "tpa-jobs (24 h)",
-          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`: in the app and CRM projects on the second in a row, R380; in the PHI and call-centre projects on one), and schedules that could not start their job (`scheduler-failed`). A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "title": "Jobs (24 h)",
+          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`: in the app and CRM projects on the second in a row, R380; in the PHI and call-centre projects on one), and schedules that could not start their job (`scheduler-failed`). The administrator-feed importer (`feed-ingest-everon-sync`, beta) opens `feed-ingest-failed` on one failed run, never retried. A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 5,
             "w": 4,
@@ -24878,7 +24975,7 @@
                   "AND",
                   "resource.label.job_name",
                   "=~",
-                  "tpa-jobs-.*",
+                  "tpa-jobs-.*|feed-ingest-everon-sync",
                   "AND",
                   "metric.label.result",
                   "=",
@@ -24913,7 +25010,7 @@
                   "AND",
                   "resource.label.job_id",
                   "=~",
-                  "erisa-clocks|nightly-anomalies|stoploss-surveillance|accumulator-reconcile|workload-audit|member-access"
+                  "erisa-clocks|nightly-anomalies|stoploss-surveillance|accumulator-reconcile|workload-audit|member-access|feed-ingest-everon-sync"
                 ],
                 "groupBys": [],
                 "crossSeriesReducer": "REDUCE_SUM",
@@ -24969,7 +25066,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 60
+          "id": 61
         }
       ],
       "gridPos": {
@@ -24978,7 +25075,7 @@
         "x": 0,
         "y": 32
       },
-      "id": 54
+      "id": 55
     },
     {
       "type": "row",
@@ -25073,7 +25170,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 62
+          "id": 63
         },
         {
           "type": "stat",
@@ -25176,7 +25273,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 63
+          "id": 64
         },
         {
           "type": "stat",
@@ -25274,7 +25371,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 64
+          "id": 65
         },
         {
           "type": "stat",
@@ -25408,7 +25505,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 65
+          "id": 66
         },
         {
           "type": "stat",
@@ -25624,7 +25721,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 66
+          "id": 67
         },
         {
           "type": "stat",
@@ -25752,7 +25849,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 67
+          "id": 68
         }
       ],
       "gridPos": {
@@ -25761,7 +25858,7 @@
         "x": 0,
         "y": 33
       },
-      "id": 61
+      "id": 62
     },
     {
       "type": "row",
@@ -25856,7 +25953,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 69
+          "id": 70
         },
         {
           "type": "stat",
@@ -25959,7 +26056,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 70
+          "id": 71
         },
         {
           "type": "stat",
@@ -26057,7 +26154,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 71
+          "id": 72
         },
         {
           "type": "stat",
@@ -26195,7 +26292,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 72
+          "id": 73
         },
         {
           "type": "stat",
@@ -26411,7 +26508,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 73
+          "id": 74
         },
         {
           "type": "stat",
@@ -26539,7 +26636,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 74
+          "id": 75
         }
       ],
       "gridPos": {
@@ -26548,7 +26645,7 @@
         "x": 0,
         "y": 34
       },
-      "id": 68
+      "id": 69
     },
     {
       "type": "row",
@@ -26643,7 +26740,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 76
+          "id": 77
         },
         {
           "type": "stat",
@@ -26746,7 +26843,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 77
+          "id": 78
         },
         {
           "type": "stat",
@@ -26871,7 +26968,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 78
+          "id": 79
         },
         {
           "type": "stat",
@@ -27005,7 +27102,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 79
+          "id": 80
         },
         {
           "type": "stat",
@@ -27221,7 +27318,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 80
+          "id": 81
         },
         {
           "type": "stat",
@@ -27318,7 +27415,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 81
+          "id": 82
         }
       ],
       "gridPos": {
@@ -27327,7 +27424,7 @@
         "x": 0,
         "y": 35
       },
-      "id": 75
+      "id": 76
     }
   ]
 }
