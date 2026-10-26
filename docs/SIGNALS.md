@@ -167,7 +167,7 @@ An **error group** is `service` + `exc_class` + (`operation` or `route`) + `sqls
 
 | Signal | Source | Red means | First check | Who fixes |
 |---|---|---|---|---|
-| enroll-engine `db` | Probe: :8400 `/api/v1/health`, body `"db": true` | Down, or its database down | `curl -s localhost:8400/api/v1/health` | bodyf1rst-enroll |
+| enroll-engine `db` | Probe: :8400 `/api/v1/health`, body `"db": true` | Down, or its database down (this laptop's stack; beta's copy in GCP is built off, below) | `curl -s localhost:8400/api/v1/health` | bodyf1rst-enroll |
 
 ## feed-ingest (`tw-feed-ingest`)
 
@@ -185,7 +185,9 @@ is the Cloud Monitoring metric (`logging.googleapis.com/user/<name>` for a log-b
 a failed query, not a reading (on `cloud-phi`, most often the perimeter rule missing), and its "no value" text means
 nothing. In beta at rest a tile reading "not deployed", "paused" or "database stopped" (no colour) is a job beta has
 not built, a job paused or a database stopped on purpose (the service's `TPA_NOT_DEPLOYED_JOBS`, `TPA_PAUSED_JOBS`,
-`TPA_STOPPED_DATABASES`), not a fault.
+`TPA_STOPPED_DATABASES`), not a fault. The enrollment service (tpa-platform D-185: the engine `enroll`, `enroll-relay`,
+`enroll-web`, `migrate-enroll` and enroll-db) is built off in beta and not at all in production, so it has no tile,
+row or page here until the owner turns it on ([cloud/README.md](../cloud/README.md), "The enrollment service").
 
 | Signal (dashboard) | Source | Red means | First check | Who fixes |
 |---|---|---|---|---|

@@ -385,6 +385,53 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   - [ ] Owed: the re-vendor at the landed tpa-platform commit; the records limit's pages step on beta before this image;
     the image deployed in the one apply that moves
     tpa-platform's watch change and counter with it (cloud/README.md, "Deploy order, both ways").
+- [x] EN (2026-10-25, the owner: "Yes, we need the enrollment service to be ready to be deployed. Get it all setup as
+  if its going to be deployed"; bodyfirst `tasks/enroll-gcp/DESIGN.md` §7.2) the enrollment service while it is off,
+  stage (a), branch `watch/enroll`. tpa-platform's half is on its origin/master `06f73b72` (D-185, beta's `enroll.tf`,
+  every switch false; production-full builds none of it).
+  - [x] The catalogue at tpa-platform origin/master `06f73b72` (from `6bdb46ac`, which it contains, so the feed-ingest
+    lane's catalogue is now pinned at a landed commit; blob `e1c7fb7f`). Its only change is the two new optional
+    sections `enroll_db` and `enroll`: no other lane's metric to chart and no page moved (`--check` 0 on the re-vendor).
+  - [x] Beta's `NOT_RUN` gives `enroll`, `enroll-relay` and `enroll-web` the reason `enroll_enabled` off (D-185), so
+    "every service the root builds has a tile or a reason" holds; production's `NOT_RUN` is unchanged (it builds none).
+    `NAMES["phi"]` lists `migrate-enroll` and `enroll-db`, the catalogue naming both. The two sections stay unread
+    (`enroll_mail_errors` is made only with `enroll_mail_enabled`: a chart now would be a 404) and the reader test holds
+    them unread. No runtime state: these are tfvars facts the tests read from Terraform; `TPA_NOT_DEPLOYED_JOBS` is
+    untouched, and tpa-platform's watch.tf keeps enroll-db out of `TPA_STOPPED_DATABASES` until it is built (the ask).
+  - [x] While off, nothing of it is on any page, beta's or production's: no tile, row, page or column, never red or
+    green. Docs: cloud/README.md ("The enrollment service (beta, built off)"), SIGNALS.md, SPEC.md's enroll row.
+  - [ ] Stage (b), at the owner's turn-on (beta's tfvars set `enroll_db_enabled` and `enroll_enabled`), in one branch
+    re-vendored at that tpa-platform commit, and deployed in the apply that turns the switch on (an image before it
+    refuses enroll-db in `TPA_STOPPED_DATABASES`, so it does not start while enroll-db is stopped on purpose):
+    - The reader: `catalogue.SECTIONS` gains `enroll_db` and `enroll`, both the PHI role's (beta's main.tf places them
+      there); `enroll-db-down`, `enroll-db-disk`, `enroll-down`, `enroll-migrate-failed` and `enroll-mail-failing` read
+      by section (`DB_ROLE`'s `{db}-down` lookup is by role today).
+    - The services: `enroll` (PHI) and `enroll-relay`, `enroll-web` (app) out of `NOT_RUN["beta"]` and into
+      `SERVICES`, `RUNS["beta"]`, `LIMITS["beta"]` (max_instances as enroll.tf writes them today: engine 1, relay 3,
+      portal 2), the warm lists (the engine keeps one: `TERRAFORM_WARM`, and the area's `no instance` row),
+      `NAMES[...]["service_name"]` and test_resources' `AREAS`; three `service-<name>` pages and their Resources rows.
+    - The area: an enrollment area of its own (an `AREAS` entry and `AREA_STATUS`/`AREA_SHORT`/`AREA_TITLES`, beta
+      only), its services `enroll|enroll-relay|enroll-web` across two projects, so either two rows (the PHI project's
+      engine, job and database; the app project's relay and portal) or the relay and portal kept in the portal area;
+      the decision is the turn-on branch's. Its jobs `migrate-enroll` (the `enroll-migrate-failed` row, not
+      `jobs-failed`); its own `enroll` page (requests, 5xx against `enroll-down`'s only-5xx rule, p95, instances, its
+      mail errors by `code` against `enroll-mail-failing`'s more-than-three-in-15-minutes line once
+      `enroll_mail_enabled` makes the counter, migrate-enroll's runs against its 600 s timeout).
+    - The fifth database: enroll-db in `DATABASES`, `DB_ROLE` (phi), `KNOWN_DATABASES` (render-dashboards.sh, held to
+      `DATABASES` by the render test), `LIMITS` max_connections (Cloud SQL's own for the tier `sizing["enroll-db"]`
+      sets: the example's db-custom-1-3840), its column on the overview (the widths: `12 // 5` and `24 // 5` leave
+      gaps, so the Right now and Databases rows are reworked) and on Databases, D-173's backup and log-archive tiles
+      (`BACKUP_POLICIES`) as for the four, the hard-coded four in the overview, backups and resources tests.
+    - The uptime tile: `enroll-host-down` is the app project's (beta's `uptime_checks`, built with
+      `enroll_uptime_check_enabled` once its certificate is ACTIVE); it joins Uptime and "Uptime by host" unchanged,
+      and today it would be a "✕ uptime check failing" row of the portal-and-sign-in area: move it to the enrollment
+      area's row (a host filter) when the area exists.
+    - Errors: an enroll section on the Errors page (the PHI `errors` counter's `service="enroll"`), and a
+      `service_name="records"` filter on Member records' error-group and SQLSTATE 08 panels, as tpa-platform's beta
+      main.tf adds to `records-sql-errors` while `local.enroll` (otherwise the engine's connection errors read as
+      records').
+    - Paging words: PAGERDUTY.md, the PHI project's policies page "TPA beta · Member records", so the enrollment
+      engine's pages land there unless tpa-platform gives it its own service.
 
 ## Review
 

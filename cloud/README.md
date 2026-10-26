@@ -101,6 +101,26 @@ The image does not refuse an unset `TPA_NOT_DEPLOYED_JOBS` on beta, though tpa-p
 often empty, and whether Cloud Run hands a container an empty value as set has not been checked here, so a refusal
 could take the website down exactly while the importer runs. The order is the control.
 
+### The enrollment service (beta, built off)
+
+The owner, 2026-10-25: "Yes, we need the enrollment service to be ready to be deployed. Get it all setup as if its
+going to be deployed". tpa-platform's beta builds it (`enroll.tf`, D-185) only behind four switches, all false by
+default: `enroll_db_enabled` (enroll-db in the PHI project, its network and keys); `enroll_enabled`, with enroll-db (the
+engine `enroll` in the PHI project, internal; its job `migrate-enroll`; `enroll-relay` and `enroll-web` in the app
+project behind `edge_enroll` and IAP); `enroll_mail_enabled` (its SendGrid path and the `enroll_mail_errors` counter);
+and `enroll_uptime_check_enabled` (the host's uptime check, in an apply of its own once the certificate is ACTIVE).
+production-full builds none of it. While it is off, nothing of it is on any page, so nothing of it reads red or green:
+
+| Piece | While off |
+|---|---|
+| `enroll`, `enroll-relay`, `enroll-web` | No tile, no page, no Resources row. Beta's `NOT_RUN` gives each its reason (`enroll_enabled` off, D-185), as for connectors and tpa-jobs-drains, so `test_every_service_the_root_builds_has_a_tile_or_a_reason` holds against beta's Terraform; production's has none to give. |
+| `migrate-enroll`, `enroll-db` | The PHI project's names in the tests (`NAMES`, which must list every job and instance the catalogue names); charted nowhere. enroll-db is not one of `DATABASES`: no column on the overview or Databases page, and not a name `TPA_STOPPED_DATABASES` may carry (this image refuses a database it does not know; tpa-platform's watch.tf leaves enroll-db out of the list until `enroll_db_enabled` builds it). |
+| The catalogue's `enroll_db` and `enroll` sections | Vendored, unread (`catalogue.SECTIONS`): `enroll_mail_errors` is made only with `enroll_mail_enabled`, so a chart of it would be a failed query on beta today. |
+| The uptime check (`enroll-host-down`) | Not built. Once built it is the app project's, as the CRM's and this site's are: it joins Uptime, "Uptime by host" and the portal-and-sign-in area's "uptime check failing" rows by its host with no change here. |
+
+No runtime state: the switches are beta's tfvars facts, read by the tests from Terraform at the pinned commit, and
+`TPA_NOT_DEPLOYED_JOBS` (scheduled jobs) names none of these. What the turn-on adds here is tasks/todo.md's EN list.
+
 ### Backups and point-in-time recovery
 
 The owner, 2026-10-24: "1. Make the window 7 days for all foour 2. Update the trellis-watchtower as a check and it

@@ -94,7 +94,7 @@ The research found five constraints that shape the design:
 | trellis | bundle in `web` | `/tpa/release.json` probe (shows the release id) | covered by the web uptime check |
 | bodyf1rst-network | host :8100, network-db 5434 | probe `/api/v1/health` with a body match on `"database": true`; postgres_exporter | GCP `crm` project metrics, once it runs there |
 | health-forge | host :8000, forge-db 5433 | body-match probe; postgres_exporter | added when it runs in GCP |
-| bodyf1rst-enroll | host :8400 (not deployed) | body-match probe (`"db": true`) | added when it deploys |
+| bodyf1rst-enroll | host :8400; beta's GCP PHI project (the engine `enroll`, `migrate-enroll`, enroll-db) and app project (`enroll-relay`, `enroll-web`), tpa-platform's beta `enroll.tf` (D-185), built only behind `enroll_db_enabled` and `enroll_enabled`, both off; none in production-full | body-match probe (`"db": true`) | none while off: no tile or page, a `NOT_RUN` reason for each service ([cloud/README.md](../cloud/README.md), "The enrollment service"); its tiles, pages and fifth database at the owner's turn-on (tasks/todo.md, EN) |
 
 **Rules the implementation must keep:**
 - **No PHI anywhere in monitoring.**
