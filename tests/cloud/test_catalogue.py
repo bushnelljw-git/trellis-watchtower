@@ -143,11 +143,15 @@ NAMES = {
                    "auth-audit-verify", "auth-audit-verify-monthly", "feed-ingest-everon-sync"},
         "database_id": {"auth-db"},
     },
+    # migrate-enroll and enroll-db: the enrollment service's migration job and database (enroll.tf, D-185), built only
+    # behind enroll_enabled and enroll_db_enabled, off today; the catalogue's enroll and enroll_db sections name them.
+    # No page charts them yet (tasks/todo.md, EN: stage b).
     "phi": {
         "service_name": {"records", "connectors"},
-        "job_name": {"migrate-tpa", "seed-tpa", "tpa-db-export", "restore-drill", "records-chain-head"},
+        "job_name": {"migrate-tpa", "seed-tpa", "tpa-db-export", "restore-drill", "records-chain-head",
+                     "migrate-enroll"},
         "job_id": {"tpa-db-export", "records-chain-head", "restore-drill"},
-        "database_id": {"tpa-db"},
+        "database_id": {"tpa-db", "enroll-db"},
     },
     # crm-lane-send and crm-lane-comp: beta's CRM copy's won-deal sender and commission pass (crm.tf, R430 and R441),
     # each built only behind its own switch, off today; the catalogue's crm_lane_* sections name them. No page charts
@@ -218,7 +222,11 @@ class CatalogueTest(unittest.TestCase):
         self.assertIn("display_name", self.catalogue.policy("feed-ingest-failed", section="feed_ingest"))
         self.assertIn("display_name", self.catalogue.policy("records-source-sync-alert",
                                                             section="feed_ingest_records"))
-        for unread in ("beta_text_codes", "crm_lane_send", "crm_lane_comp", "crm_lane_statements"):
+        # The enrollment service's two (D-185) are unread while it is off: `enroll_mail_errors` is made only with
+        # enroll_mail_enabled (beta's enroll.tf, local.enroll_log_metrics), so a chart of it would be a failed query
+        # (Cloud Monitoring's 404) on beta today.
+        for unread in ("beta_text_codes", "crm_lane_send", "crm_lane_comp", "crm_lane_statements", "enroll_db",
+                       "enroll"):
             self.assertIn(unread, self.catalogue.tree)
             self.assertNotIn(unread, cat.SECTIONS)
         self.assertEqual(self.catalogue.roles["app"]["synthetic_results"]["labels"],

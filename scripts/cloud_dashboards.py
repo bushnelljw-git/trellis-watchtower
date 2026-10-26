@@ -911,9 +911,16 @@ FILE_READER_OFF = ("file_reader_enabled off by default (D-154, the roster file r
                    "yet; a switch turned on is a service with a page and a tile")
 FILE_READER_BETA = ("beta runs it since 2026-10-13 (its deployment's tfvars turn file_reader_enabled on; gcloud run "
                     "services list, read only: min 0, max 10, internal ingress); no page or tile yet (tasks/todo.md)")
+# The enrollment service (D-185, beta's enroll.tf): built off, so it has no tile and no page while off, never red or
+# green; production-full builds none of it. A switch turned on is the owner's turn-on (tasks/todo.md, EN: stage b).
+ENROLL_OFF = ("enroll_enabled off (D-185, beta's enroll.tf; it builds nothing without enroll_db_enabled either): {} is "
+              "not built, so no tile and no page until the owner's turn-on (tasks/todo.md, EN)")
 NOT_RUN = {"beta": {"connectors": "connectors_enabled off: beta has no destination for it (R120)",
                     "tpa-jobs-drains": "tpa_jobs_drains_enabled off: its loops wait, idempotent, until it is on",
-                    "file-reader": FILE_READER_BETA},
+                    "file-reader": FILE_READER_BETA,
+                    "enroll": ENROLL_OFF.format("the enrollment engine (PHI project, internal)"),
+                    "enroll-relay": ENROLL_OFF.format("the portal's API hop into the PHI project (app project)"),
+                    "enroll-web": ENROLL_OFF.format("the enrollment portal (app project, behind edge_enroll)")},
            "production": {"file-reader": FILE_READER_OFF}}
 # The module's `<service> has no instance` (its threshold condition; its absence one waits ten minutes): instance_count
 # the most in each minute, summed over revisions, below one for five minutes.

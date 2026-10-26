@@ -3477,3 +3477,148 @@ feed_ingest_records:
           threshold:
             filter: >-
               metric.type = "logging.googleapis.com/user/source_sync_alerts" AND resource.type = "cloud_run_revision"
+
+# =============================================================================
+# The enrollment service on beta (D-185, the owner, 2026-10-25: "we need it
+# treated just like all the other services"), built off. Read by beta's root
+# alone (enroll.tf), into the project the PHI role lives in, which receives
+# the engine's and its job's logs and holds enroll-db; production-full reads
+# none of it. `enroll_db` while var.enroll_db_enabled builds enroll-db (and
+# its down policy leaves while B8 stops it); `enroll` while var.enroll_enabled
+# builds the services (its mail policy only with var.enroll_mail_enabled).
+# Beside these the module writes, from the root's inputs, enroll-db's ten
+# per-instance policies and D-173's three (cloud_sql_instances), the engine's
+# `no instance` (warm_services: it keeps one) and migrate-enroll's timeout;
+# the shared policies (crash loops, start-up failures, the 5xx and SQL
+# canaries) and the PHI project's `errors` counter (its `service` label
+# reads "enroll") cover the engine and its job with no line here. Every line
+# read is the engine's closed-field JSON (the design's §5.4: `service`,
+# `level`, `op`, `code`), written against that interface before the engine's
+# change lands; codes and counts only, never an address, a member or a value.
+# =============================================================================
+enroll_db:
+  alert_policies:
+    enroll-db-down:
+      display_name: "URGENT enroll-db is down"
+      urgent: true
+      documentation: >-
+        Cloud SQL reported enroll-db not up for five minutes: the enrollment
+        engine cannot answer, and its /ready refuses (`canary-startup`). Check
+        the instance in the console (a maintenance or a failed restart), then
+        its operations. While the database is stopped on purpose between test
+        sessions (B8) this policy is not there.
+      conditions:
+        - name: "database/up below 1 for five minutes"
+          threshold:
+            filter: >-
+              metric.type = "cloudsql.googleapis.com/database/up" AND resource.type = "cloudsql_database"
+              AND resource.labels.database_id = ends_with(":enroll-db")
+            comparison: "COMPARISON_LT"
+            threshold_value: 1
+            duration: "300s"
+            alignment_period: "60s"
+            per_series_aligner: "ALIGN_MAX"
+            cross_series_reducer: "REDUCE_MAX"
+            group_by_fields: ["resource.label.database_id"]
+
+    enroll-db-disk:
+      display_name: "enroll-db disk above 85%"
+      documentation: >-
+        enroll-db's disk has stayed above 85 percent full for ten minutes.
+        Automatic growth stops at the instance's disk_autoresize_limit
+        (var.sizing); raise the limit or the disk before it fills, when the
+        instance stops taking writes.
+      conditions:
+        - name: "disk/utilization above 0.85 for ten minutes"
+          threshold:
+            filter: >-
+              metric.type = "cloudsql.googleapis.com/database/disk/utilization" AND resource.type = "cloudsql_database"
+              AND resource.labels.database_id = ends_with(":enroll-db")
+            threshold_value: 0.85
+            duration: "600s"
+            alignment_period: "300s"
+            per_series_aligner: "ALIGN_MEAN"
+            cross_series_reducer: "REDUCE_MAX"
+            group_by_fields: ["resource.label.database_id"]
+
+enroll:
+  log_metrics:
+    enroll_mail_errors:
+      description: >-
+        One per error line of the enrollment engine's mail loop
+        (`op: systemmail.send`, level ERROR: SendGrid refused or could not be
+        reached, the key unreadable, a recipient outside the one list), by its
+        closed short code alone. The recipient, the letter and SendGrid's own
+        words are never on the line (the design's §5.4).
+      filter: |
+        resource.type="cloud_run_revision"
+        AND resource.labels.service_name="enroll"
+        AND jsonPayload.service="enroll"
+        AND jsonPayload.op="systemmail.send"
+        AND jsonPayload.level="ERROR"
+      labels:
+        code: 'REGEXP_EXTRACT(jsonPayload.code, "^([a-z][a-z0-9_]{0,39})$")'
+
+  alert_policies:
+    # records-down's shape: the engine keeps one instance, so ten minutes of
+    # only 5xx is it down for the portal whatever the traffic.
+    enroll-down:
+      display_name: "URGENT the enrollment engine answered only errors"
+      urgent: true
+      documentation: >-
+        Every request the enrollment engine answered in the last ten minutes
+        was a 5xx (two or more, none answered otherwise): the enrollment
+        portal is down for everyone IAP admits. A refusal is a 4xx and never
+        counts here. Read the engine's system log (`canary-startup`), its
+        error lines (`errors`, service enroll) and enroll-db
+        (`enroll-db-down`).
+      conditions:
+        - name: "only 5xx for ten minutes, at least two"
+          promql:
+            query: >-
+              sum by (service_name) (increase(run_googleapis_com:request_count{monitored_resource="cloud_run_revision", service_name="enroll", response_code_class="5xx"}[10m])) >= 2
+              unless sum by (service_name) (increase(run_googleapis_com:request_count{monitored_resource="cloud_run_revision", service_name="enroll", response_code_class!="5xx"}[10m])) > 0
+            evaluation_interval: "60s"
+
+    # A policy of its own, so the PHI project's `jobs-failed` list stays what
+    # it was while the enrollment service is off.
+    enroll-migrate-failed:
+      display_name: "enroll-db's migration failed"
+      subject: "enroll-db's migration failed: ${metric_or_resource.label.job_name}"
+      documentation: >-
+        An execution of migrate-enroll (run by a person: the stand-in public
+        lane, enroll's lane and its boundary check; or its provision and
+        seed-beta verbs) failed. Read the execution's own lines, then enroll-db
+        (`enroll-db-down`). The engine does not take a new image until its
+        migration has run; run the job again once the cause is fixed.
+      conditions:
+        - name: "a failed execution"
+          threshold:
+            filter: >-
+              metric.type = "run.googleapis.com/job/completed_execution_count" AND resource.type = "cloud_run_job"
+              AND metric.labels.result = "failed"
+              AND resource.labels.job_name = "migrate-enroll"
+            group_by_fields: ["resource.label.job_name"]
+
+    enroll-mail-failing:
+      display_name: "the enrollment engine's mail is failing"
+      subject: "enrollment mail is failing: ${metric_or_resource.label.code}"
+      documentation: >-
+        The enrollment engine's mail loop wrote more than three error lines in
+        fifteen minutes: sign-in links and notices are not leaving. The code
+        says which: SendGrid's refusal (the key's Mail Send scope, the
+        account's IP Access Management list holding enroll's NAT address,
+        the verified sender), the route (enroll_sendgrid, the NAT gateway) or
+        a recipient outside beta's one list. A pass cut mid-send is sent at
+        least once; a letter is never lost, only late.
+      conditions:
+        - name: "more than three error lines in fifteen minutes"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/enroll_mail_errors" AND resource.type = "cloud_run_revision"
+            threshold_value: 3
+            duration: "0s"
+            alignment_period: "900s"
+            per_series_aligner: "ALIGN_SUM"
+            cross_series_reducer: "REDUCE_SUM"
+            group_by_fields: ["metric.label.code"]
