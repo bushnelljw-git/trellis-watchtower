@@ -16,7 +16,7 @@ host, the perimeter rule and the IAM rows. Nothing here is pushed or deployed fr
 
 | File | What it does |
 |---|---|
-| `Dockerfile` | `grafana/grafana:12.4.12` pinned by digest, with Grafana's three Go binaries rebuilt from the v12.4.12 source with Go 1.26.9 (grafana's kin-openapi raised to v0.149.0), zlib 1.3.2-r1, musl 1.2.6-r3 and brotli 1.2.1-r0, config, IAP's pinned keys, provisioning and dashboards baked in, root's and read-only, no plugins. Runs as `10001:10001` (below, "The image's user and what it writes"). Its entrypoint is `render-dashboards.sh`. Build context is `cloud/`. |
+| `Dockerfile` | `grafana/grafana:12.4.14` pinned by digest, with Grafana's three Go binaries rebuilt from the v12.4.14 source with Go 1.26.10 (go-jose v4 raised to v4.1.6), curl and libcurl 8.23.0-r0, zlib 1.3.2-r1, musl 1.2.6-r3 and brotli 1.2.1-r0 held to exactly those versions, config, IAP's pinned keys, provisioning and dashboards baked in, root's and read-only, no plugins. Runs as `10001:10001` (below, "The image's user and what it writes"). Its entrypoint is `render-dashboards.sh`. Build context is `cloud/`. |
 | `grafana.ini` | Sign-in by the IAP assertion only (`[auth.jwt]` on `X-Goog-Iap-Jwt-Assertion`, Google's IAP keys from the pinned `iap_keys.json`, `aud` and `iss` checked, email claim, auto sign-up as Viewer). Login form, basic auth and anonymous access off. No initial admin. Alerting, snapshots, public dashboards, Explore, query history, plugin downloads, update checks and reporting off. The home page is the cloud overview; no refresh faster than a minute. |
 | `provisioning/datasources/cloud-monitoring.yml` | Four Cloud Monitoring datasources, `cloud-app`, `cloud-crm`, `cloud-phi` and `cloud-cc`, using the attached identity (`authenticationType: gce`). Each sets both `defaultProject` and `gceDefaultProject`: under `gce` Grafana's browser side reads only the second, and without it all four would read the app project. `cloud-phi` works only once the perimeter rule admits `sa-watchtower` to the PHI project's Monitoring read. |
 | `iap_keys.json` | IAP's public keys (Google's JWK set from `https://www.gstatic.com/iap/verify/public_key-jwk`), pinned on the day it names, read by `grafana.ini`'s `jwk_set_file`. `scripts/refresh_iap_keys.sh` re-pins it (below, "IAP's keys"). |
@@ -410,24 +410,21 @@ this image meets it:
   starts. The base's other world-writable folders (`/var/log/grafana`, unused with console logging;
   `/usr/share/grafana/.aws`, unused; `/var/tmp`) are root's and closed. The config, provisioning, baked dashboards
   and entrypoint are root's and read-only.
-- **Every base is pinned by digest, and everything fetched by its hash.** The official 12.4.12 image's Go binaries
-  are built with Go 1.26.6, whose standard library Container Scanning finds two CRITICAL and eight fixable HIGH
-  advisories in, and no Grafana release ships a newer Go yet. So `grafana`, `grafana-server` and `grafana-cli` are
-  rebuilt from Grafana's public v12.4.12 source (BuildKit refuses the tag unless it is commit `60d1cb95`) with Go
-  1.26.9 (the `golang` image web's Caddy is built with), as Grafana's `make build-go` builds them, every module checked
-  against Grafana's own `go.sum` and `go.work.sum`, and each binary's module list and build settings must be the
-  official one's exactly. With Go 1.26.6 and the official stamps, that source gives the official binaries byte for
-  byte (checked 2026-10-12), so Grafana's release build compiled nothing the public source lacks. Two modules are
-  raised in that source before the build, each by its go.sum lines pinned in the Dockerfile as sum.golang.org lists
-  them: `github.com/getkin/kin-openapi` v0.147.0 to v0.149.0 (CVE-2026-100352, -100353 and -100354, HIGH, in
-  `grafana` alone; tpa-platform's build b5453d1f, 2026-10-24) and `github.com/santhosh-tekuri/jsonschema/v6` v6.0.2
-  to v6.0.3, which v0.149.0 requires; `grafana`'s module list must be the official one's but for those two lines.
-  Everything else in the image (the frontend, the bundled plugins, Alpine) is Grafana's, but three Alpine packages:
-  zlib 1.3.2-r1 (CVE-2026-85091), musl and musl-utils 1.2.6-r3 (CVE-2026-107891) and brotli-libs 1.2.1-r0
-  (CVE-2026-111497), each from Alpine 3.24's own package by its sha256, installed with no repository and no network
-  (apk checks each signature too), then every installed package of those origins is required to be the fixed one.
-  Grafana 12.4.13 (Go 1.26.9) still has kin-openapi v0.147.0; when a Grafana release ships Go 1.26.9 or later, the
-  kin-openapi fix and the fixed packages, the rebuild and the packages go.
+- **Every base is pinned by digest, and everything fetched by its hash.** The official 12.4.14 image's Go binaries
+  (Go 1.26.10) carry `github.com/go-jose/go-jose/v4` v4.1.4, which Container Scanning reports as HIGH (fixed in v4.1.6;
+  tpa-platform's build ef0194fb, 2026-10-29, on 12.4.12), and no Grafana 12.x release has the fix. So `grafana`,
+  `grafana-server` and `grafana-cli` are rebuilt from Grafana's public v12.4.14 source (BuildKit refuses the tag unless
+  it is commit `3c98af3b`) with Go 1.26.10 (the `golang` image), as Grafana's `make build-go` builds them, every module
+  checked against Grafana's own `go.sum` and `go.work.sum`, and each binary's module list and build settings must be
+  the official one's exactly, but for go-jose's one line (v4.1.6, its go.sum lines pinned in the Dockerfile as
+  sum.golang.org lists them). Grafana's official binaries are stamped with its private mirror's commit (`500a5450`),
+  these with the public commit they were built from. Everything else in the image (the frontend, the bundled plugins,
+  Alpine 3.24.3) is Grafana's. curl and libcurl 8.23.0-r0 (24 findings in build ef0194fb, on 12.4.12's Alpine 3.24.2),
+  zlib 1.3.2-r1, musl and musl-utils 1.2.6-r3 and brotli-libs 1.2.1-r0 are what 12.4.14's base already carries; the
+  Dockerfile still installs each from Alpine 3.24's own package by its sha256 (no repository, no network; apk checks
+  each signature) and requires every installed package of the origins curl, zlib, musl and brotli to be exactly those,
+  so a base that falls behind Alpine fails the build here. When a Grafana release carries go-jose v4.1.6, the rebuild
+  goes.
 - **A shell stays.** The builder's no-shell rule covers tpa-platform's own Python images and `web`, not this one:
   its start check for `watchtower` builds the image, requires the user above, starts it with no network as beta's
   `watch.tf` does, and asks `/api/health` and `/api/search` (401) through `docker exec … wget`, so it needs the

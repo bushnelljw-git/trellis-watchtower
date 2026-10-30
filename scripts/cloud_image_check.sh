@@ -4,9 +4,9 @@
 #
 #  0. The image's configured user is exactly 10001:10001 (tpa-platform's shared builder refuses any other); every
 #     base is pinned by digest, and the image's stage is the official Grafana's; Grafana's three Go binaries were
-#     rebuilt with Go 1.26.9, and grafana's kin-openapi is v0.149.0 and its jsonschema/v6 v6.0.3 (each read from the
-#     binary's own build information); and every installed package of the origins zlib, musl and brotli is the fixed
-#     one (zlib 1.3.2-r1, musl and musl-utils 1.2.6-r3, brotli-libs 1.2.1-r0).
+#     rebuilt with Go 1.26.10 and every one that carries go-jose v4 has v4.1.6 (read from the binary's own build
+#     information); and every installed package of the origins curl, zlib, musl and brotli is the fixed one (curl and
+#     libcurl 8.23.0-r0, zlib 1.3.2-r1, musl and musl-utils 1.2.6-r3, brotli-libs 1.2.1-r0).
 #  1. As it ships, set up as production-full (no call-centre project): Grafana starts, render-dashboards writes the
 #     eight production pages, the four datasources are inserted, /api/search answers 401 without an IAP assertion,
 #     Grafana (PID 1) runs as uid 10001 and gid 10001, the config, IAP's pinned keys, provisioning, dashboards and
@@ -94,7 +94,7 @@ docker rm "$name" >/dev/null
 # Each binary's Go and modules, from its build information (Go 1.18's format: the magic, then, with flag 2, the
 # version and the module list as varint-length strings 32 bytes in, the list between two 16-byte sentinels), so the
 # check needs no Go of its own.
-python3 - "$work/bin" <<'EOF' || fail "Grafana's binaries are not all go1.26.9 builds, with grafana's two raised modules"
+python3 - "$work/bin" <<'EOF' || fail "Grafana's binaries are not all go1.26.10 builds, with go-jose v4.1.6"
 import os, sys
 
 def string(data, at):
@@ -107,7 +107,7 @@ def string(data, at):
         if byte < 0x80:
             return data[at:at + length], at + length
 
-RAISED = {"github.com/getkin/kin-openapi": "v0.149.0", "github.com/santhosh-tekuri/jsonschema/v6": "v6.0.3"}
+RAISED = {"github.com/go-jose/go-jose/v4": "v4.1.6"}
 for name in ("grafana", "grafana-server", "grafana-cli"):
     data = open(os.path.join(sys.argv[1], name), "rb").read()
     at = data.find(b"\xff Go buildinf:")
@@ -116,21 +116,23 @@ for name in ("grafana", "grafana-server", "grafana-cli"):
     version, at = string(data, at + 32)
     version = version.decode()
     print(f"   {name}: {version}")
-    if version != "go1.26.9":
+    if version != "go1.26.10":
         sys.exit(f"{name} is built with {version}")
-    if name == "grafana":
-        deps = dict(line.split("\t")[1:3] for line in string(data, at)[0][16:-16].decode().splitlines()
-                    if line.startswith("dep\t"))
-        for path, want in RAISED.items():
-            if deps.get(path) != want:
-                sys.exit(f"grafana's {path} is {deps.get(path)}, not {want}")
-            print(f"   grafana: {path} {want}")
+    deps = dict(line.split("\t")[1:3] for line in string(data, at)[0][16:-16].decode().splitlines()
+                if line.startswith("dep\t"))
+    for path, want in RAISED.items():
+        if name == "grafana" and path not in deps:
+            sys.exit(f"grafana has no {path}")
+        if path in deps:
+            if deps[path] != want:
+                sys.exit(f"{name}'s {path} is {deps[path]}, not {want}")
+            print(f"   {name}: {path} {want}")
 EOF
 packages="$(docker run --rm --network none --entrypoint awk "$tag" -F: \
-  '/^P:/ { p = $2 }; /^V:/ { v = $2 }; /^o:(brotli|musl|zlib)$/ { print p "-" v }' /lib/apk/db/installed \
+  '/^P:/ { p = $2 }; /^V:/ { v = $2 }; /^o:(brotli|curl|musl|zlib)$/ { print p "-" v }' /lib/apk/db/installed \
   | sort | tr '\n' ' ' || true)"
-[ "$packages" = "brotli-libs-1.2.1-r0 musl-1.2.6-r3 musl-utils-1.2.6-r3 zlib-1.3.2-r1 " ] ||
-  fail "the image's zlib, musl and brotli packages are '$packages', not the fixed ones"
+[ "$packages" = "brotli-libs-1.2.1-r0 curl-8.23.0-r0 libcurl-8.23.0-r0 musl-1.2.6-r3 musl-utils-1.2.6-r3 zlib-1.3.2-r1 " ] ||
+  fail "the image's curl, zlib, musl and brotli packages are '$packages', not the fixed ones"
 echo "   $packages"
 
 # A throwaway ES256 key ("good", whose set replaces the baked one in part 2), another ("other"), and the signer.
@@ -196,9 +198,9 @@ echo "   datasources inserted: $inserted"
 [ "$inserted" = 4 ] || fail "expected 4 datasources"
 if grep -E '"level":"(error|crit)"' <<<"$logs" >&2; then fail "Grafana logged an error at start"; fi
 started="$(grep '"msg":"Starting Grafana"' <<<"$logs" || true)"
-grep -q '"commit":"60d1cb9522f234508f98e9c88295cc920c965d10"' <<<"$started" && grep -q '"version":"12.4.12"' <<<"$started" ||
-  fail "the Grafana that started is not 12.4.12 rebuilt from commit 60d1cb95: $started"
-echo "   Grafana 12.4.12, rebuilt from commit 60d1cb95, started"
+grep -q '"commit":"3c98af3ba0773ad12a8a54b1faec7dc62d8d6725"' <<<"$started" && grep -q '"version":"12.4.14"' <<<"$started" ||
+  fail "the Grafana that started is not 12.4.14 rebuilt from commit 3c98af3b: $started"
+echo "   Grafana 12.4.14, rebuilt from commit 3c98af3b, started"
 ids="$(docker exec "$name" awk '$1 == "Uid:" || $1 == "Gid:" { print $1, $2 }' /proc/1/status)"
 [ "$ids" = $'Uid: 10001\nGid: 10001' ] || fail "Grafana (PID 1) runs as '$ids', not uid 10001 and gid 10001"
 pid1="$(docker exec "$name" readlink /proc/1/exe)"
