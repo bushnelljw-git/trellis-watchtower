@@ -83,7 +83,7 @@ RUN set -eu; \
     echo "grafana, grafana-server, grafana-cli: 12.4.14 (3c98af3b), go1.26.10, the official module list but" \
       "go-jose v4.1.6, checked"
 
-# --- curl 8.23.0-r0, zlib 1.3.2-r1, musl 1.2.6-r3, brotli 1.2.1-r0 ------------------------------------------------------------------
+# --- curl 8.23.0-r0, zlib 1.4-r0, musl 1.2.6-r3, brotli 1.2.1-r0 ------------------------------------------------------------------
 #
 # curl: tpa-platform's build ef0194fb (2026-10-29, trellis-watchtower f6f79cb, Grafana 12.4.12 on Alpine 3.24.2) was
 # refused with 24 findings in curl (package curl, which also covers libcurl): 2 CRITICAL, 6 HIGH and 16 with no severity
@@ -91,6 +91,10 @@ RUN set -eu; \
 # curl and libcurl 8.23.0-r0, musl r3, zlib r1 and brotli-libs 1.2.1-r0, so the install below changes nothing in it
 # today. It stays as the guard: the RUN requires exactly these versions of the four origins, so a base that regresses
 # (or a Grafana release that falls behind Alpine again) fails this build here, not in Cloud Build.
+#
+# zlib 1.4-r0: tpa-platform's build of trellis-watchtower 1bc38361 passed the build, start check and push, then its policy
+# step refused CVE-2026-4738 in zlib (no severity yet, fix available; a missing severity counts as a breach). Alpine 3.24
+# main fixes it in zlib 1.4-r0 (secdb, in the repository since 2026-11-06; the base's Alpine 3.24.3 still has 1.3.2-r1).
 #
 # Before 12.4.14: the base's Alpine 3.24.2 had zlib 1.3.2-r0, and Container Scanning reports CVE-2026-85091 (HIGH) in it, fixed in
 # 1.3.2-r1 (in Alpine 3.24's main repository since 2026-10-07; no Alpine or Grafana image carries it yet). The base
@@ -104,10 +108,10 @@ RUN set -eu; \
 # to be exactly the fixed one (curl and libcurl for the origin curl). The stage keeps its name, zlib: tpa-platform's start check
 # (scripts/image_start_check.sh) holds this Dockerfile to exactly these five stages, by name.
 FROM scratch AS zlib
-ADD --checksum=sha256:63aeea03c15a2f9018f81805cfc8aa926bdf5cd68921f22149c2fbb5d0ee9f47 \
-    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/zlib-1.3.2-r1.apk /x86_64/zlib-1.3.2-r1.apk
-ADD --checksum=sha256:1f77a542ac6634761b9fe38d8bdca19b154071dcfa25432e73f2bc8a0740a33f \
-    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/zlib-1.3.2-r1.apk /aarch64/zlib-1.3.2-r1.apk
+ADD --checksum=sha256:7b05bc778b8b25cd880835b40114182bd4d1581717504d0129c810c0a14291cb \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/zlib-1.4-r0.apk /x86_64/zlib-1.4-r0.apk
+ADD --checksum=sha256:d3e30d012a3445222b0b4a28f1d4d97ce67387f8b48561921111696da174f0de \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/zlib-1.4-r0.apk /aarch64/zlib-1.4-r0.apk
 ADD --checksum=sha256:e142255d0fa397f14318996bc10378093dcc069dc3dd1b6818c8f28a789c21da \
     https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/musl-1.2.6-r3.apk /x86_64/musl-1.2.6-r3.apk
 ADD --checksum=sha256:2e17864102278d9049c3a56f1bceed9e8cf287065617e579325123443daed8a5 \
@@ -149,13 +153,13 @@ USER root
 RUN --mount=type=bind,from=zlib,target=/mnt/apk \
     set -eu; \
     arch="$(apk --print-arch)"; \
-    apk --repositories-file=/dev/null add --no-cache "/mnt/apk/$arch/zlib-1.3.2-r1.apk" \
+    apk --repositories-file=/dev/null add --no-cache "/mnt/apk/$arch/zlib-1.4-r0.apk" \
       "/mnt/apk/$arch/musl-1.2.6-r3.apk" "/mnt/apk/$arch/musl-utils-1.2.6-r3.apk" \
       "/mnt/apk/$arch/brotli-libs-1.2.1-r0.apk" "/mnt/apk/$arch/curl-8.23.0-r0.apk" \
       "/mnt/apk/$arch/libcurl-8.23.0-r0.apk"; \
     test "$(awk -F: '/^P:/ { p = $2 }; /^V:/ { v = $2 }; /^o:(brotli|curl|musl|zlib)$/ { print p "-" v }' \
       /lib/apk/db/installed | sort | tr '\n' ' ')" \
-      = "brotli-libs-1.2.1-r0 curl-8.23.0-r0 libcurl-8.23.0-r0 musl-1.2.6-r3 musl-utils-1.2.6-r3 zlib-1.3.2-r1 "
+      = "brotli-libs-1.2.1-r0 curl-8.23.0-r0 libcurl-8.23.0-r0 musl-1.2.6-r3 musl-utils-1.2.6-r3 zlib-1.4-r0 "
 COPY --from=grafana-build /out/grafana /out/grafana-server /out/grafana-cli /usr/share/grafana/bin/
 COPY grafana.ini /etc/grafana/grafana.ini
 COPY iap_keys.json /etc/grafana/iap_keys.json

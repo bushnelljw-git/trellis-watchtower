@@ -6,7 +6,7 @@
 #     base is pinned by digest, and the image's stage is the official Grafana's; Grafana's three Go binaries were
 #     rebuilt with Go 1.26.10 and every one that carries go-jose v4 has v4.1.6 (read from the binary's own build
 #     information); and every installed package of the origins curl, zlib, musl and brotli is the fixed one (curl and
-#     libcurl 8.23.0-r0, zlib 1.3.2-r1, musl and musl-utils 1.2.6-r3, brotli-libs 1.2.1-r0).
+#     libcurl 8.23.0-r0, zlib 1.4-r0, musl and musl-utils 1.2.6-r3, brotli-libs 1.2.1-r0).
 #  1. As it ships, set up as production-full (no call-centre project): Grafana starts, render-dashboards writes the
 #     eight production pages, the four datasources are inserted, /api/search answers 401 without an IAP assertion,
 #     Grafana (PID 1) runs as uid 10001 and gid 10001, the config, IAP's pinned keys, provisioning, dashboards and
@@ -131,7 +131,7 @@ EOF
 packages="$(docker run --rm --network none --entrypoint awk "$tag" -F: \
   '/^P:/ { p = $2 }; /^V:/ { v = $2 }; /^o:(brotli|curl|musl|zlib)$/ { print p "-" v }' /lib/apk/db/installed \
   | sort | tr '\n' ' ' || true)"
-[ "$packages" = "brotli-libs-1.2.1-r0 curl-8.23.0-r0 libcurl-8.23.0-r0 musl-1.2.6-r3 musl-utils-1.2.6-r3 zlib-1.3.2-r1 " ] ||
+[ "$packages" = "brotli-libs-1.2.1-r0 curl-8.23.0-r0 libcurl-8.23.0-r0 musl-1.2.6-r3 musl-utils-1.2.6-r3 zlib-1.4-r0 " ] ||
   fail "the image's curl, zlib, musl and brotli packages are '$packages', not the fixed ones"
 echo "   $packages"
 

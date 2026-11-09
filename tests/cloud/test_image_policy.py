@@ -19,7 +19,7 @@ DOCKERFILE = ROOT / "cloud" / "Dockerfile"
 GRAFANA_COMMIT = "3c98af3ba0773ad12a8a54b1faec7dc62d8d6725"
 #: The Alpine 3.24 packages installed over the base's (tpa-platform's builds 4122c0b2, b5453d1f and ef0194fb), each fetched for
 #: both architectures by its sha256 from Alpine's own repository.
-PACKAGES = ("zlib-1.3.2-r1", "musl-1.2.6-r3", "musl-utils-1.2.6-r3", "brotli-libs-1.2.1-r0",
+PACKAGES = ("zlib-1.4-r0", "musl-1.2.6-r3", "musl-utils-1.2.6-r3", "brotli-libs-1.2.1-r0",
             "curl-8.23.0-r0", "libcurl-8.23.0-r0")
 ARCHES = ("x86_64", "aarch64")
 #: The module raised in grafana (build ef0194fb: go-jose v4 HIGH, fixed in v4.1.6): the official binary's version, the
