@@ -180,7 +180,7 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(stat(overview, "CRM", "crm-db")["fieldConfig"]["defaults"]["noValue"], "database stopped")
         self.assertEqual(shown(stat(overview, "Sign-in", "5xx (1 h)")), ("auto", "", "0", ["text", "orange", "red"]))
         self.assertEqual(stat(overview, "Sign-in", "auth-db")["fieldConfig"]["defaults"]["noValue"], "not reporting")
-        self.assertEqual(shown(stat(overview, "Scheduled", "auth-publisher"))[2], "MISSED")
+        self.assertEqual(shown(stat(overview, "Scheduled", "auth-sweeper"))[2], "MISSED")
 
     def test_paused_wins_over_stopped(self):
         overview = self.rendered(BETA, **RESTING)["overview.json"]
@@ -248,11 +248,11 @@ class RenderTest(unittest.TestCase):
                            TPA_PAUSED_JOBS="accumulator-reconcile,nightly-anomlies")
 
     def test_a_job_that_is_not_a_sweep_is_refused(self):
-        self.assertRefused(BETA, "TPA_PAUSED_JOBS names 'auth-publisher'", TPA_PAUSED_JOBS="auth-publisher")
+        self.assertRefused(BETA, "TPA_PAUSED_JOBS names 'auth-sweeper'", TPA_PAUSED_JOBS="auth-sweeper")
 
     def test_only_a_switched_job_can_be_not_deployed(self):
         # A sweep is always built; a typo, a database or the schedule's own wording are refused.
-        for name in ("nightly-anomalies", "feed-ingest", "feed-ingest-everon", "tpa-db", "auth-publisher"):
+        for name in ("nightly-anomalies", "feed-ingest", "feed-ingest-everon", "tpa-db", "auth-sweeper"):
             self.assertRefused(BETA, f"TPA_NOT_DEPLOYED_JOBS names '{name}', which is not one of",
                                TPA_NOT_DEPLOYED_JOBS=f"{IMPORTER},{name}")
         self.assertRefused(BETA, f"TPA_STOPPED_DATABASES names '{IMPORTER}'", TPA_STOPPED_DATABASES=IMPORTER)

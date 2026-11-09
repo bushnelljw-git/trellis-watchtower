@@ -23137,109 +23137,12 @@
       "panels": [
         {
           "type": "stat",
-          "title": "auth-publisher",
-          "description": "Successful executions of `auth-publisher` in the last 6 minutes: its missed-run deadline (3 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
-          "gridPos": {
-            "h": 4,
-            "w": 4,
-            "x": 0,
-            "y": 32
-          },
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "stackdriver",
-                "uid": "cloud-app"
-              },
-              "queryType": "timeSeriesList",
-              "timeSeriesList": {
-                "projectName": "__TPA_APP_PROJECT_ID__",
-                "filters": [
-                  "metric.type",
-                  "=",
-                  "run.googleapis.com/job/completed_execution_count",
-                  "AND",
-                  "resource.type",
-                  "=",
-                  "cloud_run_job",
-                  "AND",
-                  "resource.label.job_name",
-                  "=~",
-                  "auth-publisher",
-                  "AND",
-                  "metric.label.result",
-                  "=",
-                  "succeeded"
-                ],
-                "groupBys": [],
-                "crossSeriesReducer": "REDUCE_SUM",
-                "perSeriesAligner": "ALIGN_DELTA",
-                "alignmentPeriod": "+60s",
-                "view": "FULL",
-                "preprocessor": "none"
-              },
-              "aliasBy": "runs"
-            }
-          ],
-          "interval": "1m",
-          "timeFrom": "6m",
-          "hideTimeOverride": true,
-          "fieldConfig": {
-            "defaults": {
-              "unit": "short",
-              "color": {
-                "mode": "thresholds"
-              },
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "@@F,auth-db,@@text@@red@@",
-                    "value": null
-                  },
-                  {
-                    "color": "@@F,auth-db,@@text@@green@@",
-                    "value": 1
-                  }
-                ]
-              },
-              "mappings": [],
-              "noValue": "@@R,auth-db,@@MISSED@@",
-              "displayName": "@@R,auth-db,@@@@"
-            },
-            "overrides": []
-          },
-          "options": {
-            "reduceOptions": {
-              "calcs": [
-                "sum"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "orientation": "auto",
-            "textMode": "@@F,auth-db,@@value_and_name@@auto@@",
-            "colorMode": "value",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "wideLayout": true,
-            "showPercentChange": false
-          },
-          "id": 42
-        },
-        {
-          "type": "stat",
           "title": "erisa-clocks",
           "description": "Successful executions of `tpa-jobs-erisa-clocks` in the last 26 minutes: its missed-run deadline (23 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. Reads \"paused\" or \"database stopped\", in no colour, while `erisa-clocks` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 4,
+            "x": 0,
             "y": 32
           },
           "datasource": {
@@ -23327,7 +23230,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 43
+          "id": 42
         },
         {
           "type": "stat",
@@ -23336,7 +23239,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 8,
+            "x": 4,
             "y": 32
           },
           "datasource": {
@@ -23424,7 +23327,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 44
+          "id": 43
         },
         {
           "type": "stat",
@@ -23433,7 +23336,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 12,
+            "x": 8,
             "y": 32
           },
           "datasource": {
@@ -23521,7 +23424,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 45
+          "id": 44
         },
         {
           "type": "stat",
@@ -23530,7 +23433,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 16,
+            "x": 12,
             "y": 32
           },
           "datasource": {
@@ -23618,7 +23521,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 46
+          "id": 45
         },
         {
           "type": "stat",
@@ -23627,7 +23530,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 20,
+            "x": 16,
             "y": 32
           },
           "datasource": {
@@ -23715,7 +23618,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 47
+          "id": 46
         },
         {
           "type": "stat",
@@ -23724,8 +23627,8 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 0,
-            "y": 36
+            "x": 20,
+            "y": 32
           },
           "datasource": {
             "type": "stackdriver",
@@ -23812,7 +23715,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 48
+          "id": 47
         },
         {
           "type": "stat",
@@ -23821,7 +23724,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 4,
+            "x": 0,
             "y": 36
           },
           "datasource": {
@@ -23909,7 +23812,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 49
+          "id": 48
         },
         {
           "type": "stat",
@@ -23918,7 +23821,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 8,
+            "x": 4,
             "y": 36
           },
           "datasource": {
@@ -24006,7 +23909,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 50
+          "id": 49
         },
         {
           "type": "stat",
@@ -24015,7 +23918,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 12,
+            "x": 8,
             "y": 36
           },
           "datasource": {
@@ -24103,7 +24006,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 51
+          "id": 50
         },
         {
           "type": "stat",
@@ -24112,7 +24015,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 16,
+            "x": 12,
             "y": 36
           },
           "datasource": {
@@ -24200,7 +24103,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 52
+          "id": 51
         },
         {
           "type": "stat",
@@ -24209,7 +24112,7 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 20,
+            "x": 16,
             "y": 36
           },
           "datasource": {
@@ -24297,7 +24200,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 53
+          "id": 52
         },
         {
           "type": "stat",
@@ -24306,8 +24209,8 @@
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 0,
-            "y": 40
+            "x": 20,
+            "y": 36
           },
           "datasource": {
             "type": "stackdriver",
@@ -24394,7 +24297,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 54
+          "id": 53
         }
       ],
       "gridPos": {
@@ -24498,7 +24401,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 56
+          "id": 55
         },
         {
           "type": "stat",
@@ -24601,7 +24504,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 57
+          "id": 56
         },
         {
           "type": "stat",
@@ -24695,7 +24598,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 58
+          "id": 57
         },
         {
           "type": "stat",
@@ -24831,7 +24734,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 59
+          "id": 58
         },
         {
           "type": "stat",
@@ -24938,7 +24841,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 60
+          "id": 59
         },
         {
           "type": "stat",
@@ -25066,7 +24969,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 61
+          "id": 60
         }
       ],
       "gridPos": {
@@ -25075,7 +24978,7 @@
         "x": 0,
         "y": 32
       },
-      "id": 55
+      "id": 54
     },
     {
       "type": "row",
@@ -25170,7 +25073,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 63
+          "id": 62
         },
         {
           "type": "stat",
@@ -25273,7 +25176,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 64
+          "id": 63
         },
         {
           "type": "stat",
@@ -25371,7 +25274,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 65
+          "id": 64
         },
         {
           "type": "stat",
@@ -25505,7 +25408,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 66
+          "id": 65
         },
         {
           "type": "stat",
@@ -25721,7 +25624,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 67
+          "id": 66
         },
         {
           "type": "stat",
@@ -25849,7 +25752,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 68
+          "id": 67
         }
       ],
       "gridPos": {
@@ -25858,7 +25761,7 @@
         "x": 0,
         "y": 33
       },
-      "id": 62
+      "id": 61
     },
     {
       "type": "row",
@@ -25953,7 +25856,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 70
+          "id": 69
         },
         {
           "type": "stat",
@@ -26056,7 +25959,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 71
+          "id": 70
         },
         {
           "type": "stat",
@@ -26154,7 +26057,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 72
+          "id": 71
         },
         {
           "type": "stat",
@@ -26292,7 +26195,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 73
+          "id": 72
         },
         {
           "type": "stat",
@@ -26508,7 +26411,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 74
+          "id": 73
         },
         {
           "type": "stat",
@@ -26636,7 +26539,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 75
+          "id": 74
         }
       ],
       "gridPos": {
@@ -26645,7 +26548,7 @@
         "x": 0,
         "y": 34
       },
-      "id": 69
+      "id": 68
     },
     {
       "type": "row",
@@ -26740,7 +26643,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 77
+          "id": 76
         },
         {
           "type": "stat",
@@ -26843,7 +26746,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 78
+          "id": 77
         },
         {
           "type": "stat",
@@ -26968,7 +26871,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 79
+          "id": 78
         },
         {
           "type": "stat",
@@ -27102,7 +27005,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 80
+          "id": 79
         },
         {
           "type": "stat",
@@ -27318,7 +27221,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 81
+          "id": 80
         },
         {
           "type": "stat",
@@ -27415,7 +27318,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 82
+          "id": 81
         }
       ],
       "gridPos": {
@@ -27424,7 +27327,7 @@
         "x": 0,
         "y": 35
       },
-      "id": 76
+      "id": 75
     }
   ]
 }

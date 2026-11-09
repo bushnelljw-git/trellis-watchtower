@@ -80,8 +80,7 @@ SWEEP_DBS = ("auth-db", "tpa-db")   # a sweep's run needs auth (its token) and r
 # local.feed_ingest_missed_run_after, 43200 s), and what it needs to run: its own name while it can be paused or not be
 # built, and the databases it reads (tpa-platform's database_dependent_jobs; the importer's missed run is gated on
 # auth-db and tpa-db, main.tf's monitoring inputs). The monthly verify and the quarterly drill have none.
-DEADLINES = [(APP, "auth-publisher", 3, ("auth-db",)),
-             (APP, "tpa-jobs-erisa-clocks", 23, ("erisa-clocks", *SWEEP_DBS)),
+DEADLINES = [(APP, "tpa-jobs-erisa-clocks", 23, ("erisa-clocks", *SWEEP_DBS)),
              (APP, "tpa-jobs-nightly-anomalies", 90, ("nightly-anomalies", *SWEEP_DBS)),
              (APP, "auth-sweeper", 90, ("auth-db",)),
              (APP, IMPORTER, 720, (IMPORTER, *SWEEP_DBS)),
