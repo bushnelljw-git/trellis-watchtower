@@ -2,11 +2,17 @@
 """trellis-watchtower: send one test event to a TPA PagerDuty service, shaped like Cloud Monitoring's, and read back
 what PagerDuty made of it.
 
-The event goes through the service's own "Google Cloud Monitoring" integration on the Events API v1, the way a
-Monitoring `pagerduty` channel sends it, with `details.incident.severity` set as a Monitoring alert policy sets it and
-a subject of its own in `details.incident.documentation.subject`. The script then finds the incident, prints its
-urgency, the alert's severity, the priority and the title, compares them with the design (docs/PAGERDUTY.md), and
-resolves it through the same integration, so the escalation's second level never fires. Every title says
+The event goes through the integration the route names (pdlib.ROUTE; TW_PAGERDUTY_ROUTE=monitoring|transformer
+overrides it for one run):
+  transformer  Monitoring's own notification, {"incident": {…}, "version": "1.2"}, posted to the "Google Cloud
+               Monitoring (titled)" integration's address, where PagerDuty runs monitoring_transform.js on it. The
+               title must be the one that code gives: the subject without Monitoring's tag;
+  monitoring   an Events API v1 event through the plain "Google Cloud Monitoring" integration, the way a Monitoring
+               `pagerduty` channel sends it. The title is then Monitoring's own long summary.
+Either way `incident.severity` is set as a Monitoring alert policy sets it, with a subject of its own in
+`incident.documentation.subject`. The script then finds the incident, prints its urgency, the alert's severity, the
+priority and the title, compares them with the design (docs/PAGERDUTY.md), and resolves it through the same
+integration, so the escalation's second level never fires. Every title says
 "PagerDuty setup check, please ignore". The test pages whoever is on call, the way a real alert would: that is the
 point.
 
@@ -58,9 +64,12 @@ def subject(severity: str, service_name: str, monitoring_subject: bool) -> str:
     return f"[ALERT - {severity}] {TITLE} ({severity}, {service_name})"
 
 
-def expected_title(severity: str, service_name: str, monitoring_subject: bool) -> str:
+def expected_title(severity: str, service_name: str, monitoring_subject: bool, route: str = "monitoring") -> str:
     """The incident title the design gives (pdlib.py, "The incident's title"): the subject without its tag, or else
-    "policy · condition". Without the AIOps add-on (pdlib.AIOPS) nothing retitles it: Monitoring's own summary."""
+    "policy · condition". Through the titled integration, what its code gives. Through the plain one, nothing
+    retitles it without the AIOps add-on (pdlib.AIOPS): Monitoring's own summary."""
+    if route == "transformer":
+        return d.transformer_title(monitoring_incident("", severity, service_name, monitoring_subject))
     if not d.AIOPS:
         return description(severity, service_name)
     if monitoring_subject:
@@ -73,47 +82,58 @@ def description(severity: str, service_name: str) -> str:
     return f"{SUMMARY}: Monitoring's own summary of a {severity} test on {service_name} | Policy: {SUMMARY}"
 
 
+def monitoring_incident(incident_key: str, severity: str, service_name: str, monitoring_subject: bool = False,
+                        closed: bool = False) -> dict:
+    """Monitoring's incident object (its payload, version 1.2) for the test: open, or closed for the resolve."""
+    now = int(time.time())
+    return {
+        "incident_id": incident_key,
+        "scoping_project_id": "trellis-watchtower-test",
+        "scoping_project_number": 0,
+        "url": "",
+        "started_at": now,
+        "ended_at": now if closed else None,
+        "state": "closed" if closed else "open",
+        "summary": description(severity, service_name),
+        "apigee_url": "",
+        "observed_value": "1",
+        "resource": {"type": "global", "labels": {}},
+        "resource_type_display_name": "Global",
+        "resource_display_name": "trellis-watchtower test",
+        "metric": {"type": "custom.googleapis.com/trellis_watchtower/test", "displayName": "test", "labels": {}},
+        "metadata": {"system_labels": {}, "user_labels": {}},
+        "policy_name": SUMMARY,
+        "policy_user_labels": {},
+        "documentation": {"content": "A test from trellis-watchtower scripts/pagerduty/pd_test_event.py. "
+                                     "Nothing is wrong.", "mime_type": "text/markdown",
+                          "subject": subject(severity, service_name, monitoring_subject)},
+        "condition": {"name": "test", "displayName": CONDITION},
+        "condition_name": CONDITION,
+        "threshold_value": "0",
+        "severity": severity,
+    }
+
+
+def monitoring_notification(incident_key: str, severity: str, service_name: str, monitoring_subject: bool = False,
+                            closed: bool = False) -> dict:
+    """Monitoring's own notification, as the titled integration's code reads it."""
+    return {"incident": monitoring_incident(incident_key, severity, service_name, monitoring_subject, closed),
+            "version": "1.2"}
+
+
 def monitoring_event(key: str, incident_key: str, severity: str, service_name: str,
                      monitoring_subject: bool = False) -> dict:
     """An Events API v1 trigger as a Monitoring pagerduty channel sends it (Monitoring's payload, version 1.2). Its
     description, Monitoring's long summary, is the title only until the orchestration retitles it."""
-    now = int(time.time())
-    summary = description(severity, service_name)
     return {
         "service_key": key,
         "event_type": "trigger",
         "incident_key": incident_key,
-        "description": summary,
+        "description": description(severity, service_name),
         "client": "trellis-watchtower pd_test_event.py",
         "details": {
             "version": "1.2",
-            "incident": {
-                "incident_id": incident_key,
-                "scoping_project_id": "trellis-watchtower-test",
-                "scoping_project_number": 0,
-                "url": "",
-                "started_at": now,
-                "ended_at": None,
-                "state": "open",
-                "summary": summary,
-                "apigee_url": "",
-                "observed_value": "1",
-                "resource": {"type": "global", "labels": {}},
-                "resource_type_display_name": "Global",
-                "resource_display_name": "trellis-watchtower test",
-                "metric": {"type": "custom.googleapis.com/trellis_watchtower/test", "displayName": "test",
-                           "labels": {}},
-                "metadata": {"system_labels": {}, "user_labels": {}},
-                "policy_name": SUMMARY,
-                "policy_user_labels": {},
-                "documentation": {"content": "A test from trellis-watchtower scripts/pagerduty/pd_test_event.py. "
-                                             "Nothing is wrong.", "mime_type": "text/markdown",
-                                  "subject": subject(severity, service_name, monitoring_subject)},
-                "condition": {"name": "test", "displayName": CONDITION},
-                "condition_name": CONDITION,
-                "threshold_value": "0",
-                "severity": severity,
-            },
+            "incident": monitoring_incident(incident_key, severity, service_name, monitoring_subject),
         },
     }
 
@@ -121,6 +141,14 @@ def monitoring_event(key: str, incident_key: str, severity: str, service_name: s
 def send_event(body: dict) -> dict:
     url = d.base_url("PAGERDUTY_EVENTS_URL", d.PAGERDUTY_EVENTS) + "/generic/2010-04-15/create_event.json"
     return d.http_json("POST", url, {"Content-Type": "application/json"}, body) or {}
+
+
+def send_notification(key: str, body: dict) -> dict:
+    """Post Monitoring's notification to the titled integration's own address. The key is part of the address, which
+    is never printed."""
+    url = d.base_url("PAGERDUTY_EVENTS_URL", d.PAGERDUTY_EVENTS) + f"/integration/{key}/enqueue"
+    answer = d.http_json("POST", url, {"Content-Type": "application/json"}, body)
+    return answer if isinstance(answer, dict) else {}
 
 
 def find_incident(pd: PagerDuty, service_id: str, incident_key: str, since: datetime, wait: float):
@@ -153,26 +181,41 @@ def main() -> int:
 
     cfg = next(s for s in d.SERVICES if s["role"] == args.role)
     want_urgency, want_severity, want_priority = expected(args.severity)
-    want_title = expected_title(args.severity, cfg["name"], args.monitoring_subject)
+    route = d.route()
+    titled = route == "transformer"
+    want_title = expected_title(args.severity, cfg["name"], args.monitoring_subject, route)
     pd = PagerDuty(d.pagerduty_token())
-    service, key = d.service_integration_key(pd, cfg["name"])
+    service, key = d.service_integration_key(pd, cfg["name"], route)
     incident_key = f"tw-test-{uuid.uuid4().hex[:12]}"
-    event = monitoring_event(key, incident_key, args.severity, cfg["name"], args.monitoring_subject)
-    out(f'pd_test_event: "{cfg["name"]}", Monitoring severity "{args.severity}"; the design gives urgency '
+    if titled:
+        event = monitoring_notification(incident_key, args.severity, cfg["name"], args.monitoring_subject)
+    else:
+        event = monitoring_event(key, incident_key, args.severity, cfg["name"], args.monitoring_subject)
+    out(f'pd_test_event: "{cfg["name"]}", Monitoring severity "{args.severity}", route {route} (the '
+        f'"{d.route_integration(route)}" integration); the design gives urgency '
         f'{want_urgency}, severity {want_severity}, priority {want_priority or "none"}, title "{want_title}"')
     if not args.send:
         shown = {k: v for k, v in event.items() if k != "service_key"}
-        out("dry run: this event would be sent (service_key not shown); --send sends it")
+        out("dry run: this notification would be posted to the integration's address (its key not shown); --send "
+            "sends it" if titled else "dry run: this event would be sent (service_key not shown); --send sends it")
         out(json.dumps(shown, indent=1, ensure_ascii=False))
         return 0
 
+    def resolve(words: str | None = None) -> None:
+        if titled:
+            send_notification(key, monitoring_notification(incident_key, args.severity, cfg["name"],
+                                                           args.monitoring_subject, closed=True))
+        else:
+            send_event({"service_key": key, "event_type": "resolve", "incident_key": incident_key,
+                        **({"description": words} if words else {})})
+
     since = datetime.now(timezone.utc) - timedelta(minutes=1)
-    sent = send_event(event)
-    out(f"sent       trigger, incident key {incident_key}: {sent.get('status', '?')}")
+    sent = send_notification(key, event) if titled else send_event(event)
+    out(f"sent       trigger, incident key {incident_key}: {sent.get('status') or 'accepted'}")
     incident, alert = find_incident(pd, service["id"], incident_key, since, args.wait)
     if incident is None:
         out(f"NOT FOUND  no incident within {args.wait:.0f} s")
-        send_event({"service_key": key, "event_type": "resolve", "incident_key": incident_key})
+        resolve()
         return 1
     got = (incident.get("urgency"), alert.get("severity"), (incident.get("priority") or {}).get("summary"))
     title = incident.get("title")
@@ -186,8 +229,7 @@ def main() -> int:
     if args.keep:
         out("kept open (--keep): resolve it in PagerDuty when done")
         return 0 if ok else 1
-    send_event({"service_key": key, "event_type": "resolve", "incident_key": incident_key,
-                "description": f"{SUMMARY}: resolved by the test"})
+    resolve(f"{SUMMARY}: resolved by the test")
     deadline = time.monotonic() + args.wait
     while True:
         status = pd.get(f"/incidents/{incident['id']}")["incident"].get("status")

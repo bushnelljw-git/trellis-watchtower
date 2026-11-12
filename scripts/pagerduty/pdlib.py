@@ -2,7 +2,8 @@
 
 The design (docs/PAGERDUTY.md) is the constants below. pd_setup.py makes PagerDuty match it, tf_with_keys.py hands
 the services' integration keys to the tpa-platform Terraform apply that makes each project's `pagerduty` notification
-channel, and pd_test_event.py sends one Monitoring-shaped test event through a service's integration.
+channel, and pd_test_event.py sends one Monitoring-shaped test event through a service's integration. Each service
+has two integrations, and ROUTE below says which one's key those two scripts use.
 
 Secrets. The PagerDuty REST API key comes from PAGERDUTY_TOKEN, or else from the macOS login keychain (generic password,
 service "tpa-pagerduty-api"). It and every integration key the scripts handle are registered with `secret()`, and
@@ -15,12 +16,14 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 # ---- the design ------------------------------------------------------------------------------------------------------
 
@@ -61,15 +64,39 @@ ACK_TIMEOUT_SECONDS = 30 * 60
 # PagerDuty's AIOps add-on. The owner, 2026-11-12, of the account made after PagerDuty deleted the first one: "We are
 # not using AIops". Off, the design leaves out the two things only the add-on runs: the incident titles (a second rule
 # set, variables and extractions: Advanced Event Orchestration) and alert grouping. pd_setup.py then makes each
-# service's orchestration the severity rules alone and never reads or writes a grouping setting, and pd_test_event.py
-# expects Monitoring's own summary as the title. The variable is for the tests, which keep the add-on's design
-# covered; if the account buys the add-on, set this to True here.
+# service's orchestration the severity rules alone and never reads or writes a grouping setting. The titles then come
+# from the second integration instead ("The titled integration", below). The variable is for the tests, which keep
+# the add-on's design covered.
 AIOPS = os.environ.get("TW_PAGERDUTY_AIOPS", "").strip() == "1"
 TIME_GROUPING_MINUTES = 10
 
 VENDOR_ID = "PUCLE3C"  # PagerDuty's "Google Cloud Monitoring" vendor (generic_service_type "api": the Events API v1)
 INTEGRATION_TYPE = "generic_events_api_inbound_integration"
 INTEGRATION_NAME = "Google Cloud Monitoring"
+
+# The titled integration (docs/PAGERDUTY.md, "Incident titles"). Each service has a second integration, PagerDuty's
+# Custom Event Transformer: a small piece of JavaScript that PagerDuty runs on every request posted to the
+# integration's own address. Its code is scripts/pagerduty/monitoring_transform.js, with WATCHTOWER_URL put in, and it
+# gives each incident its short title ("The incident's title", below, rules 1 to 3), a few plainly named details and
+# its links to the watchtower. It needs no add-on. pd_setup.py creates it, stores the code and corrects the stored
+# code whenever it differs from the file. The integration above stays as it is: it is the way back.
+TRANSFORMER_VENDOR_ID = "PCJ0EFQ"  # PagerDuty's "Custom Event Transformer" vendor
+TRANSFORMER_TYPE = "event_transformer_api_inbound_integration"
+TRANSFORMER_NAME = "Google Cloud Monitoring (titled)"
+TRANSFORM_FILE = Path(__file__).resolve().with_name("monitoring_transform.js")
+# The production watchtower (Grafana, behind Google sign-in). Every incident links to its best-matching page and to
+# the overview, at <this>/d/<dashboard uid>; the pages and the matching are in monitoring_transform.js.
+WATCHTOWER_URL = "https://watch.trellistpa.com"
+WATCHTOWER_PLACEHOLDER = "__WATCHTOWER_URL__"
+
+# Which integration's key Monitoring is given (tf_with_keys.py) and the test event goes through (pd_test_event.py):
+#   "transformer"  the titled integration. The design without the AIOps add-on, which is how the account runs;
+#   "monitoring"   the plain "Google Cloud Monitoring" integration: Monitoring's own long title. The way back, and
+#                  the design with the add-on, whose orchestration writes the titles itself.
+# TW_PAGERDUTY_ROUTE=monitoring|transformer overrides it for one run: the rollback, and the tests.
+ROUTES = ("monitoring", "transformer")
+ROUTE = "monitoring" if AIOPS else "transformer"
+ROUTE_VARIABLE = "TW_PAGERDUTY_ROUTE"
 
 # One service per Google Cloud project. `role` is that project's key in tpa-platform's `pagerduty_service_keys`.
 SERVICES = [
@@ -147,7 +174,9 @@ def rule_label(rule: dict) -> str:
 # Severity-based urgency (dynamic notifications): critical and error page at high urgency, warning and info at low.
 EXPECTED_URGENCY = {"critical": "high", "error": "high", "warning": "low", "info": "low"}
 
-# The incident's title (docs/PAGERDUTY.md, "Incident titles"). Monitoring titles each event with its generated summary
+# The incident's title (docs/PAGERDUTY.md, "Incident titles"). Without the AIOps add-on the titled integration's
+# code writes it (monitoring_transform.js: rules 1 to 3 below, and its own details); what follows is how the
+# orchestration writes the same title with the add-on. Monitoring titles each event with its generated summary
 # ("tpa_jobs_alerts for trellistpa-beta-tpa-app Cloud Run Job labels {…} with metric labels {…} is above the threshold
 # of 0.000 with a value of 2.000. | Violation started: … | Policy: … | View incident: <url>"), and PagerDuty and Slack
 # show it as the incident's title.
@@ -229,6 +258,74 @@ CONTACT_WORDS = {
     "email_contact_method": "email",
     "slack_contact_method": "Slack",
 }
+
+TITLE_LIMIT = 250
+_TAG = re.compile(r"^\[[^\]]*\] ")
+_OUR_SUBJECT = re.compile(r"^[a-z][a-z-]* · ")
+
+
+def transformer_title(incident: dict) -> str:
+    """The title monitoring_transform.js gives Monitoring's incident object: the same rules, written again here so
+    pd_test_event.py knows what to expect. tests/pagerduty/test_monitoring_transform.py holds the two to each other."""
+    def text(value) -> str:
+        return "" if value is None else str(value).strip()
+
+    subject = _TAG.sub("", text((incident.get("documentation") or {}).get("subject")), count=1)
+    policy, condition = text(incident.get("policy_name")), text(incident.get("condition_name"))
+    if _OUR_SUBJECT.match(subject):
+        title = subject
+    elif policy and condition:
+        title = policy + TITLE_SEPARATOR + condition
+    else:
+        title = text(incident.get("summary")) or "Cloud Monitoring alert"
+    return title if len(title) <= TITLE_LIMIT else title[:TITLE_LIMIT - 3] + "..."
+
+
+def normalise_code(code: str | None) -> str:
+    """Code as compared: line endings made the same, and no space at the end of a line or blank line at either end
+    (PagerDuty may store either differently from what it was sent)."""
+    lines = (code or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    return "\n".join(line.rstrip() for line in lines).strip()
+
+
+def transformer_code() -> str:
+    """The code the titled integration must hold: the file's text with the watchtower's address put in."""
+    code = TRANSFORM_FILE.read_text(encoding="utf-8")
+    if code.count(WATCHTOWER_PLACEHOLDER) != 1:
+        raise Refused(f"{TRANSFORM_FILE.name} must hold {WATCHTOWER_PLACEHOLDER} exactly once")
+    return normalise_code(code.replace(WATCHTOWER_PLACEHOLDER, WATCHTOWER_URL.rstrip("/")))
+
+
+def stored_code(integration: dict) -> str:
+    """The code PagerDuty holds for a transformer integration, as read from GET …/integrations/{id}."""
+    value = (((integration.get("config") or {}).get("fields") or {}).get("code") or {}).get("value")
+    return normalise_code(value if isinstance(value, str) else "")
+
+
+def integration_name(integration: dict) -> str:
+    """An integration's name, as a full object gives it (`name`) or a reference to one does (`summary`)."""
+    return integration.get("name") or integration.get("summary") or ""
+
+
+def is_transformer(integration: dict) -> bool:
+    """The titled integration: found by its exact name, and of the transformer's type or vendor."""
+    return (integration_name(integration) == TRANSFORMER_NAME
+            and ((integration.get("type") or "").startswith(TRANSFORMER_TYPE)
+                 or (integration.get("vendor") or {}).get("id") == TRANSFORMER_VENDOR_ID))
+
+
+def route() -> str:
+    """The route in force: TW_PAGERDUTY_ROUTE when set, else ROUTE."""
+    chosen = os.environ.get(ROUTE_VARIABLE, "").strip() or ROUTE
+    if chosen not in ROUTES:
+        raise Refused(f"{ROUTE_VARIABLE} is {chosen!r}: it may only be {' or '.join(ROUTES)}")
+    return chosen
+
+
+def route_integration(chosen: str) -> str:
+    """The name of the integration a route goes through."""
+    return TRANSFORMER_NAME if chosen == "transformer" else INTEGRATION_NAME
+
 
 # ---- printing, with every secret scrubbed ----------------------------------------------------------------------------
 
@@ -457,19 +554,33 @@ class PagerDuty:
         return found[0] if found else None
 
 
-def service_integration_key(pd: PagerDuty, service_name: str) -> tuple[dict, str]:
-    """The service and its Google Cloud Monitoring integration key (registered as a secret, never printed)."""
+def service_integration_key(pd: PagerDuty, service_name: str, chosen: str | None = None) -> tuple[dict, str]:
+    """The service and the key of the integration the route goes through (registered as a secret, never printed):
+    the titled integration's by default, the plain Google Cloud Monitoring integration's under "monitoring". The
+    titled integration's key is given out only while PagerDuty holds the file's code for it."""
+    chosen = chosen or route()
+    name = route_integration(chosen)
     service = pd.find_by_name("/services", "services", service_name, {"include[]": "integrations"})
     if service is None:
         raise Refused(f'no PagerDuty service "{service_name}": run scripts/pagerduty/pd_setup.py --apply first')
-    ours = [i for i in service.get("integrations") or [] if (i.get("vendor") or {}).get("id") == VENDOR_ID]
+    integrations = service.get("integrations") or []
+    if chosen == "transformer":
+        ours = [i for i in integrations if is_transformer(i)]
+    else:
+        ours = [i for i in integrations if (i.get("vendor") or {}).get("id") == VENDOR_ID]
     if not ours:
-        raise Refused(f'"{service_name}" has no {INTEGRATION_NAME} integration: run pd_setup.py --apply first')
+        raise Refused(f'"{service_name}" has no {name} integration: run pd_setup.py --apply first')
+    if chosen == "transformer" and len(ours) > 1:
+        raise Refused(f'"{service_name}" has {len(ours)} integrations named "{name}": remove the extra ones first')
     full = pd.get(f"/services/{service['id']}/integrations/{ours[0]['id']}")["integration"]
     key = full.get("integration_key") or ""
     if not key:
         raise Refused(f'"{service_name}": PagerDuty returned no integration key')
-    return service, secret(key)
+    secret(key)
+    if chosen == "transformer" and stored_code(full) != transformer_code():
+        raise Refused(f'"{service_name}": the code PagerDuty holds for "{name}" is not {TRANSFORM_FILE.name}: run '
+                      "pd_setup.py --apply first")
+    return service, key
 
 
 def run_main(main) -> None:

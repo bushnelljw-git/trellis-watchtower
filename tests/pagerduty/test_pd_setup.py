@@ -25,12 +25,16 @@ import pdlib  # noqa: E402
 SUMMARY_STEADY_DRY = r"^summary: 0 to create, 0 to update, \d+ ok, 0 kept, 0 refused, 3 by hand$"
 
 
-def run(server, script, *args, token=fakes.TOKEN, path_prefix=None, aiops=True):
+def run(server, script, *args, token=fakes.TOKEN, path_prefix=None, aiops=True, route=None):
     """`aiops`: the design with PagerDuty's AIOps add-on (pdlib.AIOPS), which most of these tests cover; False is the
-    design as it runs live since 2026-11-12."""
-    env = {k: v for k, v in os.environ.items() if k not in ("PAGERDUTY_TOKEN", "TW_PAGERDUTY_AIOPS")}
+    design as it runs live since 2026-11-12, with the titled integration. `route`: TW_PAGERDUTY_ROUTE, unset when
+    None (pdlib.ROUTE then decides)."""
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PAGERDUTY_TOKEN", "TW_PAGERDUTY_AIOPS", "TW_PAGERDUTY_ROUTE")}
     if aiops:
         env["TW_PAGERDUTY_AIOPS"] = "1"
+    if route is not None:
+        env["TW_PAGERDUTY_ROUTE"] = route
     env.update({
         "PAGERDUTY_API_URL": server.url("pd"),
         "PAGERDUTY_EVENTS_URL": server.url("events"),
@@ -62,9 +66,9 @@ class Base(unittest.TestCase):
         self.outputs += [result.stdout, result.stderr]
         return result
 
-    def apply(self, *extra):
+    def apply(self, *extra, **kw):
         """The first live setup: --apply --add-rules (a plain --apply never creates a notification rule)."""
-        result = self.pd("--apply", "--add-rules", *extra)
+        result = self.pd("--apply", "--add-rules", *extra, **kw)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
@@ -501,13 +505,16 @@ if __name__ == "__main__":
 
 class WithoutAiops(Base):
     """The design as it runs live (pdlib.AIOPS off: the owner, 2026-11-12, "We are not using AIops"): the severity
-    rules alone, no titles, and no alert grouping setting read or written. The fake account has neither feature."""
+    rules alone, no title rules, and no alert grouping setting read or written. The fake account has neither
+    feature. The titles come from the titled integration instead (test_pd_transformer.py)."""
     state_options = {"advanced_orchestration": False, "grouping_error": (403, "Access Denied")}
 
     def test_severity_alone_no_grouping_nothing_refused_and_steady(self):
         dry = self.pd(aiops=False)
         self.assertNotIn("alert grouping", dry.stdout)
-        self.assertNotIn("title", dry.stdout)
+        for line in dry.stdout.splitlines():
+            if "event orchestration" in line:
+                self.assertNotIn("title", line)
         first = self.pd("--apply", "--add-rules", aiops=False)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         self.assertIn(", refused 0,", self.summary(first))
@@ -530,9 +537,10 @@ class WithoutAiops(Base):
             self.assertEqual([s["id"] for s in path["sets"]], ["start"])
 
     def test_the_test_event_expects_monitorings_own_summary(self):
+        """Through the plain integration (the way back), nothing retitles the event."""
         self.pd("--apply", "--add-rules", aiops=False)
         result = run(self.server, "pd_test_event.py", "--role", "app", "--severity", "warning", "--send", "--wait",
-                     "5", aiops=False)
+                     "5", aiops=False, route="monitoring")
         self.outputs += [result.stdout, result.stderr]
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("urgency low, alert severity warning, priority P3", result.stdout)

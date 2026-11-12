@@ -11,8 +11,9 @@ to Slack.
 alert policy (severity CRITICAL or WARNING)
   -> the project's `pagerduty` notification channel          (tpa-platform's Terraform; tf_with_keys.py gives it the key)
   -> PagerDuty service "TPA beta · …"                        (pd_setup.py makes it)
-       event orchestration: severity (any letter case) -> alert severity + priority, then
-                            the title (the policy's subject, else "policy · condition")
+       integration "Google Cloud Monitoring (titled)": the title (the policy's subject, else
+                            "policy · condition"), the details and the watchtower links
+       event orchestration: severity (any letter case) -> alert severity + priority
        urgency from severity: critical/error = high, warning/info = low
   -> escalation policy "TPA Platform"                        (high urgency only; low urgency never escalates)
        level 1: on call on "TPA primary on-call" (15 min)
@@ -26,11 +27,16 @@ PagerDuty deleted the TPA's first account. The owner made a new one and the same
 --add-rules` rebuilt everything below in it under the same names. What differs from the first account:
 
 - **No AIOps add-on** (the owner: *"We are not using AIops"*). `pdlib.AIOPS` is off, so the design leaves out the two
-  things only the add-on runs: the incident titles ("Incident titles" below) and the alert grouping settings. Each
-  service's orchestration is the three severity rules alone, the incident's title is Monitoring's own summary, and
-  `pd_setup.py` neither reads nor writes a grouping setting. Severity, urgency and priority are unchanged. If the
-  account buys the add-on, set `AIOPS = True` in `pdlib.py` and re-run. The sections on titles and grouping below
-  describe the design with the add-on.
+  things only the add-on runs: the orchestration's title rules and the alert grouping settings. Each service's
+  orchestration is the three severity rules alone, and `pd_setup.py` neither reads nor writes a grouping setting.
+  Severity, urgency and priority are unchanged. The account refuses the title rules outright (`forbidden_feature`
+  for template strings, variables and extractions, proven again on 2026-11-12 in a single flat set).
+- **The titles come from a second integration instead.** The owner, the same day, of #pd-incidents: *"the messages to
+  that channel suck, not easy to read whats going on, long form text not well formatted, it should be very well
+  structured, easy to read"*, and *"I want ALL message and alerts to be well structured and formatted and links to
+  the production watchtower platform"*. Each service now has a "Google Cloud Monitoring (titled)" integration, a
+  small piece of code PagerDuty runs on every notification, which needs no add-on ("Incident titles" below). The
+  plain "Google Cloud Monitoring" integration and its key stay: they are the way back.
 - **Slack channel: #pd-incidents**, the channel PagerDuty made in the workspace (the first account's
   #tpa-beta-alerts is gone). The three connections were made through PagerDuty's Slack integration API
   (`POST app.pagerduty.com/integration-slack/workspaces/<team>/connections`). Made as `notification_type: responder`
@@ -57,7 +63,7 @@ All of it was made by `scripts/pagerduty/pd_setup.py` on 2026-10-11 and is check
 | Team | TPA Platform | Jonathan Bushnell and Rafeale Hill, both **manager**. PagerDuty gives an account owner or admin the manager role only. |
 | Schedule | TPA primary on-call | America/Chicago. One weekly layer, handed off Monday at 09:00. Jonathan alone today. To make it a rotation, add a name to `ROTATION` in `pdlib.py` and re-run. The script only changes a schedule that has exactly one active layer. |
 | Escalation policy | TPA Platform | Owned by the team. Level 1: the schedule, 15 min. Level 2: Rafeale Hill, 15 min. Repeats twice. |
-| Services | TPA beta · Portal & API (app project), TPA beta · Member records (PHI project), TPA beta · Call centre (call-centre project) | The escalation policy above. Urgency from severity (dynamic notifications). Acknowledgement timeout 30 min. No auto-resolve, because Monitoring resolves. One "Google Cloud Monitoring" integration each. A service event orchestration: the severity (next section), then the title ("Incident titles"). |
+| Services | TPA beta · Portal & API (app project), TPA beta · Member records (PHI project), TPA beta · Call centre (call-centre project) | The escalation policy above. Urgency from severity (dynamic notifications). Acknowledgement timeout 30 min. No auto-resolve, because Monitoring resolves. Two integrations each: "Google Cloud Monitoring (titled)", which Monitoring's channel is given and which writes the title, the details and the watchtower links ("Incident titles"), and the plain "Google Cloud Monitoring", kept as the way back. A service event orchestration: the severity (next section). |
 | Alert grouping settings | one per service, named after it | Intelligent grouping (PagerDuty set a 5-minute window). The script falls back to time-based grouping (10 minutes) only if PagerDuty's refusal says "intelligent". It uses `/alert_grouping_settings`, because the service field `alert_grouping_parameters` is deprecated. |
 | Business service | Trellis TPA (beta) | Supported by the three services. It is what PagerDuty's status dashboard shows. |
 | Notification rules | Jonathan Bushnell, Rafeale Hill | Built from the contact methods each person already has, and created only with `--add-rules` (next sections). |
@@ -113,7 +119,95 @@ in the app, by email and in Slack. Incident #31's title was:
 > labels {code=workload_orphan, job=workload_audit} is above the threshold of 0.000 with a value of 2.000. | Violation
 > started: … | Policy: beta: a job raised an alert | Condition: from a scheduled run | View incident: https://…
 
-So each service's event orchestration now has two sets. The `start` set holds the three severity rules of the
+The title, either way, is the same three rules, the first that fits:
+
+| Rule | Fits when | Title |
+|---|---|---|
+| The policy's own subject | `documentation.subject`, after at most one leading `[…] ` tag, starts with a word and ` · ` (tpa-platform's "<environment> · <what happened>") | the subject without the tag, e.g. "beta · tpa-jobs cutoff_freeze behind: cutoff_freeze_behind" |
+| policy · condition | `policy_name` and `condition_name` both have one | "beta: a job raised an alert · from a scheduled run" |
+| As Monitoring wrote it | otherwise | Monitoring's summary (or "Cloud Monitoring alert" when there is none) |
+
+### The titled integration (how the account runs, 2026-11-12)
+
+Each service has a second integration, **"Google Cloud Monitoring (titled)"**. It is PagerDuty's Custom Event
+Transformer (vendor `PCJ0EFQ`, type `event_transformer_api_inbound_integration`): PagerDuty runs a small piece of
+JavaScript on every request posted to the integration's own address, and the code says what event to make. It is part
+of the plan the account has, with no add-on.
+
+- **The code is `scripts/pagerduty/monitoring_transform.js`.** `pd_setup.py` creates the integration, stores the
+  file's text in it (with the watchtower's address, `pdlib.WATCHTOWER_URL`, put in), reads it back, and on every
+  later run compares what PagerDuty holds with the file and updates PagerDuty when they differ (line endings and
+  space at a line's end aside). Change the file and re-run; never edit the code in PagerDuty's screen. PagerDuty's
+  runtime is ES5, and the tests refuse anything newer in the file.
+- **What it makes of a notification.** Monitoring posts `{"incident": {…}, "version": "1.2"}`. The code emits one
+  event: a trigger, or a resolve when `incident.state` is `closed`, keyed by `incident.incident_id` so the resolve
+  finds its incident. The title is the table above, cut at 250 characters. A body with no `incident` object makes no
+  event at all (`PD.fail`), so it pages nobody.
+- **The details**, in reading order, each left out when it has nothing to say:
+
+  | Detail | From |
+  |---|---|
+  | `what_happened` | the title |
+  | `what_to_check` | `documentation.content`: the policy's own words on what happened and what to read |
+  | `dashboard` | the watchtower page that best fits the alert (below) |
+  | `overview` | the watchtower's overview page |
+  | `project` | `resource.labels.project_id` |
+  | `severity` | `severity`, as Monitoring wrote it |
+  | `measured` | `observed_value` and `threshold_value`: "1.000 (threshold 0)" |
+  | `where` | `resource_type_display_name`, e.g. "Cloud Run Revision" |
+  | `metric` | `metric.type` and its labels: "…/tpa_jobs_alerts {code=cutoff_freeze_behind, job=cutoff_freeze}" |
+  | `policy`, `condition` | `policy_name`, `condition_name` |
+  | `started`, `ended` | `started_at`, `ended_at`, as "2026-11-12T11:28:39Z" |
+  | `console` | `url`: the incident in the Google Cloud console |
+  | `monitoring_summary` | `summary`: Monitoring's own long sentence, which used to be the title |
+  | `incident` | Monitoring's whole object, unchanged |
+
+  `incident` stays where it was, so the severity rules of the section above still read
+  `event.custom_details.incident.severity`: urgency and priority are exactly as before.
+- **The links.** Every incident carries links to the production watchtower (the hosted Grafana, `cloud/`): the
+  `dashboard` and `overview` details above, and the event's link list, "Watchtower: <page>", "Watchtower: overview"
+  and "Cloud Monitoring incident" (the console). The event's own link (`client_url`, the "view in" link PagerDuty
+  shows) is the watchtower page; the console is one of the links beside it. **The watchtower links open only for
+  people who can sign in to the watchtower** (Google sign-in, `grp-platform`); anyone else gets Google's refusal.
+  The page is picked from the alert alone, the first that fits:
+
+  | The alert | Page |
+  |---|---|
+  | names jobs: `tpa_jobs` or `tpa-jobs` in the metric type, the policy or condition name or the subject, or a `cloud_run_job` or `cloud_scheduler_job` resource | Jobs |
+  | names `cloudsql` | Databases |
+  | names an `auth_` counter or "sign-in" | Sign-in |
+  | is on a Cloud Run service that has a page of its own (`resource.labels.service_name`) | that service's page |
+  | is in a project ending `-tpa-app`, `-tpa-phi`, `-cc` | Portal & API, Member records, Call centre |
+  | anything else | the overview |
+
+  The pages are named in the file by their dashboard ids, and a test holds each id, and the list of service pages,
+  to the files in `cloud/dashboards`: renaming a dashboard fails `make pagerduty-test`.
+- **Which integration is used: the route.** `pdlib.ROUTE` is `transformer`. `tf_with_keys.py` hands Monitoring's
+  channels the titled integration's keys, and `pd_test_event.py` posts through it. Both refuse a titled integration
+  whose stored code is not the file's. `TW_PAGERDUTY_ROUTE=monitoring` on one command makes it use the plain
+  integration instead: that, and the "Rotation" apply below, is the whole way back.
+- **Not yet proven: Monitoring's own channel posting to it.** The integration was proven on 2026-11-12 by posting
+  Monitoring's notification to its address by hand (trigger and resolve, title exactly the subject).
+  Whether Google's `pagerduty` channel, given a titled integration's key, reaches the code is not yet seen. The
+  first apply with the test switch ("The test page" below) proves it; until then the plain integration and its keys
+  stay as they are, and the way back is one apply. The code also reads an Events API v1 event that carries the
+  incident in its details, in case that is what the channel posts.
+
+**Applying it.**
+1. `make pagerduty-plan`: three creates, the titled integration on each service.
+2. `python3 scripts/pagerduty/pd_setup.py --apply`, then `make pagerduty-plan` again: "0 to create, 0 to update".
+3. `python3 scripts/pagerduty/pd_test_event.py --role app --severity Warning --send`, then `phi` and `cc`. Each must
+   print "as designed" with the title "test · PagerDuty setup check, please ignore (…)". It pages whoever is on call
+   at low urgency, and resolves itself.
+4. The "Rotation" apply below, for all three channels, then the test page.
+
+### With the AIOps add-on (not how the account runs)
+
+The first account had the add-on, and wrote the same titles in each service's event orchestration. The scripts keep
+that design behind `pdlib.AIOPS` (off) and the tests keep it covered. It then needs no titled integration, and the
+route is `monitoring`.
+
+Each service's event orchestration then has two sets. The `start` set holds the three severity rules of the
 section above. Each of them, and a fourth rule with no conditions for any other event, then sends the event on
 (`route_to`) to the `titles` set, which picks the title. In each set, the first rule that matches wins:
 
@@ -177,12 +271,12 @@ the titles, never the severity.
 action that changed, such as "route_to added"), `-` removed. `pd_test_event.py` gives its event a subject in
 tpa-platform's shape with Monitoring's tag in front (`[ALERT - warning] test · PagerDuty setup check, please ignore
 (…)`) and checks the title: the subject without the tag, or, with `--monitoring-subject` (Monitoring's own default
-subject), "policy · condition".
+subject), "policy · condition". It does the same through the titled integration.
 
-**Applying it.**
+**Applying it (with the add-on only).**
 1. `make pagerduty-plan`, and read the three updates.
 2. `python3 scripts/pagerduty/pd_setup.py --apply`. If it refuses with "lacks Advanced Event Orchestration", the
-   account needs the add-on. Nothing else changed, and the severity rules are as they were.
+   account has no add-on. Nothing else changed, and the severity rules are as they were.
 3. `make pagerduty-plan` again. It must print "0 to create, 0 to update". If an orchestration still shows as an
    update, PagerDuty stores a field the comparison doesn't expect: read the `~` line before re-applying.
 4. The two live test events (`pd_test_event.py`, "Verified live" below).
@@ -279,11 +373,12 @@ unset PD_KEY
 | Script | Does | Default | To change things |
 |---|---|---|---|
 | `scripts/pagerduty/pd_setup.py` | Makes PagerDuty match this page, found by exact name. Never deletes. Never touches what it did not make, except the two people's notification rules, and those only with `--add-rules`. Stops when a parent object is refused. | dry run: prints create / update / ok / kept / refused / by hand | `--apply`; `--add-rules` (create missing designed notification rules: the only way any rule is created); `--retry-intelligent-grouping` |
-| `scripts/pagerduty/tf_with_keys.py -- terraform -chdir=DIR plan\|apply [-flag=value …]` | Reads the three services' integration keys and runs that one Terraform command with `TF_VAR_pagerduty_service_keys` in its environment only. Prints one line saying which keys it found. Stops before Terraform if one is missing. Refuses any other command. | none: it runs the plan or apply it is given (`plan` is the dry run) | `--env production` (the "TPA production ·" services) |
-| `scripts/pagerduty/pd_test_event.py --role app\|phi\|cc --severity <text>` | Sends one Monitoring-shaped test event through the service's own integration. The severity can be in any case, for example `critical`, `WARNING` or `"no severity"`. Prints the urgency, severity, priority and title PagerDuty gave it, checks them against the tables above, and resolves it. | dry run: shows the event (key hidden) | `--send`; `--keep` (leave it open); `--monitoring-subject` (Monitoring's own subject, so the title must be "policy · condition") |
+| `scripts/pagerduty/tf_with_keys.py -- terraform -chdir=DIR plan\|apply [-flag=value …]` | Reads the three services' integration keys (the titled integration's, or the plain one's with `TW_PAGERDUTY_ROUTE=monitoring`) and runs that one Terraform command with `TF_VAR_pagerduty_service_keys` in its environment only. Prints one line saying which route's keys it found. Stops before Terraform if one is missing, or if a titled integration does not hold the file's code. Refuses any other command. | none: it runs the plan or apply it is given (`plan` is the dry run) | `--env production` (the "TPA production ·" services); `TW_PAGERDUTY_ROUTE=monitoring` (the way back) |
+| `scripts/pagerduty/pd_test_event.py --role app\|phi\|cc --severity <text>` | Posts one test notification, shaped as Monitoring posts it, to the service's titled integration (or, with `TW_PAGERDUTY_ROUTE=monitoring`, an Events API v1 event through the plain one). The severity can be in any case, for example `critical`, `WARNING` or `"no severity"`. Prints the urgency, severity, priority and title PagerDuty gave it, checks them against the tables above, and resolves it. | dry run: shows the notification (key hidden) | `--send`; `--keep` (leave it open); `--monitoring-subject` (Monitoring's own subject, so the title must be "policy · condition") |
 
 `make pagerduty-plan` is the `pd_setup.py` dry run. `make pagerduty-test` runs the scripts' tests against a local fake
-PagerDuty and a fake `terraform` (part of `make check`). The fakes are an automated gate only; the live account is the real proof.
+PagerDuty and a fake `terraform` (part of `make check`). The tests of the titled integration's code run it under
+`node`; without `node` they are skipped with a loud warning, never passed. The fakes are an automated gate only; the live account is the real proof.
 
 ## The Google Cloud half: Terraform makes the channels
 
@@ -312,11 +407,14 @@ tpa-platform's inputs. Its `infra/README.md`, "PagerDuty's keys at the apply", i
 python3 ~/Documents/code/trellis-watchtower/scripts/pagerduty/tf_with_keys.py -- terraform -chdir=infra/envs/beta plan
 ```
 
-- It reads the three services' Google Cloud Monitoring integration keys from PagerDuty: "TPA beta · Portal & API" is
-  `app`, "TPA beta · Member records" is `phi`, and "TPA beta · Call centre" is `cc`.
-- It prints one line, for example `tf_with_keys: PagerDuty keys (beta): app present, phi present, cc present`, and
-  never a key.
-- If a service or its integration is missing, it stops there and Terraform never runs.
+- It reads the three services' integration keys from PagerDuty: "TPA beta · Portal & API" is `app`, "TPA beta ·
+  Member records" is `phi`, and "TPA beta · Call centre" is `cc`. Each service has two integrations, and the route
+  picks one: the "Google Cloud Monitoring (titled)" integration's keys by default, the plain "Google Cloud
+  Monitoring" integration's with `TW_PAGERDUTY_ROUTE=monitoring` in front of the command.
+- It prints one line, for example `tf_with_keys: PagerDuty keys (beta; route transformer, the "Google Cloud
+  Monitoring (titled)" integration): app present, phi present, cc present`, and never a key.
+- If a service or its integration is missing, or PagerDuty does not hold `monitoring_transform.js` for a titled
+  integration, it stops there and Terraform never runs.
 - Otherwise it runs the command with `TF_VAR_pagerduty_service_keys` added to that command's environment, and nowhere
   else: never on a command line, in a file or in the output. The command gets this shell's environment without
   `PAGERDUTY_TOKEN`.
@@ -360,6 +458,23 @@ Steps:
    Quote the whole `-replace=…` argument in single quotes, because the brackets and the PHI address's `"phi"` mean
    something to the shell. The module makes the new channel first, moves every policy to it, and then deletes the old
    one.
+
+   **Moving the channels to the titled integration, and back.** A channel keeps the key it was made with, so the
+   move is this same rotation: after `pd_setup.py --apply` and the three test events ("Incident titles"), one apply
+   with all three `-replace=…` arguments gives each channel its service's titled key. Then run the test page (step
+   4): its incident's title must be the policy's subject, "beta · PagerDuty test (…)", not Monitoring's long
+   sentence. That is the first proof that Google's channel reaches a titled integration. If no incident appears, or
+   the title is wrong, go back with the same apply and the plain integration's keys:
+
+   ```bash
+   TW_PAGERDUTY_ROUTE=monitoring python3 "$W" -- terraform -chdir=infra/envs/beta apply \
+     '-replace=module.monitoring_app.google_monitoring_notification_channel.pagerduty[0]' \
+     '-replace=module.monitoring_own["phi"].google_monitoring_notification_channel.pagerduty[0]' \
+     '-replace=module.monitoring_cc.google_monitoring_notification_channel.pagerduty[0]'
+   ```
+
+   The script's one line on stderr says which route's keys went in. Nothing in PagerDuty changes for the way back:
+   the plain integrations were never touched.
 4. **The test page.** Set `alert_pagerduty_test_enabled = true` (it needs `alert_pagerduty_enabled = true`) and apply.
    It writes one WARNING policy, `pagerduty-test`, in the app and call-centre projects only. Its condition is always
    true, so it opens within a few minutes, and it carries no log field. Each of those two services should show an
@@ -384,7 +499,8 @@ event carries the policy and condition names, the policy's documentation, the me
 resource labels (project, service, job). tpa-platform's monitoring module refuses any metric label outside the closed
 allowlist (`service`, `operation`, `gate`, `code`, `outcome`, `status_class`, `job`, `lane`, `class`, `sqlstate`), and
 any extractor that reads a tenant, member, request, row or URL field (SPEC.md, "No PHI anywhere in monitoring").
-A new alert policy's documentation must keep to the same rule. Each service's description says so too. Beta's
+The titled integration adds one thing that is not in the event: the watchtower's address, in the links. It rearranges
+the rest and fetches nothing. A new alert policy's documentation must keep to the same rule. Each service's description says so too. Beta's
 administrator-feed importer (2026-10-25) keeps it: `feed-ingest-failed` (the app project, "TPA beta · Portal & API")
 names the job alone, and records' `records-source-sync-alert` (the PHI project, "· Member records") counts a
 value-free line, never its run, tenant or counts.
@@ -467,6 +583,23 @@ value-free line, never its run, tenant or counts.
 - A Slack connection that the API accepts and lists is not proof that it posts (2026-11-12, kind "responder"), and
   an incident's log records only the direct message to a person, never the channel post. Prove a connection with a
   labelled incident and a person's look at the channel.
+- The Custom Event Transformer (seen 2026-11-12). `POST /services/{id}/integrations` with type
+  `event_transformer_api_inbound_integration` and vendor `PCJ0EFQ` creates one and returns its `integration_key`. A
+  `config` sent on that create is **ignored**: PagerDuty stores its own sample code. A following `PUT
+  /services/{id}/integrations/{iid}` with `config.fields.code` (`{"type": "code", "value": "<the code>"}`) stores the
+  code, and `GET` on the one integration returns it at `config.fields.code.value`, beside a `debug` field the script
+  never sends (debug stays off). So the script creates, then stores, then reads back, and refuses when what it reads
+  is not the file. The code is ES5. It reads `PD.inputRequest.body` (the parsed JSON) and calls
+  `PD.emitGenericEvents([{event_type, description, incident_key, details, client, client_url}])` with `PD.Trigger` or
+  `PD.Resolve`, or `PD.fail(message)`. `PD.emitCEFEvents` lost the summary (the title came out "(Incident triggered
+  via the API)"), so it is never used. Requests go to `https://events.pagerduty.com/integration/<key>/enqueue` as
+  JSON, and a 202 means taken.
+- Not yet seen live about the transformer: Google's `pagerduty` channel posting to a titled integration's key ("Not
+  yet proven", in "Incident titles"); whether a `contexts` link list passed to `PD.emitGenericEvents` is shown on
+  the incident (the links are in the details too, so nothing is lost if it is not); and whether a service's listing
+  with `include[]=integrations` carries the integration's name and type as the single `GET` does (the script finds
+  the titled integration in that listing by its `name`, or a reference's `summary`; if neither shows,
+  `pd_setup.py` would plan a create on every run, and the dry run after the first apply shows it).
 - Not yet seen live, from PagerDuty's documentation (the Terraform provider's `pagerduty_event_orchestration_service`
   and the PCL reference): an orchestration update answers `{"orchestration_path": …, "warnings": [{"feature",
   "feature_type", "message", "rule_id", "warning_type"}]}`, with `warning_type` `forbidden_feature` for a feature

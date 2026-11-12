@@ -8,9 +8,11 @@ What it makes (each found by its exact name, created when absent and corrected w
   - one service per Google Cloud project ("TPA beta · Portal & API", "· Member records", "· Call centre"), each with
     urgency from severity, a 30-minute acknowledgement timeout, no auto-resolve, the Google Cloud Monitoring
     integration and a service event orchestration that turns Monitoring's severity, in any letter case, into the
-    alert's severity and the incident's priority. With PagerDuty's AIOps add-on (pdlib.AIOPS, off since 2026-11-12)
-    also an alert grouping setting (intelligent, or time-based where the account refuses it) and the incident's
-    title: the alert policy's own subject (else "policy · condition");
+    alert's severity and the incident's priority. Without PagerDuty's AIOps add-on (pdlib.AIOPS, off since
+    2026-11-12) also a second integration, "Google Cloud Monitoring (titled)", holding the code of
+    monitoring_transform.js: it gives each incident its short title (the alert policy's own subject, else
+    "policy · condition"), its details and its links to the watchtower. With the add-on, an alert grouping setting
+    (intelligent, or time-based where the account refuses it) and the same title from the orchestration instead;
   - business service "Trellis TPA (beta)", supported by the three services;
   - with --add-rules only, each person's designed notification rules that are missing (never adding or changing a
     contact method).
@@ -474,6 +476,44 @@ def orchestration_changes(have: dict, want: dict) -> list[str]:
     return lines
 
 
+def ensure_transformer(pd: PagerDuty, plan: Plan, name: str, sid: str, integrations: list[dict]) -> None:
+    """The titled integration (pdlib.py, "The titled integration"): made when missing, and its stored code made the
+    file's whenever the two differ. PagerDuty ignores the code on the create and stores its own sample, so the code
+    always goes in a second request, and is read back."""
+    what = f'  integration "{d.TRANSFORMER_NAME}" on "{name}"'
+    want = d.transformer_code()
+    detail = f"the titles, details and watchtower links: {d.TRANSFORM_FILE.name}"
+    named = [i for i in integrations if d.integration_name(i) == d.TRANSFORMER_NAME]
+    found = [i for i in named if d.is_transformer(i)]
+    if len(named) > 1 or len(found) != len(named):
+        plan.refuse(what, f"{len(named)} integrations carry this name, {len(found)} of the Custom Event "
+                          "Transformer type: a person removes or renames the extra ones")
+        return
+
+    def store(iid: str) -> None:
+        path = f"/services/{sid}/integrations/{iid}"
+        pd.write("PUT", path, {"integration": {"type": d.TRANSFORMER_TYPE, "name": d.TRANSFORMER_NAME, "config": {
+            "fields": {"code": {"type": "code", "value": want}}}}})
+        if d.stored_code(pd.get(path)["integration"]) != want:
+            raise Declined("PagerDuty took the code and does not hold it: the integration is not to be used "
+                           "(tf_with_keys.py and pd_test_event.py refuse it); re-run --apply")
+
+    def create() -> None:
+        body = {"integration": {"type": d.TRANSFORMER_TYPE, "name": d.TRANSFORMER_NAME,
+                                "vendor": ref("vendor", d.TRANSFORMER_VENDOR_ID)}}
+        store(pd.write("POST", f"/services/{sid}/integrations", body)["integration"]["id"])
+
+    if not found:
+        plan.change("create", what, detail, create)
+        return
+    iid = found[0]["id"]
+    have = d.stored_code(pd.get(f"/services/{sid}/integrations/{iid}")["integration"])
+    if have == want:
+        plan.ok(what, detail)
+    else:
+        plan.change("update", what, f"its code differs from {d.TRANSFORM_FILE.name}", lambda: store(iid))
+
+
 def ours(integration: dict) -> bool:
     return ((integration.get("vendor") or {}).get("id") == d.VENDOR_ID
             or (integration.get("name") == d.INTEGRATION_NAME and integration.get("type") == d.INTEGRATION_TYPE))
@@ -538,6 +578,8 @@ def ensure_services(pd: PagerDuty, plan: Plan, policy_id: str, priorities: dict[
             plan.change("create", iwhat, "the key Monitoring's pagerduty channel uses (tf_with_keys.py)",
                         lambda sid=sid, body=body: pd.write("POST", f"/services/{sid}/integrations", body))
 
+        if not d.AIOPS or d.route() == "transformer":
+            ensure_transformer(pd, plan, name, sid, integrations)
         if d.AIOPS:
             grouping.ensure(name, sid, new)
         ensure_orchestration(pd, plan, name, sid, new, priorities)
@@ -747,6 +789,7 @@ def main() -> int:
                         help="try intelligent alert grouping again where a service has time-based grouping")
     args = parser.parse_args()
 
+    d.route()  # refuse a TW_PAGERDUTY_ROUTE that names no route before anything is read
     pd = PagerDuty(d.pagerduty_token(), writes=args.apply)
     plan = Plan(args.apply)
     out("pd_setup: " + ("APPLY: making the changes below." if args.apply else

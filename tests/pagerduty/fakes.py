@@ -15,6 +15,13 @@ and error at high urgency, warning and info at low. A resolve finds its alert by
 echo what they were sent, as a careless API might, so the tests can prove the scripts never print a secret that comes
 back in one.
 
+A Custom Event Transformer integration is modelled as it answered live on 2026-11-12: the create ignores any `config`
+and stores PagerDuty's own sample code; a PUT stores the code (here with other line endings and no final newline, as
+a store might); a GET of the one integration returns it at config.fields.code.value, and a service's listing does
+not. A request posted to /integration/<key>/enqueue is run through the stored code under node (run_transform.js, a
+stub PD object in an empty context), and each event the code emits goes on as a v1 event: 202. A transformer's key
+on the plain v1 address is refused, the cautious reading of something not yet seen live.
+
 The live account is the real proof (docs/PAGERDUTY.md, "Verified"); this is the model the scripts are tested against.
 """
 
@@ -24,10 +31,32 @@ import copy
 import itertools
 import json
 import re
+import shutil
+import subprocess
 import threading
 import urllib.parse
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+NODE = shutil.which("node")
+RUN_TRANSFORM = Path(__file__).resolve().with_name("run_transform.js")
+TRANSFORMER_TYPE = "event_transformer_api_inbound_integration"
+# What PagerDuty stores for a new transformer, whatever the create was sent.
+SAMPLE_CODE = ("var body = PD.inputRequest.body;\n"
+               "PD.emitGenericEvents([{event_type: PD.Trigger, description: 'PagerDuty sample', details: body}]);\n")
+
+
+def run_transform(code: str, body) -> dict:
+    """Run a transformer's code on one request body under node: {"events", "cef", "failed", "error"}."""
+    if NODE is None:
+        raise RuntimeError("node is not installed: a transformer's code cannot be run")
+    done = subprocess.run([NODE, str(RUN_TRANSFORM)], input=json.dumps({"code": code, "body": body}),
+                          capture_output=True, text=True, timeout=60)
+    if done.returncode != 0:
+        raise RuntimeError(f"run_transform.js failed: {done.stderr[:400]}")
+    return json.loads(done.stdout)
+
 
 TOKEN = "pd-sentinel-token-7f3a9c41"
 KEY_PREFIX = "keysentinel"
@@ -103,7 +132,8 @@ def not_found():
 
 class FakeState:
     def __init__(self, refuse_intelligent=False, rich_contacts=False, refuse_team_create=False, grouping_error=None,
-                 redirect_pd=False, advanced_orchestration=True, fail_orchestration_put=None):
+                 redirect_pd=False, advanced_orchestration=True, fail_orchestration_put=None,
+                 ignore_transformer_code=False):
         self.lock = threading.Lock()
         self.seq = itertools.count(1)
         self.requests: list[dict] = []
@@ -114,6 +144,8 @@ class FakeState:
         self.fail_orchestration_put = fail_orchestration_put  # the n-th orchestration PUT of the run answers 500
         self.orchestration_puts = 0
         self.refuse_intelligent = refuse_intelligent
+        self.ignore_transformer_code = ignore_transformer_code  # a PUT of a transformer's code changes nothing
+        self.transformer_failures: list[str] = []  # what PD.fail was told, a request that made no event
         self.refuse_team_create = refuse_team_create
         self.grouping_error = grouping_error  # (status, text) for any grouping-setting write
         self.redirect_pd = redirect_pd
@@ -191,13 +223,16 @@ class FakeState:
     def service_view(self, sid, with_integrations):
         view = dict(self.services[sid])
         if with_integrations:
-            view["integrations"] = [dict(i) for i in self.integrations.get(sid, [])]
+            view["integrations"] = [{k: v for k, v in i.items() if k != "config"}
+                                    for i in self.integrations.get(sid, [])]
         return view
 
     # ---- PagerDuty REST --------------------------------------------------------------------------------------------
     def pagerduty(self, method, parts, query, body):
         p = parts
         if method == "GET" and p[:1] == ["vendors"] and len(p) == 2:
+            if p[1] == "PCJ0EFQ":
+                return 200, {"vendor": {"id": "PCJ0EFQ", "name": "Custom Event Transformer"}}
             if p[1] != "PUCLE3C":
                 raise not_found()
             return 200, {"vendor": {"id": "PUCLE3C", "name": "Google Cloud Monitoring", "generic_service_type": "api"}}
@@ -313,8 +348,24 @@ class FakeState:
             i = body["integration"]
             integ = {"id": self.new_id("PI"), "type": i["type"], "name": i["name"], "vendor": i.get("vendor"),
                      "integration_key": f"{KEY_PREFIX}{next(self.seq):08d}abcdef0123456789"[:32]}
+            if i["type"] == TRANSFORMER_TYPE:
+                # Seen live 2026-11-12: a config sent on the create is ignored.
+                integ["config"] = {"fields": {"code": {"type": "code", "value": SAMPLE_CODE},
+                                              "debug": {"type": "select", "value": "false"}}}
             self.integrations[p[1]].append(integ)
             return 201, {"integration": integ}
+        if p[:1] == ["services"] and len(p) == 4 and p[2] == "integrations" and method == "PUT":
+            found = [i for i in self.integrations.get(p[1], []) if i["id"] == p[3]]
+            if not found:
+                raise not_found()
+            sent = body["integration"]
+            if sent.get("type") != found[0]["type"]:
+                raise Fail(400, {"error": {"message": "Invalid Input Provided", "errors": ["Type cannot be changed"]}})
+            found[0]["name"] = sent.get("name", found[0]["name"])
+            code = (((sent.get("config") or {}).get("fields") or {}).get("code") or {}).get("value")
+            if code is not None and "config" in found[0] and not self.ignore_transformer_code:
+                found[0]["config"]["fields"]["code"]["value"] = code.replace("\n", "\r\n").rstrip()
+            return 200, {"integration": found[0]}
         if p[:1] == ["services"] and len(p) == 4 and p[2] == "integrations" and method == "GET":
             found = [i for i in self.integrations.get(p[1], []) if i["id"] == p[3]]
             if not found:
@@ -518,13 +569,32 @@ class FakeState:
             if actions.get(k):
                 outcome[k] = actions[k]
 
-    def event(self, body):
+    def enqueue(self, key, body):
+        """A request posted to a transformer integration's own address: its stored code runs on the body, and each
+        generic event it emits goes on as a v1 event of that integration."""
+        found = [i for items in self.integrations.values() for i in items
+                 if i["integration_key"] == key and i["type"] == TRANSFORMER_TYPE]
+        if not found:
+            raise Fail(404, {"status": "invalid key"})
+        ran = run_transform(found[0]["config"]["fields"]["code"]["value"], body)
+        if ran["error"] or ran["failed"]:
+            self.transformer_failures.append(ran["error"] or ran["failed"])
+        elif ran["cef"]:
+            # Seen live: an event emitted as CEF lost its summary.
+            self.transformer_failures.append("emitCEFEvents: the summary is lost")
+        else:
+            for event in ran["events"]:
+                self.event({**event, "service_key": key}, transformed=True)
+        return 202, {"status": "success", "message": "Event processed"}
+
+    def event(self, body, transformed=False):
         found = [(sid, i) for sid, items in self.integrations.items() for i in items
-                 if i["integration_key"] == body.get("service_key")]
+                 if i["integration_key"] == body.get("service_key")
+                 and (i["type"] == TRANSFORMER_TYPE) == transformed]
         if not found:
             raise Fail(400, {"status": "invalid event", "message": "Event object is invalid"})
         sid, _ = found[0]
-        key = body["incident_key"]
+        key = body.get("incident_key") or self.new_id("generated-key")
         if body["event_type"] == "resolve":
             for inc_id, alerts in self.alerts.items():
                 if any(a["alert_key"] == key for a in alerts):
@@ -544,7 +614,9 @@ class FakeState:
                                   "title": event["summary"]}
         self.alerts[inc_id] = [{"id": self.new_id("PA"), "alert_key": key, "severity": severity,
                                 "status": "triggered", "summary": event["summary"],
-                                "body": {"details": event["custom_details"]}}]
+                                "body": {"details": event["custom_details"], "contexts": body.get("contexts") or [],
+                                         "cef_details": {"client": body.get("client"),
+                                                         "client_url": body.get("client_url")}}}]
         return 200, {"status": "success", "message": "Event processed", "incident_key": key}
 
     @staticmethod
@@ -606,6 +678,10 @@ class Server:
                                                         "more": False}
                             else:
                                 raise not_found()
+                        elif parts[0] == "events" and parts[1:2] == ["integration"]:
+                            if len(parts) != 4 or parts[3] != "enqueue":
+                                raise not_found()
+                            status, payload = state_ref.enqueue(parts[2], body)
                         elif parts[0] == "events":
                             status, payload = state_ref.event(body)
                         else:

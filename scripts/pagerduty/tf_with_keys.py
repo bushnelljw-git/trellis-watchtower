@@ -2,9 +2,9 @@
 """trellis-watchtower: run one `terraform plan` or `terraform apply` with the PagerDuty keys in its environment.
 
 tpa-platform's Terraform makes each TPA project's `pagerduty` notification channel (D-142, D-143). The apply that
-first creates the channels, or replaces one to rotate its key, needs the three services' "Google Cloud Monitoring"
-integration keys as `pagerduty_service_keys`. This script reads them from PagerDuty and runs the command it is given
-with one variable added to that command's environment:
+first creates the channels, or replaces one to rotate its key, needs the three services' integration keys as
+`pagerduty_service_keys`. This script reads them from PagerDuty and runs the command it is given with one variable
+added to that command's environment:
 
     TF_VAR_pagerduty_service_keys = {"app": "…", "phi": "…", "cc": "…"}
 
@@ -12,9 +12,15 @@ with one variable added to that command's environment:
     phi  <-  "TPA beta · Member records"
     cc   <-  "TPA beta · Call centre"
 
+Each service has two integrations, and the route (pdlib.ROUTE) picks whose keys are handed over: by default the
+"Google Cloud Monitoring (titled)" integration's, which gives incidents their short titles; with
+TW_PAGERDUTY_ROUTE=monitoring the plain "Google Cloud Monitoring" integration's, which is the way back. A channel's
+key changes only when the channel is replaced (-replace=…, as below).
+
 The keys go into the child's environment and nowhere else: never on a command line, never in a file, never printed.
 The child gets this process's environment without PAGERDUTY_TOKEN. Before Terraform runs, the script prints one line
-on stderr saying which keys it found, and stops if any service or integration is missing.
+on stderr saying which route's keys it found (never a key), and stops if any service or integration is missing, or if
+PagerDuty does not hold the file's code for a titled integration.
 
 Usage:
   scripts/pagerduty/tf_with_keys.py -- terraform -chdir=infra/envs/beta plan
@@ -118,12 +124,12 @@ def check_environment() -> None:
                       "Unset it for this run")
 
 
-def read_keys(pd: PagerDuty, names: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
+def read_keys(pd: PagerDuty, names: dict[str, str], route: str) -> tuple[dict[str, str], dict[str, str]]:
     """(keys found, why each missing one is missing). Every key is registered as a secret before anything prints."""
     keys, missing = {}, {}
     for role, name in names.items():
         try:
-            _, key = d.service_integration_key(pd, name)
+            _, key = d.service_integration_key(pd, name, route)
         except Refused as e:
             missing[role] = str(e)
             continue
@@ -139,11 +145,13 @@ def main() -> int:
     check_command(command, env)
     check_environment()
     names = service_names(env)
+    route = d.route()
 
     pd = PagerDuty(d.pagerduty_token())
-    keys, missing = read_keys(pd, names)
+    keys, missing = read_keys(pd, names, route)
     found = ", ".join(f"{role} {'missing' if role in missing else 'present'}" for role in ROLES)
-    err(f"tf_with_keys: PagerDuty keys ({env}): {found}")
+    err(f'tf_with_keys: PagerDuty keys ({env}; route {route}, the "{d.route_integration(route)}" integration): '
+        f"{found}")
     if missing:
         raise Refused("terraform not run: " + "; ".join(f"{role}: {why}" for role, why in missing.items()))
 

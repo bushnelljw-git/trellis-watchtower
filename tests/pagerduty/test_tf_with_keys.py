@@ -20,14 +20,16 @@ from test_pd_setup import SCRIPTS, Base
 
 VARIABLE = "TF_VAR_pagerduty_service_keys"
 APP_CHANNEL = "-replace=module.monitoring_app.google_monitoring_notification_channel.pagerduty[0]"
-FOUND_ALL = "tf_with_keys: PagerDuty keys (beta): app present, phi present, cc present"
+TITLED = '(beta; route transformer, the "Google Cloud Monitoring (titled)" integration)'
+PLAIN = '(beta; route monitoring, the "Google Cloud Monitoring" integration)'
+FOUND_ALL = f"tf_with_keys: PagerDuty keys {TITLED}: app present, phi present, cc present"
 ROLE_SERVICE = {"app": "TPA beta · Portal & API", "phi": "TPA beta · Member records", "cc": "TPA beta · Call centre"}
 
 
 class WithTerraform(Base):
     def setUp(self):
         super().setUp()
-        self.apply()
+        self.apply(aiops=False)  # the design as it runs live: both integrations on each service
         self.tmp = tempfile.TemporaryDirectory()
         tmp = Path(self.tmp.name)
         self.bin = tmp / "bin"
@@ -53,7 +55,8 @@ class WithTerraform(Base):
 
     def tf(self, *command, opts=(), token=fakes.TOKEN, extra=None, path=None, separator=True):
         """Run the script with a clean, known environment; returns (result, the environment it was given)."""
-        env = {k: v for k, v in os.environ.items() if k != "PAGERDUTY_TOKEN" and not k.startswith("TF_")}
+        env = {k: v for k, v in os.environ.items()
+               if k != "PAGERDUTY_TOKEN" and not k.startswith("TF_") and not k.startswith("TW_PAGERDUTY_")}
         env.update({"PAGERDUTY_API_URL": self.server.url("pd"),
                     "PATH": path if path is not None else f"{self.bin}{os.pathsep}{env.get('PATH', '')}"})
         if token is not None:
@@ -67,10 +70,14 @@ class WithTerraform(Base):
     def beta(self, *args):
         return ["terraform", f"-chdir={self.roots['beta']}", *args]
 
-    def keys(self):
-        by_name = {self.state.services[sid]["name"]: items[0]["integration_key"]
-                   for sid, items in self.state.integrations.items() if items}
-        return {role: by_name[name] for role, name in ROLE_SERVICE.items()}
+    def integration(self, role, titled=True):
+        """A role's integration as the fake holds it: the titled one (the default route's), or the plain one."""
+        sid = next(s for s, v in self.state.services.items() if v["name"] == ROLE_SERVICE[role])
+        (found,) = [i for i in self.state.integrations[sid] if (i["type"] == fakes.TRANSFORMER_TYPE) == titled]
+        return found
+
+    def keys(self, titled=True):
+        return {role: self.integration(role, titled)["integration_key"] for role in ROLE_SERVICE}
 
     def child(self):
         return json.loads(self.record.read_text())
@@ -129,6 +136,38 @@ class KeysReachTheChildOnly(WithTerraform):
         result, _ = self.tf(*self.beta("plan"), extra={VARIABLE: '{"app":"stale"}'})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(self.child()["env"][VARIABLE]), self.keys())
+
+
+class Routes(WithTerraform):
+    """pdlib.ROUTE picks whose keys reach Terraform; TW_PAGERDUTY_ROUTE overrides it for one run."""
+
+    def test_the_default_route_hands_over_the_titled_integrations_keys(self):
+        result, _ = self.tf(*self.beta("plan"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        handed = json.loads(self.child()["env"][VARIABLE])
+        self.assertEqual(handed, self.keys(titled=True))
+        self.assertEqual(set(handed.values()) & set(self.keys(titled=False).values()), set())
+        self.assertEqual(result.stderr.strip().splitlines(), [FOUND_ALL])
+
+    def test_the_way_back_hands_over_the_plain_integrations_keys_and_says_so(self):
+        result, _ = self.tf(*self.beta("plan"), extra={"TW_PAGERDUTY_ROUTE": "monitoring"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(self.child()["env"][VARIABLE]), self.keys(titled=False))
+        self.assertEqual(result.stderr.strip().splitlines(),
+                         [f"tf_with_keys: PagerDuty keys {PLAIN}: app present, phi present, cc present"])
+        self.assert_reads_only()
+
+    def test_the_route_can_be_named_outright(self):
+        result, _ = self.tf(*self.beta("plan"), extra={"TW_PAGERDUTY_ROUTE": "transformer"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(self.child()["env"][VARIABLE]), self.keys(titled=True))
+
+    def test_an_unknown_route_is_refused_before_pagerduty_is_read(self):
+        result, _ = self.tf(*self.beta("plan"), extra={"TW_PAGERDUTY_ROUTE": "aiops"})
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("TW_PAGERDUTY_ROUTE is 'aiops': it may only be monitoring or transformer", result.stderr)
+        self.assert_not_run(result)
+        self.assertEqual(len(self.state.requests), self.requests_before)
 
 
 class Refusals(WithTerraform):
@@ -190,8 +229,8 @@ class Refusals(WithTerraform):
         result, _ = self.tf("terraform", f"-chdir={self.roots['production-full']}", "apply",
                             opts=("--env", "production"))
         self.assert_refused(result, 'no PagerDuty service "TPA production · Portal & API"')
-        self.assertIn("tf_with_keys: PagerDuty keys (production): app missing, phi missing, cc missing",
-                      result.stderr)
+        self.assertIn('tf_with_keys: PagerDuty keys (production; route transformer, the "Google Cloud Monitoring '
+                      '(titled)" integration): app missing, phi missing, cc missing', result.stderr)
         self.assert_reads_only()
 
 
@@ -203,7 +242,7 @@ class MissingAndErrors(WithTerraform):
         self.state.services[self.service_id("phi")]["name"] = "Member records (renamed)"
         result, _ = self.tf(*self.beta("apply"))
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("tf_with_keys: PagerDuty keys (beta): app present, phi missing, cc present", result.stderr)
+        self.assertIn(f"tf_with_keys: PagerDuty keys {TITLED}: app present, phi missing, cc present", result.stderr)
         self.assertIn('no PagerDuty service "TPA beta · Member records"', result.stderr)
         self.assert_not_run(result)
 
@@ -212,12 +251,31 @@ class MissingAndErrors(WithTerraform):
         result, _ = self.tf(*self.beta("apply"))
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("app present, phi present, cc missing", result.stderr)
+        self.assertIn("has no Google Cloud Monitoring (titled) integration", result.stderr)
+        self.assert_not_run(result)
+
+    def test_a_missing_plain_integration_stops_the_way_back(self):
+        sid = self.service_id("cc")
+        self.state.integrations[sid] = [self.integration("cc")]
+        result, _ = self.tf(*self.beta("apply"), extra={"TW_PAGERDUTY_ROUTE": "monitoring"})
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn(f"tf_with_keys: PagerDuty keys {PLAIN}: app present, phi present, cc missing", result.stderr)
         self.assertIn("has no Google Cloud Monitoring integration", result.stderr)
+        self.assert_not_run(result)
+
+    def test_a_titled_integration_holding_other_code_stops_it(self):
+        """Its key is handed to Monitoring only while PagerDuty holds the file's code for it."""
+        self.integration("phi")["config"]["fields"]["code"]["value"] = fakes.SAMPLE_CODE
+        result, _ = self.tf(*self.beta("apply"))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("app present, phi missing, cc present", result.stderr)
+        self.assertIn('the code PagerDuty holds for "Google Cloud Monitoring (titled)" is not '
+                      "monitoring_transform.js", result.stderr)
         self.assert_not_run(result)
 
     def test_a_malformed_key_stops_it_and_is_not_printed(self):
         # tearDown checks every output for fakes.KEY_PREFIX, which this value carries.
-        self.state.integrations[self.service_id("app")][0]["integration_key"] = f"{fakes.KEY_PREFIX}-not-a-key"
+        self.integration("app")["integration_key"] = f"{fakes.KEY_PREFIX}-not-a-key"
         result, _ = self.tf(*self.beta("apply"))
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("app missing, phi present, cc present", result.stderr)
