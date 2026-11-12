@@ -4,7 +4,7 @@
 # checkout is there (../tpa-platform, or TPA_PLATFORM_DIR), the test re-reads the pinned blob and its origin/master and
 # requires this list to equal both. To move the pin: copy the new list, commit and blob here, and run make synthetics-test.
 repository=tpa-platform
-commit=7e5814d19f72c08559738adb7dd280ae507cca11
+commit=a92aa45599b1d62ee28f7daf4ce25610ef75f102
 path=infra/modules/monitoring/variables.tf
-blob=2a864512ced7bc366e199f9666d26925bcab96fa
-labels=service,operation,gate,code,outcome,status_class,job,lane,class,sqlstate,role,direction
+blob=12182b130d6aae0c312957b573afe67ccaf4e3db
+labels=service,operation,gate,code,outcome,status_class,job,lane,class,sqlstate,role,direction,site
