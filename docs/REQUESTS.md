@@ -193,6 +193,11 @@ owning session assigns its id.
 | records-service | `2026-09-24-watchtower-to-records-service-audit-partition-horizon.md` | 1 | A daily horizon fact and a runbook. The monthly partitions end at 2027-12. |
 | trellis | `2026-09-24-watchtower-to-trellis-client-error-reporting.md` | 2 | Browser error reporting through the client-errors route. |
 
+**Done by tpa-platform 10e20a62 (2026-11-12; held by tests/cloud/test_signin.py at the catalogue's pin):** `watch.tf`
+writes `TPA_SIGNIN_ROBOTS` from `local.watch_signin_robots` (the secrets' word while `signin_robots_exist`, each job
+of `signin_robots_built`) and puts the robots into `local.watch_paused_jobs` while `signin_robots_paused`. The ask, as
+it was:
+
 **Owed to tpa-platform, not yet filed in trellis-security (2026-11-12, the sign-in row, SR-OR-1):** the website reads
 the sign-in robots as "not deployed", and sends none of their queries, unless the service's `TPA_SIGNIN_ROBOTS` names
 them (cloud/README.md, "Can people sign in?"). So beta's `watch.tf` writes, in the apply that makes them and never

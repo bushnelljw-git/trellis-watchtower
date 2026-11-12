@@ -21,8 +21,8 @@
 #   TPA_STOPPED_DATABASES  comma list, may be empty: Cloud SQL instances stopped on purpose (tpa-platform's
 #                       local.database_stopped; `auth_db` and `auth-db` both name auth-db).
 #   TPA_SIGNIN_ROBOTS   comma list, may be empty or unset: what of the sign-in robots tpa-platform has built (SR-OR-1):
-#                       `signin-robot-secrets` once their secrets and the secret-read counter exist (stage 1,
-#                       signin_robot_principals_enabled), and each robot's job once it is built (stage 2,
+#                       `signin-robot-secrets` once their secrets and the counters that watch their logins exist
+#                       (stage 1, signin_robot_principals_enabled), and each robot's job once it is built (stage 2,
 #                       signin_robots_enabled; never without the secrets). What it does not name reads "not deployed"
 #                       and its queries are never sent (its counter does not exist until it is built, and Cloud
 #                       Monitoring answers a query for a metric that does not exist with a 404 the panel shows as an

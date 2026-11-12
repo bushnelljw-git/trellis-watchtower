@@ -30,11 +30,12 @@ THRESHOLD_DEFAULTS = {"comparison": "COMPARISON_GT", "threshold_value": "0", "du
 # main.tf, local.monitoring_inputs; held to it by tests/cloud/test_importer.py): the administrator-feed importer's
 # (OWNER-EV-12, feedingest.tf), `feed_ingest` the app role's (the project that runs the job) and `feed_ingest_records`
 # the PHI role's (records' line); and the sign-in sections the overview's first row reads (SR-OR-1, D-335), each the
-# app role's: `signin_robots` (the robots' secret read and their policies; their result lines are the synthetics
-# section's), `auth_texts` (each texted code's delivery as Twilio reported it, while auth_sms_twilio_enabled) and
-# `auth_email_everyone` (emails the messenger could not hand on, while email_everyone_enabled). Every log metric of a
-# section read here must be charted, as a role's are (tests/cloud/test_catalogue.py). The other optional sections
-# (`beta_text_codes`, `crm_lane_*`, `perimeter_dry_run`, ...) are not read.
+# app role's: `signin_robots` (the robots' secret read, auth's line on a robot's login tried from elsewhere, and their
+# policies; their result lines are the synthetics section's), `auth_texts` (each texted code's delivery as Twilio
+# reported it, while auth_sms_twilio_enabled) and `auth_email_everyone` (emails the messenger could not hand on, while
+# email_everyone_enabled). Every log metric of a section read here must be charted, as a role's are
+# (tests/cloud/test_catalogue.py). The other optional sections (`beta_text_codes`, `crm_lane_*`, `perimeter_dry_run`,
+# ...) are not read.
 SECTIONS = {"feed_ingest": "app", "feed_ingest_records": "phi", "signin_robots": "app", "auth_texts": "app",
             "auth_email_everyone": "app"}
 
@@ -159,9 +160,14 @@ class Catalogue:
         return out
 
     def promql(self, name: str, section: str, condition: int = 0) -> str:
-        """A policy's PromQL condition as one line: the reader keeps a block scalar as "<block>", so its text is read
-        here from the file, the folded (`>-`) lines joined by a space. KeyError when the policy has no such
-        condition."""
+        """A policy's PromQL condition as one line (folded). KeyError when the policy has no such condition."""
+        return self.folded(name, section, "query", condition)
+
+    def folded(self, name: str, section: str, key: str, condition: int = 0) -> str:
+        """The `condition`th folded `key: >-` block of a section's policy, counted over its blocks of that key alone
+        (one per condition that has one), as one line: a PromQL condition's `query` or a threshold condition's
+        `filter`. The reader keeps a block scalar as "<block>", so its text is read here from the file, the folded
+        lines joined by a space. KeyError when the policy has no such block."""
         lines = self.text.splitlines()
         start = lines.index(f"{section}:")
         policies = next(i for i in range(start + 1, len(lines)) if lines[i] == "  alert_policies:")
@@ -174,7 +180,7 @@ class Catalogue:
             line = lines[i]
             if line and not line.startswith("      "):
                 break   # the next policy, or the next section
-            if line.strip() == "query: >-":
+            if line.strip() == f"{key}: >-":
                 found += 1
                 if found == condition:
                     indent = len(line) - len(line.lstrip())
@@ -184,7 +190,7 @@ class Catalogue:
                             break
                         body.append(nxt.strip())
                     return " ".join(b for b in body if b)
-        raise KeyError(f"{name} condition {condition}")
+        raise KeyError(f"{name} condition {condition} {key}")
 
     def jobs_named(self) -> set[str]:
         """Every Cloud Run job the catalogue's alert filters name (`job_name = one_of(...)` or `= "..."`), and every

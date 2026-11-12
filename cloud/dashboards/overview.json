@@ -6392,7 +6392,7 @@
     {
       "type": "table",
       "title": "Sign-in alerts",
-      "description": "The sign-in alerts that hold now, each its policy's own rule read from the same counters and windows, so a red row here is what pages (urgent: PagerDuty high urgency; can wait; a notice: email and Slack). This site cannot list incidents (Grafana's Cloud Monitoring datasource reads metrics only): the incidents, who has them and when they closed are PagerDuty's (the page's PagerDuty link). The robots' rules (urgent unless said): two failed checks and no pass in 11 minutes, one not a lockout (`signin-failing`); two lockouts or rate limits and no pass (`signin-robot-locked-out`); no result for 16 minutes while it runs (`signin-silent`); the runner's own fault (`signin-robot-broken`, can wait); switched off a day (`signin-checks-off`, a notice); anyone but the robots reading a robot's secret (`signin-robot-secret-read`). A robot not deployed, paused or with auth-db stopped asks nothing of its own and is never silent. The messenger: five or more sends refused or unanswered by a vendor on one lane in 15 minutes (`sign-in-message-vendor`); the oldest message waiting above 120 s (`auth-messages-stalled`; read over its last 2 minutes, where the policy wants each minute above, so a row here can lead its page by a minute); the carriers refusing the texts' line, one `toll_free_unverified` or 3 `carrier_filtered` and more than half of the texts in an hour (`auth-texts-blocked`); `auth-outbox-publisher` with no instance for 5 minutes (its `has no instance`). The outside checks: more than one region failing on the portal host's `/auth/me` or `/tpa/` (`outage`). \"? Can't tell\": nothing arrived, or the queries failed.",
+      "description": "The sign-in alerts that hold now, each its policy's own rule read from the same counters and windows, so a red row here is what pages (urgent: PagerDuty high urgency; can wait; a notice: email and Slack). This site cannot list incidents (Grafana's Cloud Monitoring datasource reads metrics only): the incidents, who has them and when they closed are PagerDuty's (the page's PagerDuty link). The robots' rules (urgent unless said): two failed checks and no pass in 11 minutes, one not a lockout (`signin-failing`); two lockouts or rate limits and no pass (`signin-robot-locked-out`); no result for 16 minutes while it runs (`signin-silent`); the runner's own fault (`signin-robot-broken`, can wait); switched off a day (`signin-checks-off`, a notice); anyone but the robots reading a robot's secret (`signin-robot-secret-read`); a robot's right password or live sign-in challenge used anywhere but its runner, any one in 5 minutes (`signin-robot-foreign-password`: somebody holds a robot's login; auth refused it); a wrong password at a robot's own address from elsewhere, any one in 15 minutes (`signin-robot-foreign-guess`, can wait: somebody learned the address). Those three are read while the robots' secrets exist, paused or not. A robot not deployed, paused or with auth-db stopped asks nothing of its own and is never silent. The messenger: five or more sends refused or unanswered by a vendor on one lane in 15 minutes (`sign-in-message-vendor`); the oldest message waiting above 120 s (`auth-messages-stalled`; read over its last 2 minutes, where the policy wants each minute above, so a row here can lead its page by a minute); the carriers refusing the texts' line, one `toll_free_unverified` or 3 `carrier_filtered` and more than half of the texts in an hour (`auth-texts-blocked`); `auth-outbox-publisher` with no instance for 5 minutes (its `has no instance`). The outside checks: more than one region failing on the portal host's `/auth/me` or `/tpa/` (`outage`). \"? Can't tell\": nothing arrived, or the queries failed.",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -6944,6 +6944,70 @@
             "filters": [
               "metric.type",
               "=",
+              "logging.googleapis.com/user/signin_robot_foreign",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "metric.label.code",
+              "=",
+              "ERROR"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "signin-robot-foreign-password",
+          "hide": "@@H,signin-robot-secrets,@@"
+        },
+        {
+          "refId": "Q",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/signin_robot_foreign",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "metric.label.code",
+              "=",
+              "WARNING"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "signin-robot-foreign-guess",
+          "hide": "@@H,signin-robot-secrets,@@"
+        },
+        {
+          "refId": "R",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
               "logging.googleapis.com/user/auth_message_vendor_failures",
               "AND",
               "resource.type",
@@ -6964,7 +7028,7 @@
           "aliasBy": "vendor sms"
         },
         {
-          "refId": "Q",
+          "refId": "S",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -6995,7 +7059,7 @@
           "aliasBy": "vendor email"
         },
         {
-          "refId": "R",
+          "refId": "T",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -7022,7 +7086,7 @@
           "aliasBy": "oldest waiting"
         },
         {
-          "refId": "S",
+          "refId": "U",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -7049,7 +7113,7 @@
           "aliasBy": "texts 1h"
         },
         {
-          "refId": "T",
+          "refId": "V",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -7080,7 +7144,7 @@
           "aliasBy": "unverified 1h"
         },
         {
-          "refId": "U",
+          "refId": "W",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -7111,7 +7175,7 @@
           "aliasBy": "filtered 1h"
         },
         {
-          "refId": "V",
+          "refId": "X",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -7142,7 +7206,7 @@
           "aliasBy": "sender instances"
         },
         {
-          "refId": "W",
+          "refId": "Y",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -7173,7 +7237,7 @@
           "aliasBy": "sign-in failing"
         },
         {
-          "refId": "X",
+          "refId": "Z",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -7204,7 +7268,7 @@
           "aliasBy": "portal-app failing"
         },
         {
-          "refId": "Y",
+          "refId": "AA",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -9204,6 +9268,144 @@
           "id": "calculateField",
           "options": {
             "mode": "reduceRow",
+            "alias": "signin-robot-foreign-password ·",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "signin-robot-foreign-password"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "signin-robot-foreign-password · ≥ 1 +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "signin-robot-foreign-password ·"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "signin-robot-foreign-password · ≥ 1 /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "signin-robot-foreign-password ·"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "signin-robot-foreign-password · ≥ 1 +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "signin-robot-foreign-password · ≥ 1",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "signin-robot-foreign-password · ≥ 1 /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "signin-robot-foreign-guess ·",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "signin-robot-foreign-guess"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "signin-robot-foreign-guess · ≥ 1 +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "signin-robot-foreign-guess ·"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "signin-robot-foreign-guess · ≥ 1 /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "signin-robot-foreign-guess ·"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "signin-robot-foreign-guess · ≥ 1 +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "signin-robot-foreign-guess · ≥ 1",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "signin-robot-foreign-guess · ≥ 1 /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
             "alias": "vendor sms ·",
             "replaceFields": false,
             "reduce": {
@@ -10531,6 +10733,46 @@
           "id": "calculateField",
           "options": {
             "mode": "binary",
+            "alias": "✕ A robot's password used elsewhere",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "signin-robot-foreign-password · ≥ 1"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "⚠ A robot's login tried elsewhere",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "signin-robot-foreign-guess · ≥ 1"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
             "alias": "✕ Text vendor failing",
             "replaceFields": false,
             "binary": {
@@ -10687,6 +10929,8 @@
                 "⚠ Brokers' check broken",
                 "⚠ Brokers' check off a day",
                 "✕ A robot's secret was read",
+                "✕ A robot's password used elsewhere",
+                "⚠ A robot's login tried elsewhere",
                 "✕ Text vendor failing",
                 "✕ Email vendor failing",
                 "✕ A sign-in message stuck",
@@ -10900,6 +11144,8 @@
               "⚠ Brokers' check broken": true,
               "⚠ Brokers' check off a day": true,
               "✕ A robot's secret was read": true,
+              "✕ A robot's password used elsewhere": true,
+              "⚠ A robot's login tried elsewhere": true,
               "✕ Text vendor failing": true,
               "✕ Email vendor failing": true,
               "✕ A sign-in message stuck": true,

@@ -238,23 +238,34 @@ class CatalogueTest(unittest.TestCase):
         self.assertEqual(set(self.catalogue.synthetics), {"synthetic_results"})
         # The importer's two sections (OWNER-EV-12): records' count is the PHI role's, the failed run's policy and its
         # runs' own counters (not whole, and each whole-book run's employers and people) the app section's; the
-        # sign-in row's three (SR-OR-1, D-335), the app role's: the robots' secret read and their policies, each
-        # texted code's delivery as Twilio reported it back, and the emails the messenger could not hand on. The
-        # others are not read.
+        # sign-in row's three (SR-OR-1, D-335), the app role's: the robots' secret read, auth's line on a robot's login
+        # tried from anywhere but the runner (tpa-platform 10e20a62) and their policies, each texted code's delivery
+        # as Twilio reported it back, and the emails the messenger could not hand on. The others are not read.
         self.assertEqual(cat.SECTIONS, {"feed_ingest": "app", "feed_ingest_records": "phi", "signin_robots": "app",
                                         "auth_texts": "app", "auth_email_everyone": "app"})
         self.assertEqual({k: set(v) for k, v in self.catalogue.sections.items()},
                          {"feed_ingest": {"everon_runs_not_whole", "everon_book_employers", "everon_book_people"},
                           "feed_ingest_records": {"source_sync_alerts"},
-                          "signin_robots": {"signin_robot_secret_read"},
+                          "signin_robots": {"signin_robot_secret_read", "signin_robot_foreign"},
                           "auth_texts": {"auth_texts_reported", "auth_texts_not_sent", "auth_text_delivery_faults",
                                          "auth_twilio_connections"},
                           "auth_email_everyone": {"auth_email_undeliverable", "auth_message_to_synthetic_login"}})
         self.assertEqual(self.catalogue.roles["app"]["auth_texts_reported"]["labels"], {"code"})
+        self.assertEqual(self.catalogue.roles["app"]["signin_robot_foreign"]["labels"], {"code", "class", "operation"})
+        self.assertEqual(self.catalogue.unanchored_labels("app", "signin_robot_foreign"), set())
         self.assertEqual(set(self.catalogue.tree["signin_robots"]["alert_policies"]),
                          {"signin-failing", "signin-robot-locked-out", "signin-silent", "signin-robot-broken",
-                          "signin-checks-off", "signin-robot-secret-read"})
+                          "signin-checks-off", "signin-robot-secret-read", "signin-robot-foreign-password",
+                          "signin-robot-foreign-guess"})
         self.assertTrue(self.catalogue.promql("signin-silent", "signin_robots").startswith("absent_over_time("))
+        # A threshold condition's folded filter reads as one line, as a PromQL query does.
+        self.assertEqual(self.catalogue.folded("signin-robot-secret-read", "signin_robots", "filter"),
+                         'metric.type = "logging.googleapis.com/user/signin_robot_secret_read" AND resource.type = '
+                         '"audited_resource"')
+        self.assertTrue(self.catalogue.folded("signin-robot-secret-read", "signin_robots", "filter", 2).endswith(
+            'resource.type = "secretmanager.googleapis.com/Secret"'))
+        with self.assertRaises(KeyError):
+            self.catalogue.folded("signin-silent", "signin_robots", "filter")
         self.assertTrue(self.catalogue.roles["app"]["everon_book_people"]["distribution"])
         self.assertEqual(self.catalogue.roles["phi"]["source_sync_alerts"]["labels"], set())
         self.assertFalse(self.catalogue.roles["phi"]["source_sync_alerts"]["distribution"])

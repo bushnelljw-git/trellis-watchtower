@@ -189,6 +189,11 @@ def rows(panel: dict, frames: list[dict]) -> list[tuple[str, float]]:
 
 
 MEMBER, BROKER = gen.ROBOT_JOBS
+# The two counters that watch the robots' logins (a secret read by anyone else, a login tried from anywhere but the
+# runner): asked once the secrets exist, paused or not.
+LOGIN_WATCH = (gen.log("signin_robot_secret_read"), gen.log(gen.FOREIGN))
+SECRET_CHART, FOREIGN_CHART = "A robot's secret read by anyone else", "A robot's login tried from anywhere but its runner"
+PASSWORD_ROW, GUESS_ROW = "✕ A robot's password used elsewhere", "⚠ A robot's login tried elsewhere"
 
 
 def every_five(job: str, outcome: str = "pass", code: str = "ok", since: float = 0.5, until: float = 1440):
@@ -244,9 +249,46 @@ class RowTest(unittest.TestCase):
         self.assertIn('name                  = "synthetics-${each.key}"', tf)
         # A day switched off is a notice there (email and Slack, never PagerDuty), as the alerts tile weighs it.
         self.assertIn('"signin-checks-off-${k}" => "notice"', tf)
-        for name in ("signin-failing", "signin-robot-locked-out", "signin-silent", "signin-robot-secret-read"):
+        for name in ("signin-failing", "signin-robot-locked-out", "signin-silent", "signin-robot-secret-read",
+                     "signin-robot-foreign-password"):
             self.assertEqual(CATALOGUE.policy(name, section="signin_robots")["tier"], "p1", name)
-        self.assertEqual(CATALOGUE.policy("signin-robot-broken", section="signin_robots")["tier"], "p2")
+        for name in ("signin-robot-broken", "signin-robot-foreign-guess"):
+            self.assertEqual(CATALOGUE.policy(name, section="signin_robots")["tier"], "p2", name)
+
+    def test_tpa_platform_writes_what_the_robots_read(self):
+        # The three policies that watch the logins, and their two counters, are written once while the robots'
+        # secrets exist (stage 1 on), paused or not and whatever auth-db is: so the alerts tile asks for them once
+        # TPA_SIGNIN_ROBOTS names the secrets, and never weighs them 0. The website is told what is built and
+        # what is paused in the apply that builds it (tpa-platform 10e20a62, the request in docs/REQUESTS.md).
+        if INFRA is None:
+            if CHECKOUT_PRESENT:
+                self.fail(INFRA_SOURCE)
+            self.skipTest(f"SKIPPED LOUDLY: {INFRA_SOURCE}")
+        tf = " ".join(INFRA.show("infra/envs/beta/signinrobots.tf").split())
+        self.assertIn('signin_robot_once_policies = [local.signin_robot_secret_policy, "signin-robot-foreign-password", '
+                      '"signin-robot-foreign-guess"]', tf)
+        self.assertIn('signin_robot_secret_policy = "signin-robot-secret-read"', tf)
+        self.assertIn("for name in local.signin_robot_once_policies : name => "
+                      "local.monitoring.signin_robots.alert_policies[name] if local.signin_robots_exist }", tf)
+        self.assertIn("signin_robot_log_metrics = { for name, metric in local.monitoring.signin_robots.log_metrics : "
+                      "name => metric if local.signin_robots_exist }", tf)
+        # Merged into the app project with no database filter (so whatever auth-db is), and no tier of theirs is
+        # overridden there (the tile weighs each by the catalogue's tier): the root's one robot override is a day
+        # switched off.
+        main = " ".join(INFRA.show("infra/envs/beta/main.tf").split())
+        self.assertIn('{ for name, policy in local.signin_robot_policies : name => policy if p == "app" }', main)
+        self.assertNotIn("signin-robot-foreign", main)
+        self.assertIn('signin_robot_tier_overrides = { for k in keys(local.signin_robots_running) : '
+                      '"signin-checks-off-${k}" => "notice" }', tf)
+        self.assertIn("} : {}, local.signin_robot_tier_overrides)", main)
+        watch = " ".join(INFRA.show("infra/envs/beta/watch.tf").split())
+        self.assertIn('watch_signin_robot_jobs = [for k in keys(local.signin_robots_built) : "synthetics-${k}"]',
+                      watch)
+        self.assertIn(f'watch_signin_robots = concat(local.signin_robots_exist ? ["{gen.ROBOT_SECRETS}"] : [], '
+                      "local.watch_signin_robot_jobs)", watch)
+        self.assertIn('length(local.watch_signin_robots) > 0 ? { TPA_SIGNIN_ROBOTS = join(",", '
+                      "local.watch_signin_robots) } : {}", watch)
+        self.assertIn("var.signin_robots_paused ? local.watch_signin_robot_jobs : []", watch)
 
     def test_the_outside_checks_are_the_roots(self):
         # Google's ids for the portal host's checks, read 2026-11-12 (`gcloud monitoring uptime list-configs`).
@@ -322,26 +364,90 @@ class QueriesTest(unittest.TestCase):
         lag = next(t for t in alerts["targets"] if facts(t)["metric"] == gen.log("auth_messages_outbox_lag"))
         self.assertEqual((lag["timeSeriesList"]["perSeriesAligner"], lag["timeSeriesList"]["crossSeriesReducer"]),
                          (stalled["per_series_aligner"], stalled["cross_series_reducer"]))
+        # A robot's login from elsewhere, read here from the catalogue apart from the generator's reading: each
+        # policy's level, on auth's revisions, summed over both robots in the policy's own window (one incident per
+        # robot, so the sum holds exactly when one of them pages).
+        foreign = {where(t)["code"][1]: (period_s(t), t["timeSeriesList"]["perSeriesAligner"],
+                                         t["timeSeriesList"]["crossSeriesReducer"], t["timeSeriesList"]["groupBys"],
+                                         facts(t)["resource"], set(where(t)))
+                   for t in alerts["targets"] if facts(t)["metric"] == gen.log(gen.FOREIGN)}
+        want = {}
+        for name in ("signin-robot-foreign-password", "signin-robot-foreign-guess"):
+            rule = CATALOGUE.threshold(name, section="signin_robots")
+            text = CATALOGUE.folded(name, "signin_robots", "filter")
+            level = re.fullmatch(r'metric\.type = "logging\.googleapis\.com/user/signin_robot_foreign" AND '
+                                 r'resource\.type = "cloud_run_revision" AND metric\.labels\.code = "([A-Z]+)"',
+                                 text).group(1)
+            self.assertEqual((rule["threshold_value"], rule["comparison"], rule["duration"]), (0, "COMPARISON_GT", "0s"))
+            want[level] = (gen.seconds(rule["alignment_period"]), rule["per_series_aligner"],
+                           rule["cross_series_reducer"], [], gen.REV, {"code"})
+        self.assertEqual(foreign, want)
+        self.assertEqual({k: v[0] for k, v in foreign.items()}, {"ERROR": 300, "WARNING": 900})
+
+    def test_a_foreign_policy_that_moved_is_refused(self):
+        """A moved filter, threshold, aligner, grouping, tier or a second condition is a change to the generator,
+        never a row that quietly disagrees with its page; a moved window is read."""
+        text = CATALOGUE.text
+
+        def patched(policy: str, old: str, new: str) -> cat.Catalogue:
+            at = text.index(f"    {policy}:\n")
+            end = text.index(old, at)
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "monitoring.yml"
+                path.write_text(text[:end] + new + text[end + len(old):])
+                return cat.Catalogue(path)
+
+        password, guess = "signin-robot-foreign-password", "signin-robot-foreign-guess"
+        self.assertEqual(gen.foreign_rules(cat.Catalogue()), gen.FOREIGN_RULES)
+        error = 'metric.labels.code = "ERROR"'
+        cases = {
+            "level": (password, error, 'metric.labels.code = "WARNING"'),
+            "resource": (password, 'resource.type = "cloud_run_revision"', 'resource.type = "global"'),
+            "threshold": (guess, 'alignment_period: "900s"', 'alignment_period: "900s"\n            threshold_value: 2'),
+            "held": (guess, 'alignment_period: "900s"', 'alignment_period: "900s"\n            duration: "300s"'),
+            "aligner": (guess, 'alignment_period: "900s"',
+                        'alignment_period: "900s"\n            per_series_aligner: "ALIGN_COUNT"'),
+            "grouping": (password, 'group_by_fields: ["metric.label.class"]', 'group_by_fields: []'),
+            "tier": (guess, "tier: p2", "tier: p3"),
+            # The same condition again, after the first one's grouping: only the count of conditions differs.
+            "second condition": (password, 'group_by_fields: ["metric.label.class"]\n',
+                                 'group_by_fields: ["metric.label.class"]\n        - name: "again"\n'
+                                 "          threshold:\n            filter: >-\n              " +
+                                 CATALOGUE.folded(password, "signin_robots", "filter") +
+                                 '\n            group_by_fields: ["metric.label.class"]\n'),
+        }
+        for case, (policy, old, new) in cases.items():
+            moved = patched(policy, old, new)
+            self.assertNotEqual(moved.text, text, case)
+            with self.assertRaises(AssertionError, msg=case):
+                gen.foreign_rules(moved)
+        self.assertEqual(gen.foreign_rules(patched(guess, 'alignment_period: "900s"', 'alignment_period: "600s"'))
+                         [guess]["alignment_period"], "600s")
 
     def test_a_robots_queries_are_never_sent_while_it_is_not_deployed(self):
         cases = {"not built": (render(), True), "built": (render(TPA_SIGNIN_ROBOTS=BUILT), False),
                  "built, paused": (render(TPA_SIGNIN_ROBOTS=BUILT, TPA_PAUSED_JOBS=",".join(gen.ROBOT_JOBS)), False)}
         for case, (pages, hidden) in cases.items():
             robot = [(n, p["title"], t) for n, p, t in all_targets(pages)
-                     if facts(t)["metric"] in (gen.SYNTHETIC, gen.log("signin_robot_secret_read"))]
+                     if facts(t)["metric"] in (gen.SYNTHETIC, *LOGIN_WATCH)]
             self.assertGreater(len(robot), 50, case)
             self.assertEqual({t.get("hide") for _n, _p, t in robot}, {hidden}, case)
             # Nothing else is ever held back.
             others = {t.get("hide") for _n, _p, t in all_targets(pages)} - {None}
             self.assertEqual(others, {hidden} if robot else set(), case)
-        # Stage 1: the secrets alone, their reads asked (their urgent policy exists), no robot's.
+        # Stage 1: the secrets alone, their reads and the logins tried from elsewhere asked (their policies exist), no
+        # robot's.
         for case, built, robot_hidden in (("stage 1", gen.ROBOT_SECRETS, {MEMBER: True, BROKER: True}),
                                           ("one robot", f"{gen.ROBOT_SECRETS},{MEMBER}", {MEMBER: False, BROKER: True})):
+            asked = {}
             for _n, p, t in all_targets(render(TPA_SIGNIN_ROBOTS=built)):
                 if facts(t)["metric"] == gen.SYNTHETIC:
                     self.assertEqual(t["hide"], robot_hidden[where(t)["job_name"][1]], (case, p["title"]))
-                if facts(t)["metric"] == gen.log("signin_robot_secret_read"):
+                if facts(t)["metric"] in LOGIN_WATCH:
                     self.assertFalse(t["hide"], (case, p["title"]))
+                    asked.setdefault(facts(t)["metric"], set()).add(p["title"])
+            self.assertEqual(asked, {gen.log("signin_robot_secret_read"): {"Sign-in alerts", SECRET_CHART},
+                                     gen.log(gen.FOREIGN): {"Sign-in alerts", FOREIGN_CHART}}, case)
 
     def test_the_render_step_refuses_what_it_does_not_know(self):
         beta = ENVIRONMENTS["beta"]
@@ -387,10 +493,29 @@ class WordsTest(unittest.TestCase):
             robots_row = next(ps for t, ps in sections(pages["sign-in"]).items()
                               if t.startswith("Sign-in robots"))
             self.assertEqual([p["fieldConfig"]["defaults"]["noValue"] for p in robots_row],
-                             [word, word, gen.NONE], env)
+                             [word, word, gen.NONE, gen.NONE], env)
         # The robots are never on production-full's pages.
         for page in RENDERED["production"].values():
             self.assertNotIn("synthetics-member-sign-in", json.dumps(page))
+            self.assertNotIn(gen.FOREIGN, json.dumps(page))
+
+    def test_the_sign_in_page_charts_a_robots_login_from_elsewhere(self):
+        pages = render(TPA_SIGNIN_ROBOTS=gen.ROBOT_SECRETS)
+        robots_row = next(ps for t, ps in sections(pages["sign-in"]).items() if t.startswith("Sign-in robots"))
+        # Two by two: the robots' runs, then the two that watch their logins.
+        self.assertEqual([(p["title"], p["gridPos"]["x"], p["gridPos"]["w"]) for p in robots_row][2:],
+                         [(SECRET_CHART, 0, 12), (FOREIGN_CHART, 12, 12)])
+        self.assertEqual([(p["gridPos"]["x"], p["gridPos"]["w"]) for p in robots_row[:2]], [(0, 12), (12, 12)])
+        chart = robots_row[3]
+        got = {where(t)["code"][1]: (t["aliasBy"], t["timeSeriesList"]["groupBys"], facts(t)["resource"], t["hide"])
+               for t in chart["targets"]}
+        by = ["metric.label.class", "metric.label.operation"]
+        who = "{{metric.label.class}} at {{metric.label.operation}}"
+        self.assertEqual(got, {"ERROR": (f"right password or challenge: {who}", by, gen.REV, False),
+                               "WARNING": (f"wrong password: {who}", by, gen.REV, False)})
+        self.assertEqual(chart["fieldConfig"]["defaults"]["noValue"], gen.NONE)
+        for word in ("signin-robot-foreign-password", "signin-robot-foreign-guess", "urgent", "can wait"):
+            self.assertIn(word, chart["description"])
 
 
 class ScenarioTest(unittest.TestCase):
@@ -506,6 +631,32 @@ class ScenarioTest(unittest.TestCase):
         alerts = tile(self.paused, "Sign-in alerts")
         got = rows(alerts, latest(alerts, {"seeing": 4000, "sender instances": 0}))
         self.assertEqual(got, [("✕ Sender has no instance", 2)], "a paused robot leaves the messenger's pages")
+
+    def test_a_robots_login_tried_from_elsewhere(self):
+        password, guess = "signin-robot-foreign-password", "signin-robot-foreign-guess"
+        both = every_five(MEMBER) + every_five(BROKER)
+        # Any one line in its window is its page: the right password urgent, a guess one that can wait.
+        self.assertEqual(self.firing(both, **{password: 1}), [(PASSWORD_ROW, 2)])
+        self.assertEqual(self.firing(both, **{guess: 1}), [(GUESS_ROW, 1)])
+        self.assertEqual(self.firing(both, **{password: 2, guess: 7}), [(PASSWORD_ROW, 2), (GUESS_ROW, 1)])
+        self.assertEqual(self.firing(both, **{password: 1, "secret read": 1}),
+                         [("✕ A robot's secret was read", 2), (PASSWORD_ROW, 2)])
+        # Its policies are written while the secrets exist, paused or not, whatever auth-db is (signinrobots.tf,
+        # local.signin_robot_once_policies), so they read so here: with the robots paused, auth-db stopped, or the
+        # secrets alone (stage 1, no robot built).
+        stage1 = render(TPA_SIGNIN_ROBOTS=gen.ROBOT_SECRETS)
+        for case, pages in (("paused", self.paused), ("auth-db stopped", self.stopped), ("stage 1", stage1)):
+            alerts = tile(pages, "Sign-in alerts")
+            seen = {"seeing": 4000, "sender instances": 1}
+            self.assertEqual(rows(alerts, latest(alerts, {**seen, password: 1})), [(PASSWORD_ROW, 2)], case)
+            self.assertEqual(rows(alerts, latest(alerts, {**seen, guess: 3})), [(GUESS_ROW, 1)], case)
+            self.assertEqual(rows(alerts, latest(alerts, seen)), [("✓ None firing", -1)], case)
+        # Nothing built: never asked (no such counter, a 404), so never a row.
+        alerts = tile(render(), "Sign-in alerts")
+        self.assertEqual(rows(alerts, latest(alerts, {"seeing": 4000, "sender instances": 1, password: 1, guess: 1})),
+                         [("✓ None firing", -1)])
+        for word in (password, guess, "any one in 5 minutes", "any one in 15 minutes", "paused or not"):
+            self.assertIn(word, self.alerts["description"])
 
     def test_an_older_window_is_never_read_as_now(self):
         # Two failures 12 to 20 minutes ago sit in the eleven-minute window before this one: never "failing" now.

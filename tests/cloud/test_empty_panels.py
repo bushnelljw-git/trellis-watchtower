@@ -67,10 +67,11 @@ BAD = {LOG + m for m in (
     "armor_adaptive_alerts", "auth_sign_in_protection", "auth_breach_corpus_unavailable",
     "auth_sms_codes_estate_ceiling", "auth_sms_codes_registration_ceiling", "iap_not_ok", "crm_login_failures",
     "crm_sign_in_throttled", "crm_sign_in_protection", "everon_runs_not_whole",
-    # The sign-in row's sections (SR-OR-1, D-335): a robot's secret read by anyone else, texts never handed over,
-    # the delivery read's own faults, emails that could not be delivered, mail kept from a synthetic login.
-    "signin_robot_secret_read", "auth_texts_not_sent", "auth_text_delivery_faults", "auth_email_undeliverable",
-    "auth_message_to_synthetic_login")}
+    # The sign-in row's sections (SR-OR-1, D-335): a robot's secret read by anyone else, a robot's login tried from
+    # anywhere but its runner, texts never handed over, the delivery read's own faults, emails that could not be
+    # delivered, mail kept from a synthetic login.
+    "signin_robot_secret_read", "signin_robot_foreign", "auth_texts_not_sent", "auth_text_delivery_faults",
+    "auth_email_undeliverable", "auth_message_to_synthetic_login")}
 # Heartbeats: written every pass or run, so nothing at all is the signal missing, said as missing.
 HEARTBEATS = {LOG + "connectors_passes", LOG + "auth_audit_reconciled", LOG + "auth_events_publisher_alive",
               LOG + "auth_events_outbox_lag"}

@@ -5438,14 +5438,16 @@ synthetics:
 # `^synthetics-` filter), which the root makes while any journey or robot is
 # built, paused or not.
 #
-# The first four policies are written once per running robot (built, not
+# The first five policies are written once per running robot (built, not
 # paused, auth-db running): `__JOB__` is its job and `__WHO__` "Members" or
 # "Brokers", and each key there is `<key>-<robot>`. `signin-checks-off` is p3
 # here and a notice in the app project (the root's tier override: email and
-# Slack, never PagerDuty). `signin-robot-secret-read` and its counter are
-# written once, while the robots' two secrets exist. No condition is a log
-# match: an incident carries the job's name alone, and the secret read's
-# documentation says where to read who.
+# Slack, never PagerDuty). The last three and their two counters are written
+# once, while the robots' two secrets exist (local.signin_robot_once_policies):
+# `signin-robot-secret-read`, and over auth's `sign_in_robot_foreign` line
+# `signin-robot-foreign-password` and `signin-robot-foreign-guess`. No
+# condition is a log match: an incident carries the job's name or the
+# counter's closed words alone, and each documentation says where to read who.
 # =============================================================================
 signin_robots:
   log_metrics:
@@ -5458,6 +5460,32 @@ signin_robots:
         AND protoPayload.methodName=~"AccessSecretVersion$"
         AND protoPayload.resourceName=~"/secrets/signin-robot-(member|broker)-credentials(/|$)"
         AND NOT (protoPayload.authenticationInfo.principalEmail=~"^sa-signin-robots@[a-z0-9-]+-tpa-app\\.iam\\.gserviceaccount\\.com$" AND NOT protoPayload.authenticationInfo.serviceAccountDelegationInfo.firstPartyPrincipal.principalEmail:*)
+
+    # auth-notary 30a1e743 (the independent review's M1; SR-03): auth writes
+    # one `sign_in_robot_foreign` line (logger auth.domain.sign_in_robots) per
+    # sign-in robot attempt it refuses for coming from anywhere but the runner
+    # (its address, the public portal, its own role): `level` ERROR when
+    # `proved` (the robot's right password at /auth/login, or a live challenge
+    # of its answered at /auth/mfa/verify: a secret that left its one reader),
+    # WARNING when not (a wrong password at the robot's address). The line's
+    # other fields are `outcome` refused, `reason` robot_foreign, `robot`,
+    # `door` and `sub`; `sub` (the robot's prn_) is never read, and the line
+    # carries no address, email, origin or password. A rename of the line or
+    # its fields is class 2 with auth-notary (its invariant 52's note). Each
+    # label is a closed REGEXP_EXTRACT alternation: `code` the level, `class`
+    # the robot, `operation` the door.
+    signin_robot_foreign:
+      description: >-
+        One per sign-in robot attempt auth refused for coming from anywhere but the robots' runner (auth's `sign_in_robot_foreign` line): `code` ERROR when it was proved (the robot's right password, or its live challenge answered, from elsewhere: a robot secret that left its one reader), WARNING when it was a wrong password at a robot's address; by robot (`class`, member or broker) and door (`operation`, login or verify). Never the robot's id, an address, an email or an origin.
+      filter: |
+        resource.type="cloud_run_revision"
+        AND resource.labels.service_name="auth"
+        AND jsonPayload.logger="auth.domain.sign_in_robots"
+        AND jsonPayload.msg="sign_in_robot_foreign"
+      labels:
+        code: 'REGEXP_EXTRACT(jsonPayload.level, "^(ERROR|WARNING)$")'
+        class: 'REGEXP_EXTRACT(jsonPayload.robot, "^(member|broker)$")'
+        operation: 'REGEXP_EXTRACT(jsonPayload.door, "^(login|verify)$")'
 
   alert_policies:
     # The owner's two failed runs and no pass in eleven minutes. Runs are five
@@ -5594,6 +5622,55 @@ signin_robots:
           threshold:
             filter: >-
               metric.type = "logging.googleapis.com/user/signin_robot_secret_read" AND resource.type = "secretmanager.googleapis.com/Secret"
+
+    # auth's `sign_in_robot_foreign` at ERROR (auth-notary 30a1e743, asked by
+    # its request `2026-11-12-auth-notary-to-tpa-platform-sign-in-robots-
+    # phase-1.md` §F): a robot's right password at /auth/login, or a live
+    # challenge of its answered at /auth/mfa/verify, from anywhere but its
+    # runner. Only the runner holds either, so any one is a robot secret that
+    # left its one reader (SR-03): p1, beside signin-robot-secret-read. auth
+    # refused it, so nothing was signed in. Any one in five minutes.
+    signin-robot-foreign-password:
+      display_name: "URGENT a sign-in robot's password used from elsewhere"
+      subject: "A sign-in robot's right password or live challenge was used from outside its runner: ${metric_or_resource.label.class}"
+      tier: p1
+      urgent: true
+      documentation: >-
+        auth refused a sign-in robot's right password at /auth/login, or the robot's live sign-in challenge at /auth/mfa/verify, because it came from somewhere other than the robots' runner (the app network's NAT addresses, the portal's own origin, the robot's own role): somebody holds what only the robots' account can read. Nothing was signed in (auth answered as for a wrong password, or with the challenge's 410). The subject names which robot (the counter's `class`), and the counter's `operation` which door; auth's audit chain holds a refused sign-in's address. Turn the robots off at auth (signin_robot_principals_enabled false), read the robots' secrets' Data Access entries (signin-robot-secret-read) and auth's audit, then rotate both logins (infra/README.md, "Sign-in robots"). The runner itself opens this only from an address auth was not given (the NAT's addresses changed before auth's revision took the new list) or off the portal's origin, and signin-failing opens beside it then. auth's own error counters count this line too (an ERROR of auth.domain.sign_in_robots), so its error alerts may open beside this one.
+      conditions:
+        - name: "a robot's right password or live challenge from elsewhere"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/signin_robot_foreign" AND resource.type = "cloud_run_revision" AND metric.labels.code = "ERROR"
+            # One incident per robot: the subject names which.
+            group_by_fields: ["metric.label.class"]
+
+    # The same line at WARNING: a wrong password at a robot's address, from
+    # anywhere but the runner. The bar is one line in fifteen minutes, from
+    # what an internet scan does: a scan or a credential-stuffing list tries
+    # addresses it has, and a robot's address is 128 random bits under
+    # `sign-in-check.invalid`, published nowhere (no event, no admin list, no
+    # mail), so a scan writes none of these lines at all; only someone who
+    # learned the address (from a secret version or auth-db) can. And auth
+    # charges every such try to the robot's foreign bucket and writes no line
+    # once it is shut (its lock is five to ten tries in a fifteen- to
+    # sixty-minute window), so a "burst" bar above one could be walked under
+    # by pacing, and above five might never be reachable. p2, not p1: a guess
+    # holds no password, auth refused it, and the robots' own sign-ins never
+    # meet that bucket.
+    signin-robot-foreign-guess:
+      display_name: "someone tried a sign-in robot's login from elsewhere"
+      subject: "Someone outside the runner tried a sign-in robot's login with a wrong password: ${metric_or_resource.label.class}"
+      tier: p2
+      documentation: >-
+        auth refused a wrong password at a sign-in robot's own address, from somewhere other than the robots' runner, at least once in fifteen minutes. A robot's address is 128 random bits under sign-in-check.invalid and is published nowhere, so no internet scan reaches this: somebody learned the address from a robot's secret or from auth's database. Nothing was signed in, and the robots' own sign-ins are unaffected (auth charges these tries to the robot's separate foreign bucket). The subject names which robot (the counter's `class`); auth's audit chain holds each refused sign-in's address. Read the robots' secrets' Data Access entries (signin-robot-secret-read) and who can read auth-db; on any doubt, turn the robots off at auth (signin_robot_principals_enabled false) and rotate both logins (infra/README.md, "Sign-in robots").
+      conditions:
+        - name: "a wrong password at a robot's address from elsewhere in fifteen minutes"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/signin_robot_foreign" AND resource.type = "cloud_run_revision" AND metric.labels.code = "WARNING"
+            alignment_period: "900s"
+            group_by_fields: ["metric.label.class"]
 
 # D-158 (the owner's R5040 and R5041, 2026-10-13): beta's text codes, the
 # code sender in connectors (docs/services/connectors.md §4.6;

@@ -88,10 +88,14 @@ SIGNIN_ROBOTS = (("member-sign-in", "Members", "Member robot", "a software passk
                  ("broker-sign-in", "Brokers", "Broker robot", "an authenticator code"))
 ROBOT_JOBS = tuple(f"synthetics-{key}" for key, *_rest in SIGNIN_ROBOTS)
 ROBOT_DBS = ("auth-db",)
-# The robots' two secrets and their read counter (signin_robot_secret_read, and the urgent signin-robot-secret-read),
-# which tpa-platform makes from stage 1 (signin_robot_principals_enabled), before any robot job: TPA_SIGNIN_ROBOTS
-# names it beside the jobs once they exist, and its queries are not sent until then.
+# The robots' two secrets and the two counters that watch their logins (signin_robot_secret_read, and the urgent
+# signin-robot-secret-read; signin_robot_foreign, auth's line on a robot's login tried from anywhere but the runner,
+# and its signin-robot-foreign-password and -guess), which tpa-platform makes from stage 1
+# (signin_robot_principals_enabled), before any robot job, and keeps while the secrets exist, paused or not
+# (signinrobots.tf, local.signin_robot_once_policies): TPA_SIGNIN_ROBOTS names it beside the jobs once they exist, and
+# their queries are not sent until then.
 ROBOT_SECRETS = "signin-robot-secrets"
+FOREIGN = "signin_robot_foreign"
 PAUSABLE = (*SWEEPS, IMPORTER, *ROBOT_JOBS)
 SWITCHED = (IMPORTER,)
 DATABASES = ("auth-db", "tpa-db", "crm-db", "cc-db")
@@ -1720,6 +1724,31 @@ def messenger_rules() -> dict:
 
 MESSENGER = messenger_rules()
 SECRET_READ = CATALOGUE.threshold("signin-robot-secret-read", section="signin_robots")
+
+
+def foreign_rules(catalogue: Catalogue = CATALOGUE) -> dict[str, dict]:
+    """auth's two policies over its `sign_in_robot_foreign` line, read from the catalogue: by name, the level it counts
+    (the counter's `code`: ERROR, a robot's right password or live challenge; WARNING, a wrong password at a robot's
+    address), its tier (p1 or p2: what the tile weighs), and its threshold condition. Each is refused unless it is one
+    condition, any one line of its level in its window, one incident per robot: so the tile's count over both robots
+    holds exactly when one pages. Its window is read, never refused: a moved window moves the tile with it."""
+    out = {}
+    for name, level in (("signin-robot-foreign-password", "ERROR"), ("signin-robot-foreign-guess", "WARNING")):
+        policy = catalogue.policy(name, section="signin_robots")
+        rule = catalogue.threshold(name, section="signin_robots")
+        found = catalogue.folded(name, "signin_robots", "filter")
+        want = f'metric.type = "{log(FOREIGN)}" AND resource.type = "{REV}" AND metric.labels.code = "{level}"'
+        assert found == want, f"the catalogue's {name} is not the filter the sign-in alerts tile reads:\n{found}"
+        assert set(policy["conditions"]) == {"-0"}, name
+        assert policy["tier"] in ("p1", "p2"), (name, policy["tier"])
+        assert (rule["comparison"], rule["threshold_value"], rule["duration"], rule["per_series_aligner"],
+                rule["cross_series_reducer"], rule.get("group_by_fields")) == (
+            "COMPARISON_GT", 0, "0s", "ALIGN_DELTA", "REDUCE_SUM", '["metric.label.class"]'), (name, rule)
+        out[name] = {**rule, "level": level, "tier": policy["tier"]}
+    return out
+
+
+FOREIGN_RULES = foreign_rules()
 # Each alert's weight in the tile, by how it pages: urgent (p1, PagerDuty high urgency), can wait (p2), a notice
 # (email and Slack, never PagerDuty: `signin-checks-off`, the beta root's tier override).
 URGENT, CAN_WAIT, NOTICE = "2", "1", "0.5"
@@ -1745,6 +1774,17 @@ def alerts_table(env: str, w: int = 6, h: int = 5) -> dict:
               period=window(SECRET_READ), reduce=SECRET_READ["cross_series_reducer"], by=(), name="secret read"),
             (ROBOT_SECRETS,)))
         alerts["✕ A robot's secret was read"] = (a.at_least(a.count("secret read")), URGENT)
+        # A robot's login from anywhere but its runner: written while the secrets exist, paused or not
+        # (signinrobots.tf, local.signin_robot_once_policies) and whatever auth-db is (beta's main.tf merges them
+        # with no database filter), so never weighed 0 while they exist. One row for both robots, not one each: a
+        # line whose robot is neither word has an empty `class`, which the policy still pages on.
+        for policy, words in (("signin-robot-foreign-password", "✕ A robot's password used elsewhere"),
+                              ("signin-robot-foreign-guess", "⚠ A robot's login tried elsewhere")):
+            rule = FOREIGN_RULES[policy]
+            queries.append(hidden_while_not_deployed(
+                q(log(FOREIGN), REV, align=rule["per_series_aligner"], period=window(rule),
+                  reduce=rule["cross_series_reducer"], by=(), name=policy, code=rule["level"]), (ROBOT_SECRETS,)))
+            alerts[words] = (a.at_least(a.count(policy)), {"p1": URGENT, "p2": CAN_WAIT}[rule["tier"]])
     v, s = MESSENGER["vendor"], MESSENGER["stalled"]
     for lane, word in (("sms", "Text"), ("email", "Email")):
         queries.append(q(log("auth_message_vendor_failures"), REV, period=window(v), by=(), name=f"vendor {lane}",
@@ -1795,8 +1835,14 @@ def alerts_table(env: str, w: int = 6, h: int = 5) -> dict:
               f"pass (`signin-robot-locked-out`); no result for {SIGNIN['silent']} minutes while it runs "
               f"(`signin-silent`); the runner's own fault (`signin-robot-broken`, can wait); switched off a day "
               "(`signin-checks-off`, a notice); anyone but the robots reading a robot's secret "
-              "(`signin-robot-secret-read`). A robot not deployed, paused or with auth-db stopped asks nothing of its "
-              "own and is never silent." if env == "beta" else "")
+              "(`signin-robot-secret-read`); a robot's right password or live sign-in challenge used anywhere but its "
+              f"runner, any one in {minutes(FOREIGN_RULES['signin-robot-foreign-password'])} minutes "
+              "(`signin-robot-foreign-password`: somebody holds a robot's login; auth refused it); a wrong password at "
+              "a robot's own address from elsewhere, any one in "
+              f"{minutes(FOREIGN_RULES['signin-robot-foreign-guess'])} minutes (`signin-robot-foreign-guess`, can "
+              "wait: somebody learned the address). Those three are read while the robots' secrets exist, paused or "
+              "not. A robot not deployed, paused or with auth-db stopped asks nothing of its own and is never "
+              "silent." if env == "beta" else "")
     p = panel("table", "Sign-in alerts", APP, queries,
               "The sign-in alerts that hold now, each its policy's own rule read from the same counters and windows, "
               "so a red row here is what pages (urgent: PagerDuty high urgency; can wait; a notice: email and Slack). "
@@ -2922,9 +2968,10 @@ def portal_api() -> dict:
                      ["portal-api"], items)
 
 
-def robot_runs(w: int = 8, h: int = 7) -> list[dict]:
+def robot_runs(w: int = 12, h: int = 7) -> list[dict]:
     """The sign-in robots' own row on the Sign-in page, where each robot tile on the overview links: each robot's runs
-    by outcome and code, and any read of their secrets by anyone else (SR-OR-1)."""
+    by outcome and code, then any read of their secrets by anyone else and any try of their logins from anywhere but
+    the runner (SR-OR-1), two by two."""
     out = [row("Sign-in robots: a member and a broker sign in on the portal every five minutes (SR-OR-1)")]
     for (key, who, title, factor), job in zip(SIGNIN_ROBOTS, ROBOT_JOBS):
         out.append(series(f"{title}: its checks, by outcome and code", APP,
@@ -2945,6 +2992,23 @@ def robot_runs(w: int = 8, h: int = 7) -> list[dict]:
                       "log; `signin-robot-secret-read`, urgent). The entry says who; whoever reads one holds a robot "
                       "login. None while the robots' secrets do not exist yet (before tpa-platform's stage 1).", bars=True, w=w,
                       h=h, no_value=NONE))
+    who = alias("class") + " at " + alias("operation")
+    out.append(series("A robot's login tried from anywhere but its runner", APP,
+                      [hidden_while_not_deployed(q(log(FOREIGN), REV, by=("class", "operation"), name=f"{words}: {who}",
+                                                   code=rule["level"]), (ROBOT_SECRETS,))
+                       for words, rule in (("right password or challenge",
+                                            FOREIGN_RULES["signin-robot-foreign-password"]),
+                                           ("wrong password", FOREIGN_RULES["signin-robot-foreign-guess"]))],
+                      "auth refusing a sign-in robot's login because it came from somewhere other than the robots' "
+                      "runner (its addresses, the portal's own origin, the robot's own role), by robot (member or "
+                      "broker) and door (login, /auth/login; verify, /auth/mfa/verify) (`signin_robot_foreign`, auth's "
+                      "`sign_in_robot_foreign` line). right password or challenge: the robot's right password, or its "
+                      "live sign-in challenge answered, so somebody holds what only the robots' account can read "
+                      "(`signin-robot-foreign-password`, urgent). wrong password: a wrong password at a robot's own "
+                      "address, which is published nowhere, so somebody learned it from a robot's secret or auth's "
+                      "database (`signin-robot-foreign-guess`, can wait). auth refused every one, so nothing was signed "
+                      "in; auth's audit chain holds each one's address, never this counter. None while the robots' "
+                      "secrets do not exist yet (before tpa-platform's stage 1).", bars=True, w=w, h=h, no_value=NONE))
     return out
 
 

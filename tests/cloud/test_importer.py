@@ -130,8 +130,10 @@ class TerraformTest(unittest.TestCase):
         squashed = " ".join(watch.split())
         for line in ('TPA_PAUSED_JOBS = join(",", local.watch_paused_jobs)',
                      'TPA_NOT_DEPLOYED_JOBS = join(",", local.watch_not_deployed_jobs)',
+                     # The sign-in robots join it while paused (tpa-platform 10e20a62; tests/cloud/test_signin.py).
                      "watch_paused_jobs = sort(concat(tolist(var.tpa_jobs_paused), var.feed_ingest_enabled && "
-                     "var.feed_ingest_paused ? [local.feed_ingest_job] : []))",
+                     "var.feed_ingest_paused ? [local.feed_ingest_job] : [], var.signin_robots_paused ? "
+                     "local.watch_signin_robot_jobs : []))",
                      "watch_not_deployed_jobs = var.feed_ingest_enabled ? [] : [local.feed_ingest_job]"):
             self.assertIn(line, squashed, line)
 

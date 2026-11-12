@@ -487,9 +487,22 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     them.
   - [x] The catalogue's signin_robots, auth_texts and auth_email_everyone sections read (SECTIONS); `check_id` allowed on
     uptime results alone.
-  - [ ] Owed by tpa-platform: watch.tf writes TPA_SIGNIN_ROBOTS and the paused robots (docs/REQUESTS.md).
+  - [x] Owed by tpa-platform: watch.tf writes TPA_SIGNIN_ROBOTS and the paused robots (docs/REQUESTS.md): done at
+    tpa-platform 10e20a62, pinned by tests/cloud/test_signin.py since the re-vendor at 9b36cd12.
   - [ ] Pixels on the real page once deployed; and once the robots run, a read of their lines through the row
     (timeSeries.list), since today their metric does not exist (404).
+  - [x] (2026-11-12) The catalogue re-vendored at tpa-platform origin/master 9b36cd12 (blob 1d0a2ae7): auth's
+    `signin_robot_foreign` and its two policies. The Sign-in alerts tile gains `signin-robot-foreign-password` (✕ A
+    robot's password used elsewhere, urgent, any one ERROR line in 5 minutes) and `signin-robot-foreign-guess` (⚠ A
+    robot's login tried elsewhere, can wait, any one WARNING line in 15 minutes), each read from the catalogue
+    (`foreign_rules`, refused if its filter or condition moves), asked once TPA_SIGNIN_ROBOTS names the secrets and
+    never weighed 0 while they exist (tpa-platform writes both while the secrets exist, paused or not). The Sign-in
+    page's robots row charts the counter by robot and door (right password or challenge, wrong password), two by two.
+    Live (read only, 2026-11-12): all six new queries answered 404 "Cannot find metric(s)" (no descriptor: stage 1
+    is not applied), the same shapes on `auth_texts_reported` 200. The review (one round, opus): no blocker; the
+    refusals are now exercised on patched catalogues, and main.tf's merge (no database filter) and tier overrides
+    are pinned.
+  - [ ] Once stage 1 is applied, a read of `signin_robot_foreign`'s queries (today a 404: no such counter).
 
 ## Review
 
