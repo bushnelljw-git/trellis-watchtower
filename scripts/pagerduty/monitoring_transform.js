@@ -66,13 +66,26 @@ function contains(list, value) {
   return false;
 }
 
+// The title a person reads. The environment word in front is dropped: this account pages for one estate, the
+// production one, whose Terraform root happens to be named "beta" (the owner, 2026-11-12: "We are NOT in beta").
+// A Google operation name ("google.monitoring.v3.AlertPolicyService.DeleteAlertPolicy") becomes its last part in
+// words ("delete alert policy"). The first letter is a capital.
+var OPERATION = /google\.[A-Za-z0-9.]+\.([A-Z][A-Za-z]+)\b/g;
+
+function plain(subject) {
+  var out = subject.replace(OPERATION, function (whole, last) {
+    return last.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  });
+  return out.charAt(0).toUpperCase() + out.substring(1);
+}
+
 function title(i) {
   var subject = text(field(i.documentation, "subject")).replace(TAG, "");
   var policy = text(i.policy_name);
   var condition = text(i.condition_name);
   var chosen = "Cloud Monitoring alert";
   if (OUR_SUBJECT.test(subject)) {
-    chosen = subject;
+    chosen = plain(subject.replace(OUR_SUBJECT, ""));
   } else if (policy && condition) {
     chosen = policy + SEPARATOR + condition;
   } else if (text(i.summary)) {

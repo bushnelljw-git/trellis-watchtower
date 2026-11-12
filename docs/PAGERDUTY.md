@@ -10,7 +10,7 @@ to Slack.
 ```
 alert policy (severity CRITICAL or WARNING)
   -> the project's `pagerduty` notification channel          (tpa-platform's Terraform; tf_with_keys.py gives it the key)
-  -> PagerDuty service "TPA beta · …"                        (pd_setup.py makes it)
+  -> PagerDuty service "TPA · …"                        (pd_setup.py makes it)
        integration "Google Cloud Monitoring (titled)": the title (the policy's subject, else
                             "policy · condition"), the details and the watchtower links
        event orchestration: severity (any letter case) -> alert severity + priority
@@ -45,6 +45,12 @@ PagerDuty deleted the TPA's first account. The owner made a new one and the same
   API (`POST /incident_workflows/triggers` answered 500 "Reduce of empty array with no initial value" for every
   shape tried with the account key), so a person adds it in PagerDuty: the workflow → Triggers → "Conditional
   trigger", the three "TPA beta ·" services, condition "incident status is triggered".
+- **No "beta" in what people read (the owner, 2026-11-12: "We are NOT in beta").** The Terraform root is named
+  `beta` but it is the production estate. The services are "TPA · Portal & API", "TPA · Member records" and
+  "TPA · Call centre", the business service "Trellis TPA", and the titled integration drops the subject's
+  environment word and writes a Google operation name as its last part in words ("Alert policy or channel changed:
+  delete notification channel"). `tf_with_keys.py` reads those names for the `beta` root and "TPA <env> · …" for any
+  other. Policy names inside Google Cloud still begin "beta:" (tpa-platform's naming, not changed here).
 - **Slack channel: #obatpa-incidents** (the owner's name for it, 2026-11-12; made as #pd-incidents, same channel id
   C0CH19SCVDL, so the connections did not change), the channel PagerDuty made in the workspace (the first account's
   #tpa-beta-alerts is gone). The three connections were made through PagerDuty's Slack integration API
@@ -72,9 +78,9 @@ All of it was made by `scripts/pagerduty/pd_setup.py` on 2026-10-11 and is check
 | Team | TPA Platform | Jonathan Bushnell and Rafeale Hill, both **manager**. PagerDuty gives an account owner or admin the manager role only. |
 | Schedule | TPA primary on-call | America/Chicago. One weekly layer, handed off Monday at 09:00. Jonathan alone today. To make it a rotation, add a name to `ROTATION` in `pdlib.py` and re-run. The script only changes a schedule that has exactly one active layer. |
 | Escalation policy | TPA Platform | Owned by the team. Level 1: the schedule, 15 min. Level 2: Rafeale Hill, 15 min. Repeats twice. |
-| Services | TPA beta · Portal & API (app project), TPA beta · Member records (PHI project), TPA beta · Call centre (call-centre project) | The escalation policy above. Urgency from severity (dynamic notifications). Acknowledgement timeout 30 min. No auto-resolve, because Monitoring resolves. Two integrations each: "Google Cloud Monitoring (titled)", which Monitoring's channel is given and which writes the title, the details and the watchtower links ("Incident titles"), and the plain "Google Cloud Monitoring", kept as the way back. A service event orchestration: the severity (next section). |
+| Services | TPA · Portal & API (app project), TPA · Member records (PHI project), TPA · Call centre (call-centre project) | The escalation policy above. Urgency from severity (dynamic notifications). Acknowledgement timeout 30 min. No auto-resolve, because Monitoring resolves. Two integrations each: "Google Cloud Monitoring (titled)", which Monitoring's channel is given and which writes the title, the details and the watchtower links ("Incident titles"), and the plain "Google Cloud Monitoring", kept as the way back. A service event orchestration: the severity (next section). |
 | Alert grouping settings | one per service, named after it | Intelligent grouping (PagerDuty set a 5-minute window). The script falls back to time-based grouping (10 minutes) only if PagerDuty's refusal says "intelligent". It uses `/alert_grouping_settings`, because the service field `alert_grouping_parameters` is deprecated. |
-| Business service | Trellis TPA (beta) | Supported by the three services. It is what PagerDuty's status dashboard shows. |
+| Business service | Trellis TPA | Supported by the three services. It is what PagerDuty's status dashboard shows. |
 | Notification rules | Jonathan Bushnell, Rafeale Hill | Built from the contact methods each person already has, and created only with `--add-rules` (next sections). |
 
 "Default Service" and the "Default" escalation policy are left as they were. The names start "TPA beta ·" so a
@@ -416,8 +422,8 @@ tpa-platform's inputs. Its `infra/README.md`, "PagerDuty's keys at the apply", i
 python3 ~/Documents/code/trellis-watchtower/scripts/pagerduty/tf_with_keys.py -- terraform -chdir=infra/envs/beta plan
 ```
 
-- It reads the three services' integration keys from PagerDuty: "TPA beta · Portal & API" is `app`, "TPA beta ·
-  Member records" is `phi`, and "TPA beta · Call centre" is `cc`. Each service has two integrations, and the route
+- It reads the three services' integration keys from PagerDuty: "TPA · Portal & API" is `app`, "TPA beta ·
+  Member records" is `phi`, and "TPA · Call centre" is `cc`. Each service has two integrations, and the route
   picks one: the "Google Cloud Monitoring (titled)" integration's keys by default, the plain "Google Cloud
   Monitoring" integration's with `TW_PAGERDUTY_ROUTE=monitoring` in front of the command.
 - It prints one line, for example `tf_with_keys: PagerDuty keys (beta; route transformer, the "Google Cloud
@@ -510,7 +516,7 @@ allowlist (`service`, `operation`, `gate`, `code`, `outcome`, `status_class`, `j
 any extractor that reads a tenant, member, request, row or URL field (SPEC.md, "No PHI anywhere in monitoring").
 The titled integration adds one thing that is not in the event: the watchtower's address, in the links. It rearranges
 the rest and fetches nothing. A new alert policy's documentation must keep to the same rule. Each service's description says so too. Beta's
-administrator-feed importer (2026-10-25) keeps it: `feed-ingest-failed` (the app project, "TPA beta · Portal & API")
+administrator-feed importer (2026-10-25) keeps it: `feed-ingest-failed` (the app project, "TPA · Portal & API")
 names the job alone, and records' `records-source-sync-alert` (the PHI project, "· Member records") counts a
 value-free line, never its run, tenant or counts.
 
@@ -534,10 +540,10 @@ value-free line, never its run, tenant or counts.
 
   | Service | Severity sent | Urgency | Alert severity | Priority |
   |---|---|---|---|---|
-  | TPA beta · Portal & API | Warning | low | warning | P3 |
-  | TPA beta · Member records | Warning | low | warning | P3 |
-  | TPA beta · Call centre | Warning | low | warning | P3 |
-  | TPA beta · Portal & API | Critical | high | critical | P1 |
+  | TPA · Portal & API | Warning | low | warning | P3 |
+  | TPA · Member records | Warning | low | warning | P3 |
+  | TPA · Call centre | Warning | low | warning | P3 |
+  | TPA · Portal & API | Critical | high | critical | P1 |
 
 - **Case-insensitive rules.** The review found that the first test sent the same casing the rules matched, so it
   proved nothing about lower case. The rules became `matches regex '(?i)^ *Word *$'`.
@@ -548,8 +554,8 @@ value-free line, never its run, tenant or counts.
 
   | Service | Severity sent | Urgency | Alert severity | Priority |
   |---|---|---|---|---|
-  | TPA beta · Portal & API | `warning` | low | warning | P3 |
-  | TPA beta · Portal & API | `critical` | high | critical | P1 |
+  | TPA · Portal & API | `warning` | low | warning | P3 |
+  | TPA · Portal & API | `critical` | high | critical | P1 |
 
   Both lower-case words matched patterns written capitalised, so the ignore-case flag works in PagerDuty. P1 on the
   critical event shows its rule matched: an unmatched event gets no priority.

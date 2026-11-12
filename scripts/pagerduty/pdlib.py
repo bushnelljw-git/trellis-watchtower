@@ -102,7 +102,7 @@ ROUTE_VARIABLE = "TW_PAGERDUTY_ROUTE"
 SERVICES = [
     {
         "role": "app",
-        "name": "TPA beta · Portal & API",
+        "name": "TPA · Portal & API",
         "description": (
             "The beta app project: the web edge and portal, tpa-api, sign-in (auth) and tpa-jobs. Paged by Cloud "
             "Monitoring alert policies in that project (tpa-platform infra/modules/monitoring). Each alert carries "
@@ -111,7 +111,7 @@ SERVICES = [
     },
     {
         "role": "phi",
-        "name": "TPA beta · Member records",
+        "name": "TPA · Member records",
         "description": (
             "The beta PHI project: records (the Records Gateway), connectors and tpa-db, inside the perimeter. Paged "
             "by Cloud Monitoring alert policies in that project. Alerts carry metric labels from a closed allowlist "
@@ -120,7 +120,7 @@ SERVICES = [
     },
     {
         "role": "cc",
-        "name": "TPA beta · Call centre",
+        "name": "TPA · Call centre",
         "description": (
             "The beta call-centre project: the phone line (svc-voice). Paged by Cloud Monitoring alert policies in "
             "that project. Alerts never carry PHI. The signal catalogue is trellis-watchtower docs/SIGNALS.md."
@@ -138,10 +138,10 @@ SLACK_CHANNEL = "obatpa-incidents"
 SLACK_EVENTS = ["incident.triggered", "incident.resolved"]
 SLACK_SILENT_KINDS = ("responder",)
 
-BUSINESS_SERVICE = "Trellis TPA (beta)"
+BUSINESS_SERVICE = "Trellis TPA"
 BUSINESS_DESCRIPTION = (
-    "The TPA beta as its users see it: the portal, member records and the call centre. Its status is the status "
-    "of the three TPA beta services that support it."
+    "The TPA as its users see it: the portal, member records and the call centre. Its status is the status "
+    "of the three TPA services that support it."
 )
 BUSINESS_POINT_OF_CONTACT = "The TPA Platform team in PagerDuty"
 
@@ -264,6 +264,9 @@ _TAG = re.compile(r"^\[[^\]]*\] ")
 _OUR_SUBJECT = re.compile(r"^[a-z][a-z-]* · ")
 
 
+_OPERATION = re.compile(r"google\.[A-Za-z0-9.]+\.([A-Z][A-Za-z]+)\b")
+
+
 def transformer_title(incident: dict) -> str:
     """The title monitoring_transform.js gives Monitoring's incident object: the same rules, written again here so
     pd_test_event.py knows what to expect. tests/pagerduty/test_monitoring_transform.py holds the two to each other."""
@@ -273,7 +276,10 @@ def transformer_title(incident: dict) -> str:
     subject = _TAG.sub("", text((incident.get("documentation") or {}).get("subject")), count=1)
     policy, condition = text(incident.get("policy_name")), text(incident.get("condition_name"))
     if _OUR_SUBJECT.match(subject):
-        title = subject
+        # The environment word is dropped and a Google operation name becomes its last part in words (the .js file).
+        title = _OPERATION.sub(lambda m: re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", m.group(1)).lower(),
+                               _OUR_SUBJECT.sub("", subject, count=1))
+        title = title[:1].upper() + title[1:]
     elif policy and condition:
         title = policy + TITLE_SEPARATOR + condition
     else:

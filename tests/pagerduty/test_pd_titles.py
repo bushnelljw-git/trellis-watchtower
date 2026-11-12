@@ -12,7 +12,7 @@ import unittest
 import fakes
 from test_pd_setup import SUMMARY_STEADY_DRY, Base, pd_setup
 
-SERVICES = ("TPA beta · Portal & API", "TPA beta · Member records", "TPA beta · Call centre")
+SERVICES = ("TPA · Portal & API", "TPA · Member records", "TPA · Call centre")
 
 # Each service's orchestration as it was live before the titles (read back 2026-10-13): the severity rules alone, in
 # "start". The fake's priority ids stand in for the account's.
@@ -148,7 +148,7 @@ class ThePlanAgainstToday(Base):
 
     def test_a_changed_title_rule_and_a_rule_a_person_added_are_named(self):
         self.pd("--apply")
-        sid = self.service_id("TPA beta · Call centre")
+        sid = self.service_id("TPA · Call centre")
         self.rules(sid, "titles")[0]["actions"]["extractions"][0]["template"] = "{{variables.subject}}!"
         self.rules(sid, "titles").insert(0, {"id": "rX", "label": "Someone's rule", "conditions": [],
                                              "actions": {"annotate": "x"}, "disabled": False})
@@ -158,7 +158,7 @@ class ThePlanAgainstToday(Base):
         self.assertRegex(self.summary(result), r"^summary: 0 to create, 1 to update, ")
 
     def test_a_rule_that_moved_and_changed_says_both(self):
-        sid = self.service_id("TPA beta · Portal & API")
+        sid = self.service_id("TPA · Portal & API")
         path = self.state.orchestrations[sid]
         path["sets"].append({"id": "old", "rules": [path["sets"][0]["rules"].pop(0)]})
         path["sets"][1]["rules"][0]["actions"]["priority"] = "PRI4"
@@ -173,7 +173,7 @@ class TheTitleRules(Base):
     def setUp(self):
         super().setUp()
         self.apply()
-        self.sid = self.service_id("TPA beta · Portal & API")
+        self.sid = self.service_id("TPA · Portal & API")
 
     def through(self, body) -> tuple[dict, dict]:
         """The event after the orchestration ({summary, custom_details}) and the severity and priority it set."""
@@ -335,7 +335,7 @@ class WithoutAdvancedOrchestration(Base):
         result = self.pd("--apply")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertRegex(self.summary(result), r"^summary: created 0, updated 0, ok \d+, kept 0, refused 3, ")
-        self.assertIn('refused     event orchestration on "TPA beta · Member records"  [this PagerDuty plan lacks '
+        self.assertIn('refused     event orchestration on "TPA · Member records"  [this PagerDuty plan lacks '
                       "Advanced Event Orchestration; titles unchanged, the previous orchestration restored "
                       "(PagerDuty: forbidden_feature:", result.stdout)
         puts = orchestration_puts(self.state, before)
@@ -368,10 +368,10 @@ class RestoreFails(Base):
     def test_the_severity_rules_still_run(self):
         result = self.pd("--apply", "--add-rules")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn('refused     event orchestration on "TPA beta · Portal & API"  [this PagerDuty plan lacks '
+        self.assertIn('refused     event orchestration on "TPA · Portal & API"  [this PagerDuty plan lacks '
                       "Advanced Event Orchestration (PagerDuty: forbidden_feature:", result.stdout)
         self.assertIn("putting the previous orchestration back FAILED (HTTP 500:", result.stdout)
-        sid = self.service_id("TPA beta · Portal & API")
+        sid = self.service_id("TPA · Portal & API")
         self.assertEqual([s["id"] for s in self.state.orchestrations[sid]["sets"]], ["start", "titles"])
         event, outcome = self.state.orchestrate(sid, monitoring(subject=SUBJECT, severity="warning"))
         self.assertEqual((event["summary"], outcome), (DESCRIPTION, {"severity": "warning", "priority": "PRI3"}),

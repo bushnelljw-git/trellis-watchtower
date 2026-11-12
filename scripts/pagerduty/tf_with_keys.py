@@ -8,9 +8,9 @@ added to that command's environment:
 
     TF_VAR_pagerduty_service_keys = {"app": "…", "phi": "…", "cc": "…"}
 
-    app  <-  "TPA beta · Portal & API"
-    phi  <-  "TPA beta · Member records"
-    cc   <-  "TPA beta · Call centre"
+    app  <-  "TPA · Portal & API"
+    phi  <-  "TPA · Member records"
+    cc   <-  "TPA · Call centre"
 
 Each service has two integrations, and the route (pdlib.ROUTE) picks whose keys are handed over: by default the
 "Google Cloud Monitoring (titled)" integration's, which gives incidents their short titles; with
@@ -53,7 +53,8 @@ from pdlib import PagerDuty, Refused, err  # noqa: E402
 
 VARIABLE = "TF_VAR_pagerduty_service_keys"
 ROLES = ("app", "phi", "cc")
-DESIGN_PREFIX = "TPA beta · "
+DESIGN_PREFIX = "TPA · "
+PRODUCTION_ROOT = "beta"
 ENV_RE = re.compile(r"^[a-z][a-z0-9]*$")
 # tpa-platform's variable validation: each value is a PagerDuty integration key, 32 letters and digits.
 KEY_RE = re.compile(r"^[A-Za-z0-9]{32}$")
@@ -62,12 +63,15 @@ USAGE = "usage: tf_with_keys.py [--env ENV] -- terraform [-chdir=DIR] plan|apply
 
 
 def service_names(env: str) -> dict[str, str]:
-    """Each role's PagerDuty service name for this environment: pdlib's design, with "beta" swapped for `env`."""
+    """Each role's PagerDuty service name for this environment: pdlib's design, with `env` named in it unless it is the production root."""
     names = {}
     for cfg in d.SERVICES:
         if not cfg["name"].startswith(DESIGN_PREFIX):
             raise RuntimeError(f"pdlib's service {cfg['name']!r} does not start {DESIGN_PREFIX!r}")
-        names[cfg["role"]] = f"TPA {env} · " + cfg["name"][len(DESIGN_PREFIX):]
+        # The Terraform root named "beta" is the production estate (the owner, 2026-11-12: "We are NOT in beta"), so
+        # its services carry no environment word; any other root's carry its name, so their keys never cross.
+        prefix = DESIGN_PREFIX if env == PRODUCTION_ROOT else f"TPA {env} · "
+        names[cfg["role"]] = prefix + cfg["name"][len(DESIGN_PREFIX):]
     if tuple(names) != ROLES:
         raise RuntimeError(f"pdlib's roles are {tuple(names)}, not {ROLES}")
     return names

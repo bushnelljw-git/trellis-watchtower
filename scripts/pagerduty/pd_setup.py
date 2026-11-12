@@ -5,7 +5,7 @@ What it makes (each found by its exact name, created when absent and corrected w
   - team "TPA Platform", with both people as managers (PagerDuty's only team role for an owner or admin);
   - schedule "TPA primary on-call": one weekly layer, hand-off Monday 09:00 America/Chicago;
   - escalation policy "TPA Platform": the schedule, then the second person after 15 minutes; repeats twice;
-  - one service per Google Cloud project ("TPA beta · Portal & API", "· Member records", "· Call centre"), each with
+  - one service per Google Cloud project ("TPA · Portal & API", "· Member records", "· Call centre"), each with
     urgency from severity, a 30-minute acknowledgement timeout, no auto-resolve, the Google Cloud Monitoring
     integration and a service event orchestration that turns Monitoring's severity, in any letter case, into the
     alert's severity and the incident's priority. Without PagerDuty's AIOps add-on (pdlib.AIOPS, off since
@@ -13,7 +13,7 @@ What it makes (each found by its exact name, created when absent and corrected w
     monitoring_transform.js: it gives each incident its short title (the alert policy's own subject, else
     "policy · condition"), its details and its links to the watchtower. With the add-on, an alert grouping setting
     (intelligent, or time-based where the account refuses it) and the same title from the orchestration instead;
-  - business service "Trellis TPA (beta)", supported by the three services;
+  - business service "Trellis TPA", supported by the three services;
   - with --add-rules only, each person's designed notification rules that are missing (never adding or changing a
     contact method).
 

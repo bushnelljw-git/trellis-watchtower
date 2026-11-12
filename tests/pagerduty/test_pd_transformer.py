@@ -15,7 +15,7 @@ import fakes
 from test_monitoring_transform import NO_NODE
 from test_pd_setup import SUMMARY_STEADY_DRY, Base, pdlib, run
 
-SERVICES = ("TPA beta · Portal & API", "TPA beta · Member records", "TPA beta · Call centre")
+SERVICES = ("TPA · Portal & API", "TPA · Member records", "TPA · Call centre")
 NAME = "Google Cloud Monitoring (titled)"
 TITLED = "event_transformer_api_inbound_integration"
 PLAIN = "generic_events_api_inbound_integration"
@@ -217,7 +217,7 @@ class DryTestEvent(Live):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([r for r in self.state.requests if r["path"].startswith("/events")], [])
         self.assertIn(f'route transformer (the "{NAME}" integration)', result.stdout)
-        self.assertIn('title "test · PagerDuty setup check, please ignore (Warning, TPA beta · Member records)"',
+        self.assertIn('title "PagerDuty setup check, please ignore (Warning, TPA · Member records)"',
                       result.stdout)
         shown = json.loads(result.stdout[result.stdout.index("{"):])
         self.assertEqual(sorted(shown), ["incident", "version"])
@@ -246,7 +246,7 @@ class TestEvents(Live):
                 result = self.event("--role", role, "--severity", severity, "--send", "--wait", "5")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn(outcome, result.stdout)
-                self.assertIn(f'title "test · PagerDuty setup check, please ignore ({severity}, {service})"',
+                self.assertIn(f'title "PagerDuty setup check, please ignore ({severity}, {service})"',
                               result.stdout)
                 self.assertIn("\nas designed\n", result.stdout)
                 self.assertIn("status resolved", result.stdout, "closed by a notification with state closed")

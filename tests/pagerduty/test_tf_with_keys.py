@@ -23,7 +23,7 @@ APP_CHANNEL = "-replace=module.monitoring_app.google_monitoring_notification_cha
 TITLED = '(beta; route transformer, the "Google Cloud Monitoring (titled)" integration)'
 PLAIN = '(beta; route monitoring, the "Google Cloud Monitoring" integration)'
 FOUND_ALL = f"tf_with_keys: PagerDuty keys {TITLED}: app present, phi present, cc present"
-ROLE_SERVICE = {"app": "TPA beta · Portal & API", "phi": "TPA beta · Member records", "cc": "TPA beta · Call centre"}
+ROLE_SERVICE = {"app": "TPA · Portal & API", "phi": "TPA · Member records", "cc": "TPA · Call centre"}
 
 
 class WithTerraform(Base):
@@ -243,7 +243,7 @@ class MissingAndErrors(WithTerraform):
         result, _ = self.tf(*self.beta("apply"))
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn(f"tf_with_keys: PagerDuty keys {TITLED}: app present, phi missing, cc present", result.stderr)
-        self.assertIn('no PagerDuty service "TPA beta · Member records"', result.stderr)
+        self.assertIn('no PagerDuty service "TPA · Member records"', result.stderr)
         self.assert_not_run(result)
 
     def test_a_missing_integration_stops_it_before_terraform(self):

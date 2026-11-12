@@ -220,7 +220,7 @@ row or page here until the owner turns it on ([cloud/README.md](../cloud/README.
 | svc-voice's event loop (Call centre) | `voice_loop_lag_over_5s`, `voice_loop_lag_over_1s`, `voice_stack_dumps` (each per 5 min), `voice_loop_lag_ms` (p99, p50), `voice_loop_lag` by where; `voice_keep_warm_failures` by step (15 min) | One lag of 5 s or a stack dump, or three lags of 1 s, in 5 min (`voice-loop-stall`: a caller hears dead air); more than three failures of one keep-warm step in 15 min (`voice-keep-warm-failing`) | The stack dump just before the `voice_loop_lag` line; svc-voice's CPU and its proxy's connects | call-center |
 
 **Paging (2026-10-11).** Every policy in a TPA project notifies that project's `pagerduty` channel. The channel
-pages one PagerDuty service: "TPA beta · Portal & API" for the app project, "· Member records" for PHI, and
+pages one PagerDuty service: "TPA · Portal & API" for the app project, "· Member records" for PHI, and
 "· Call centre" for the call-centre project. A CRITICAL policy becomes a high-urgency P1 page (phone, SMS, app, email,
 Slack). A WARNING policy becomes a low-urgency P3 (app, email, Slack). A policy with no severity still pages at high
 urgency (the rules ignore letter case). The on-call person is on the "TPA primary on-call" schedule. A high-urgency

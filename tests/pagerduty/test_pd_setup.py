@@ -102,10 +102,10 @@ class DryRunAndIdempotency(Base):
             'create    team "TPA Platform"',
             'create    schedule "TPA primary on-call"',
             'create    escalation policy "TPA Platform"',
-            'create    service "TPA beta · Portal & API"',
-            'create      alert grouping on "TPA beta · Member records"',
-            'create    service "TPA beta · Call centre"',
-            'create    business service "Trellis TPA (beta)"',
+            'create    service "TPA · Portal & API"',
+            'create      alert grouping on "TPA · Member records"',
+            'create    service "TPA · Call centre"',
+            'create    business service "Trellis TPA"',
             'kept      notification rule Jonathan Bushnell: high urgency -> Slack "slack" at 0 min  [missing, not '
             'added: rules are created only with --add-rules]',
             'ok        notification rule Jonathan Bushnell: high urgency -> email "Default" at 0 min',
@@ -117,7 +117,7 @@ class DryRunAndIdempotency(Base):
                       with_rules.stdout)
         self.assertIn("summary: 26 to create", with_rules.stdout)
         self.assertEqual(self.state.writes(), [])
-        self.assertIn('by hand     Slack: "TPA beta · Call centre"  [not connected: a person connects it to '
+        self.assertIn('by hand     Slack: "TPA · Call centre"  [not connected: a person connects it to '
                       '#obatpa-incidents', result.stdout)
 
     def test_apply_then_rerun_changes_nothing(self):
@@ -136,23 +136,23 @@ class DryRunAndIdempotency(Base):
 
     def test_drift_is_corrected_then_steady(self):
         self.apply()
-        sid = self.service_id("TPA beta · Member records")
+        sid = self.service_id("TPA · Member records")
         self.state.services[sid]["acknowledgement_timeout"] = 600
         self.rules(sid).pop(0)
         drift = self.pd()
-        self.assertIn('update    service "TPA beta · Member records"  [acknowledgement timeout]', drift.stdout)
-        self.assertIn('update      event orchestration on "TPA beta · Member records"', drift.stdout)
+        self.assertIn('update    service "TPA · Member records"  [acknowledgement timeout]', drift.stdout)
+        self.assertIn('update      event orchestration on "TPA · Member records"', drift.stdout)
         self.apply()
         self.assertEqual(self.state.services[sid]["acknowledgement_timeout"], 1800)
         self.assertRegex(self.summary(self.pd()), SUMMARY_STEADY_DRY)
 
     def test_the_old_case_sensitive_rules_are_replaced(self):
         self.apply()
-        sid = self.service_id("TPA beta · Portal & API")
+        sid = self.service_id("TPA · Portal & API")
         for rule in self.severity_rules(sid):
             word = re.search(r"\*(\w+)\[", rule["conditions"][0]["expression"]).group(1)
             rule["conditions"] = [{"expression": f"event.custom_details.incident.severity matches part '{word}'"}]
-        self.assertIn('update      event orchestration on "TPA beta · Portal & API"', self.pd().stdout)
+        self.assertIn('update      event orchestration on "TPA · Portal & API"', self.pd().stdout)
         self.apply()
         self.assertIn("matches regex", self.severity_rules(sid)[0]["conditions"][0]["expression"])
 
@@ -184,7 +184,7 @@ class TheDesign(Base):
 
     def test_services_and_their_grouping_settings(self):
         ep = next(p for p in self.state.policies.values() if p["name"] == "TPA Platform")
-        for name in ("TPA beta · Portal & API", "TPA beta · Member records", "TPA beta · Call centre"):
+        for name in ("TPA · Portal & API", "TPA · Member records", "TPA · Call centre"):
             svc = self.by_name[name]
             self.assertEqual(svc["escalation_policy"]["id"], ep["id"])
             self.assertEqual(svc["incident_urgency_rule"], {"type": "constant", "urgency": "severity_based"})
@@ -199,7 +199,7 @@ class TheDesign(Base):
             self.assertTrue(self.state.active[svc["id"]])
 
     def test_orchestration_rules_exact_conditions(self):
-        for svc in (self.by_name[n] for n in ("TPA beta · Portal & API", "TPA beta · Call centre")):
+        for svc in (self.by_name[n] for n in ("TPA · Portal & API", "TPA · Call centre")):
             path = self.state.orchestrations[svc["id"]]
             self.assertEqual([s["id"] for s in path["sets"]], ["start", "titles"])
             start = self.rules(svc["id"])
@@ -220,7 +220,7 @@ class TheDesign(Base):
 
     def test_the_rules_ignore_letter_case(self):
         """Every casing Monitoring might send, through the rules exactly as written to PagerDuty."""
-        sid = self.by_name["TPA beta · Portal & API"]["id"]
+        sid = self.by_name["TPA · Portal & API"]["id"]
         rules = self.severity_rules(sid)
 
         def outcome(severity):
@@ -241,9 +241,9 @@ class TheDesign(Base):
 
     def test_business_service(self):
         (b,) = self.state.business.values()
-        self.assertEqual(b["name"], "Trellis TPA (beta)")
+        self.assertEqual(b["name"], "Trellis TPA")
         supported = sorted(self.state.services[s]["name"] for s, bid in self.state.dependencies if bid == b["id"])
-        self.assertEqual(supported, ["TPA beta · Call centre", "TPA beta · Member records", "TPA beta · Portal & API"])
+        self.assertEqual(supported, ["TPA · Call centre", "TPA · Member records", "TPA · Portal & API"])
 
     def test_notification_rules_add_slack_and_keep_email(self):
         jon = {(r["contact_method"]["type"], r["urgency"], r["start_delay_in_minutes"])
@@ -357,23 +357,23 @@ class ScheduleWithTwoLayers(Base):
 class RenamedService(Base):
     def test_renamed_with_a_new_description_is_still_refused(self):
         self.apply()
-        sid = self.service_id("TPA beta · Member records")
+        sid = self.service_id("TPA · Member records")
         self.state.services[sid].update(name="Records (old)", description="something else")
         before = len(self.state.writes())
         result = self.pd("--apply")
         self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn('refused   service "TPA beta · Member records"  [not created: "Records (old)" carries its '
+        self.assertIn('refused   service "TPA · Member records"  [not created: "Records (old)" carries its '
                       "integration (renamed?)", result.stdout)
         self.assertEqual(len(self.state.writes()), before)
 
     def test_a_renamed_service_is_not_duplicated(self):
         self.apply()
-        sid = self.service_id("TPA beta · Call centre")
+        sid = self.service_id("TPA · Call centre")
         self.state.services[sid]["name"] = "Call centre (old)"
         before = len(self.state.writes())
         result = self.pd("--apply")
         self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn('refused   service "TPA beta · Call centre"  [not created: "Call centre (old)" carries its '
+        self.assertIn('refused   service "TPA · Call centre"  [not created: "Call centre (old)" carries its '
                       "integration and description", result.stdout)
         self.assertEqual(len(self.state.writes()), before)
         self.assertEqual(sum(1 for s in self.state.services.values() if s["description"].startswith("The beta call")),
@@ -413,21 +413,21 @@ class SlackReport(Base):
 
     def test_connections_are_reported_never_made(self):
         self.state.slack_connections = [
-            self.connection("TPA beta · Portal & API"),
-            self.connection("TPA beta · Member records", events=["incident.triggered"],
+            self.connection("TPA · Portal & API"),
+            self.connection("TPA · Member records", events=["incident.triggered"],
                             urgency="high", priorities=["PRI1"]),
         ]
         result = self.pd()
-        self.assertIn('ok          Slack: "TPA beta · Portal & API" connected to #obatpa-incidents', result.stdout)
-        self.assertIn('by hand     Slack: "TPA beta · Member records" connected to #obatpa-incidents  [in PagerDuty, '
+        self.assertIn('ok          Slack: "TPA · Portal & API" connected to #obatpa-incidents', result.stdout)
+        self.assertIn('by hand     Slack: "TPA · Member records" connected to #obatpa-incidents  [in PagerDuty, '
                       'set events: add resolved; urgency: both high and low (it is high only); priorities: all]',
                       result.stdout)
-        self.assertIn('by hand     Slack: "TPA beta · Call centre"  [not connected', result.stdout)
+        self.assertIn('by hand     Slack: "TPA · Call centre"  [not connected', result.stdout)
         self.assertEqual([r for r in self.state.requests if r["path"].startswith("/slack") and r["method"] != "GET"],
                          [])
 
     def test_an_empty_priority_filter_is_a_gap(self):
-        self.state.slack_connections = [self.connection("TPA beta · Portal & API", priorities=[])]
+        self.state.slack_connections = [self.connection("TPA · Portal & API", priorities=[])]
         self.assertIn("priorities: all]", self.pd().stdout)
         self.assertEqual(pd_setup.slack_gaps({"events": [], "priorities": []}, ["PRI1"])[-1], "priorities: all")
         self.assertNotIn("priorities: all", pd_setup.slack_gaps({"events": [], "priorities": None}, ["PRI1"]))
@@ -438,14 +438,14 @@ class SlackKind(SlackReport):
     def test_a_responder_connection_is_a_gap_however_complete_it_looks(self):
         # 2026-11-12: made through the API with every event and priorities ["*"], listed as healthy, posted nothing.
         self.state.slack_connections = [
-            self.connection("TPA beta · Portal & API", kind="responder", priorities=["*"],
+            self.connection("TPA · Portal & API", kind="responder", priorities=["*"],
                             events=["incident.triggered", "incident.acknowledged", "incident.resolved"]),
-            self.connection("TPA beta · Member records"),
+            self.connection("TPA · Member records"),
         ]
         out = self.pd().stdout
-        self.assertIn('by hand     Slack: "TPA beta · Portal & API" connected to #obatpa-incidents  [in PagerDuty, set '
+        self.assertIn('by hand     Slack: "TPA · Portal & API" connected to #obatpa-incidents  [in PagerDuty, set '
                       'kind: "responder" posts nothing in the channel', out)
-        self.assertIn('ok          Slack: "TPA beta · Member records" connected to #obatpa-incidents', out)
+        self.assertIn('ok          Slack: "TPA · Member records" connected to #obatpa-incidents', out)
 
 
 class Secrets(Base):
@@ -532,7 +532,7 @@ class WithoutAiops(Base):
         self.apply()  # the add-on's design: start and titles
         result = self.pd("--apply", aiops=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('updated     event orchestration on "TPA beta · Portal & API"', result.stdout)
+        self.assertIn('updated     event orchestration on "TPA · Portal & API"', result.stdout)
         for path in self.state.orchestrations.values():
             self.assertEqual([s["id"] for s in path["sets"]], ["start"])
 

@@ -59,7 +59,7 @@ SAMPLE = {
     },
     "version": "1.2",
 }
-TITLE = "beta · tpa-jobs cutoff_freeze behind: cutoff_freeze_behind"
+TITLE = "Tpa-jobs cutoff_freeze behind: cutoff_freeze_behind"
 UNSET = object()
 
 
@@ -177,11 +177,14 @@ class Transform(unittest.TestCase):
 
     def test_one_leading_tag_is_dropped_whatever_it_says(self):
         for subject, title in [
-            ("[RESOLVED] beta · engine p95 above 2 s", "beta · engine p95 above 2 s"),
-            ("[ALERT - No severity] beta · engine p95 above 2 s", "beta · engine p95 above 2 s"),
-            ("beta · engine p95 above 2 s", "beta · engine p95 above 2 s"),
+            ("[RESOLVED] beta · engine p95 above 2 s", "Engine p95 above 2 s"),
+            ("[ALERT - No severity] beta · engine p95 above 2 s", "Engine p95 above 2 s"),
+            ("beta · engine p95 above 2 s", "Engine p95 above 2 s"),
+            ("[ALERT - Warning] beta · alert policy or channel changed: "
+             "google.monitoring.v3.NotificationChannelService.DeleteNotificationChannel",
+             "Alert policy or channel changed: delete notification channel"),
             ("[ALERT] [x] beta · two tags", None),  # one tag at most: what is left is not our shape
-            ("production-full · records 5xx", "production-full · records 5xx"),
+            ("production-full · records 5xx", "Records 5xx"),
         ]:
             with self.subTest(subject=subject):
                 got = self.event(notification(documentation__subject=subject))["description"]
