@@ -130,7 +130,7 @@
     {
       "type": "timeseries",
       "title": "Requests, by status class",
-      "description": "Requests Cloud Run answered for auth per interval. None: it serves no requests (a worker) or none came.",
+      "description": "Requests Cloud Run answered for auth per interval.",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -193,6 +193,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No requests in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -298,6 +299,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -403,6 +405,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No requests in this range",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -608,6 +611,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: auth is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -774,6 +778,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: auth is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -918,6 +923,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "No instance reported: auth is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1057,6 +1063,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: auth is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1188,6 +1195,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance started in this range",
           "custom": {
             "drawStyle": "points",
             "lineWidth": 1,
@@ -1289,6 +1297,7 @@
           },
           "mappings": [],
           "decimals": 1,
+          "noValue": "No instance reported: auth is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1450,6 +1459,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,

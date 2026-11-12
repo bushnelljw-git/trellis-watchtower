@@ -1261,6 +1261,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -1362,6 +1363,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -1460,6 +1462,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -1557,6 +1560,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -1655,6 +1659,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No alerts raised in this range",
           "custom": {
             "align": "auto",
             "cellOptions": {
@@ -1720,7 +1725,7 @@
     {
       "type": "timeseries",
       "title": "Reconciliations left open per tenant",
-      "description": "The outstanding reconciliations accumulator_reconcile left open, one point per tenant per run. `accumulator-backlog-growing` opens when tonight's total is above last night's.",
+      "description": "The outstanding reconciliations accumulator_reconcile left open, one point per tenant per run that leaves one open: the mean of each run's, and the largest. `accumulator-backlog-growing` opens when tonight's total is above last night's. None: no run left one open in this range, or no run; \"paused\" while the sweep is paused on purpose.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1753,8 +1758,8 @@
             "groupBys": [
               "metric.label.job"
             ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_MEAN",
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "perSeriesAligner": "ALIGN_DELTA",
             "alignmentPeriod": "grafana-auto",
             "view": "FULL",
             "preprocessor": "none"
@@ -1808,6 +1813,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,accumulator-reconcile,@@None left open in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1923,6 +1929,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -2025,6 +2032,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -2075,8 +2083,8 @@
     },
     {
       "type": "timeseries",
-      "title": "migrate-crm and seed-crm",
-      "description": "The CRM's jobs, each run by a person.",
+      "title": "CRM jobs",
+      "description": "The CRM's jobs: its migration and made-up data seed (`migrate-crm`, `seed-crm`), each run by a person, and the copy's scheduled lane sender (`crm-lane-send`), commission pass (`crm-lane-comp`) and forgot-password drain (`crm-reset-drain`).",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -2108,7 +2116,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "migrate-crm|seed-crm"
+              "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain"
             ],
             "groupBys": [
               "resource.label.job_name",
@@ -2140,6 +2148,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -2177,7 +2186,7 @@
     },
     {
       "type": "row",
-      "title": "Job resources: app project (tpa-jobs, auth's jobs, the synthetic journeys; the CRM's in beta) (attempts, run length, CPU, memory)",
+      "title": "Job resources: app project (tpa-jobs, auth's jobs, the synthetic journeys, and the CRM's where it shares the project) (attempts, run length, CPU, memory)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -2251,6 +2260,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -2349,6 +2359,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -2475,6 +2486,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -2572,6 +2584,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -2670,6 +2683,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -2782,6 +2796,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -2880,6 +2895,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -3006,6 +3022,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -3103,6 +3120,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -3201,6 +3219,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -3285,7 +3304,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "migrate-crm|seed-crm"
+              "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain"
             ],
             "groupBys": [
               "resource.label.job_name",
@@ -3317,6 +3336,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -3387,7 +3407,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "migrate-crm|seed-crm"
+              "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain"
             ],
             "groupBys": [
               "resource.label.job_name"
@@ -3419,6 +3439,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -3489,7 +3510,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "migrate-crm|seed-crm"
+              "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain"
             ],
             "groupBys": [
               "resource.label.job_name"
@@ -3522,7 +3543,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "migrate-crm|seed-crm"
+              "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain"
             ],
             "groupBys": [
               "resource.label.job_name"
@@ -3553,6 +3574,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -3623,7 +3645,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "migrate-crm|seed-crm"
+              "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain"
             ],
             "groupBys": [
               "resource.label.job_name"
@@ -3654,6 +3676,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -3725,7 +3748,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "migrate-crm|seed-crm"
+              "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain"
             ],
             "groupBys": [
               "resource.label.job_name"
@@ -3756,6 +3779,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No runs in this range",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,

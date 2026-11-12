@@ -1,7 +1,7 @@
 {
   "uid": "tw-cloud-service-connectors",
   "title": "connectors (cloud service)",
-  "description": "connectors, on the Member records page, on its own: its requests, then its CPU, memory, instances, concurrency and start-up, with the lines the pager uses. Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.",
+  "description": "connectors, on the Member records page, on its own: its delivery loop, then its CPU, memory, instances, concurrency and start-up, with the lines the pager uses. Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.",
   "tags": [
     "trellis-watchtower",
     "cloud-service",
@@ -116,7 +116,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "connectors: requests",
+      "title": "connectors: its delivery loop (it takes no web requests)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -129,8 +129,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Requests, by status class",
-      "description": "Requests Cloud Run answered for connectors per interval. None: it serves no requests (a worker) or none came.",
+      "title": "Delivery passes (the loop's heartbeat)",
+      "description": "One per pass of the delivery loop, its line matched whole. None for five minutes pages as `connectors-stalled`.",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -154,26 +154,20 @@
             "filters": [
               "metric.type",
               "=",
-              "run.googleapis.com/request_count",
+              "logging.googleapis.com/user/connectors_passes",
               "AND",
               "resource.type",
               "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=~",
-              "connectors"
+              "cloud_run_revision"
             ],
-            "groupBys": [
-              "metric.label.response_code_class"
-            ],
+            "groupBys": [],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
             "alignmentPeriod": "grafana-auto",
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "{{metric.label.response_code_class}}"
+          "aliasBy": "passes"
         }
       ],
       "interval": "1m",
@@ -193,6 +187,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "Missing: no pass in this range, so the delivery loop is stopped or not reporting",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -230,8 +225,8 @@
     },
     {
       "type": "timeseries",
-      "title": "5xx",
-      "description": "connectors's 5xx answers per interval. `canary-5xx` opens above 0.1% of its requests over five minutes (and five).",
+      "title": "Deliveries, by lane and outcome",
+      "description": "One per send attempt (`connectors_deliveries`). The destination is not a label.",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -255,22 +250,15 @@
             "filters": [
               "metric.type",
               "=",
-              "run.googleapis.com/request_count",
+              "logging.googleapis.com/user/connectors_deliveries",
               "AND",
               "resource.type",
               "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=~",
-              "connectors",
-              "AND",
-              "metric.label.response_code_class",
-              "=",
-              "5xx"
+              "cloud_run_revision"
             ],
             "groupBys": [
-              "resource.label.service_name"
+              "metric.label.lane",
+              "metric.label.outcome"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
@@ -278,7 +266,7 @@
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "{{resource.label.service_name}}"
+          "aliasBy": "{{metric.label.lane}} {{metric.label.outcome}}"
         }
       ],
       "interval": "1m",
@@ -298,6 +286,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No deliveries in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -335,8 +324,8 @@
     },
     {
       "type": "timeseries",
-      "title": "p95 latency (Cloud Run)",
-      "description": "connectors's p95 request latency from Cloud Run. The red line is `canary-latency`'s: above 2 s for ten minutes pages.",
+      "title": "Dead letters, refused destinations, unsigned envelopes",
+      "description": "A row settled dead (`connectors-dead-letters`), a destination outside the allowlist (`connectors-destination-refused`) and a claimed row with no signature (`connectors-envelope-unsigned`).",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -360,32 +349,62 @@
             "filters": [
               "metric.type",
               "=",
-              "run.googleapis.com/request_latencies",
+              "logging.googleapis.com/user/connectors_dead_letters",
               "AND",
               "resource.type",
               "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=~",
-              "connectors"
+              "cloud_run_revision"
             ],
             "groupBys": [
-              "resource.label.service_name"
+              "metric.label.code"
             ],
-            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
+            "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
             "alignmentPeriod": "grafana-auto",
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "{{resource.label.service_name}}"
+          "aliasBy": "dead: {{metric.label.code}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/connectors_deliveries",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "metric.label.code",
+              "=~",
+              "destination_refused|envelope_unsigned"
+            ],
+            "groupBys": [
+              "metric.label.lane",
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}} {{metric.label.lane}}"
         }
       ],
       "interval": "1m",
       "fieldConfig": {
         "defaults": {
-          "unit": "ms",
+          "unit": "short",
           "color": {
             "mode": "palette-classic"
           },
@@ -393,29 +412,26 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "transparent",
+                "color": "text",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 2000
               }
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
-            "drawStyle": "line",
+            "drawStyle": "bars",
             "lineWidth": 1,
-            "fillOpacity": 10,
+            "fillOpacity": 60,
             "showPoints": "never",
             "spanNulls": false,
             "stacking": {
-              "mode": "none",
+              "mode": "normal",
               "group": "A"
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "line"
+              "mode": "off"
             }
           }
         },
@@ -608,6 +624,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: connectors is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -774,6 +791,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: connectors is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -918,6 +936,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "No instance reported: connectors is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1057,6 +1076,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: connectors is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1188,6 +1208,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance started in this range",
           "custom": {
             "drawStyle": "points",
             "lineWidth": 1,
@@ -1289,6 +1310,7 @@
           },
           "mappings": [],
           "decimals": 1,
+          "noValue": "No instance reported: connectors is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1450,6 +1472,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,

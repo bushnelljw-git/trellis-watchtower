@@ -1,7 +1,7 @@
 {
   "uid": "tw-cloud-service-tpa-jobs-drains",
   "title": "tpa-jobs-drains (cloud service)",
-  "description": "tpa-jobs-drains, on the Portal & API page, on its own: its requests, then its CPU, memory, instances, concurrency and start-up, with the lines the pager uses. Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.",
+  "description": "tpa-jobs-drains, on the Portal & API page, on its own: its drain ticks, then its CPU, memory, instances, concurrency and start-up, with the lines the pager uses. Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.",
   "tags": [
     "trellis-watchtower",
     "cloud-service",
@@ -116,7 +116,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "tpa-jobs-drains: requests",
+      "title": "tpa-jobs-drains: its drain ticks (it takes no web requests)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -129,11 +129,11 @@
     },
     {
       "type": "timeseries",
-      "title": "Requests, by status class",
-      "description": "Requests Cloud Run answered for tpa-jobs-drains per interval. None: it serves no requests (a worker) or none came.",
+      "title": "Drain ticks, by drain",
+      "description": "One run summary per tick of each drain (`tpa_jobs_runs`, from tpa-jobs-drains alone): its heartbeat. A drain that stops writing them has stopped.",
       "gridPos": {
         "h": 7,
-        "w": 8,
+        "w": 12,
         "x": 0,
         "y": 1
       },
@@ -154,18 +154,18 @@
             "filters": [
               "metric.type",
               "=",
-              "run.googleapis.com/request_count",
+              "logging.googleapis.com/user/tpa_jobs_runs",
               "AND",
               "resource.type",
               "=",
               "cloud_run_revision",
               "AND",
               "resource.label.service_name",
-              "=~",
+              "=",
               "tpa-jobs-drains"
             ],
             "groupBys": [
-              "metric.label.response_code_class"
+              "metric.label.job"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
@@ -173,7 +173,7 @@
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "{{metric.label.response_code_class}}"
+          "aliasBy": "{{metric.label.job}}"
         }
       ],
       "interval": "1m",
@@ -193,6 +193,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "Missing: no drain tick in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -230,12 +231,12 @@
     },
     {
       "type": "timeseries",
-      "title": "5xx",
-      "description": "tpa-jobs-drains's 5xx answers per interval. `canary-5xx` opens above 0.1% of its requests over five minutes (and five).",
+      "title": "Drain ticks that raised",
+      "description": "A tick of tpa-jobs-drains that raised instead of finishing (`drain-raised`), by drain and exception class. The loop keeps ticking and delivers nothing until it is fixed.",
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 8,
+        "w": 12,
+        "x": 12,
         "y": 1
       },
       "datasource": {
@@ -255,22 +256,15 @@
             "filters": [
               "metric.type",
               "=",
-              "run.googleapis.com/request_count",
+              "logging.googleapis.com/user/tpa_jobs_drain_raised",
               "AND",
               "resource.type",
               "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=~",
-              "tpa-jobs-drains",
-              "AND",
-              "metric.label.response_code_class",
-              "=",
-              "5xx"
+              "cloud_run_revision"
             ],
             "groupBys": [
-              "resource.label.service_name"
+              "metric.label.job",
+              "metric.label.class"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
@@ -278,7 +272,7 @@
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "{{resource.label.service_name}}"
+          "aliasBy": "{{metric.label.job}} {{metric.label.class}}"
         }
       ],
       "interval": "1m",
@@ -298,6 +292,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -334,111 +329,6 @@
       "id": 3
     },
     {
-      "type": "timeseries",
-      "title": "p95 latency (Cloud Run)",
-      "description": "tpa-jobs-drains's p95 request latency from Cloud Run. The red line is `canary-latency`'s: above 2 s for ten minutes pages.",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 1
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-app"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/request_latencies",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=~",
-              "tpa-jobs-drains"
-            ],
-            "groupBys": [
-              "resource.label.service_name"
-            ],
-            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "{{resource.label.service_name}}"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 2000
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 4
-    },
-    {
       "type": "text",
       "title": "No disk on a Cloud Run service",
       "gridPos": {
@@ -456,7 +346,7 @@
           "showMiniMap": false
         }
       },
-      "id": 5
+      "id": 4
     },
     {
       "type": "row",
@@ -469,7 +359,7 @@
         "x": 0,
         "y": 11
       },
-      "id": 6
+      "id": 5
     },
     {
       "type": "timeseries",
@@ -608,6 +498,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: tpa-jobs-drains is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -642,7 +533,7 @@
           "sort": "desc"
         }
       },
-      "id": 7
+      "id": 6
     },
     {
       "type": "timeseries",
@@ -774,6 +665,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: tpa-jobs-drains is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -808,7 +700,7 @@
           "sort": "desc"
         }
       },
-      "id": 8
+      "id": 7
     },
     {
       "type": "timeseries",
@@ -914,6 +806,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "No instance reported: tpa-jobs-drains is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -948,7 +841,7 @@
           "sort": "desc"
         }
       },
-      "id": 9
+      "id": 8
     },
     {
       "type": "timeseries",
@@ -1053,6 +946,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: tpa-jobs-drains is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1087,7 +981,7 @@
           "sort": "desc"
         }
       },
-      "id": 10
+      "id": 9
     },
     {
       "type": "timeseries",
@@ -1184,6 +1078,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance started in this range",
           "custom": {
             "drawStyle": "points",
             "lineWidth": 1,
@@ -1218,7 +1113,7 @@
           "sort": "desc"
         }
       },
-      "id": 11
+      "id": 10
     },
     {
       "type": "timeseries",
@@ -1285,6 +1180,7 @@
           },
           "mappings": [],
           "decimals": 1,
+          "noValue": "No instance reported: tpa-jobs-drains is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1318,7 +1214,7 @@
           "sort": "desc"
         }
       },
-      "id": 12
+      "id": 11
     },
     {
       "type": "timeseries",
@@ -1446,6 +1342,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -1479,7 +1376,7 @@
           "sort": "desc"
         }
       },
-      "id": 13
+      "id": 12
     }
   ]
 }

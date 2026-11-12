@@ -1,7 +1,7 @@
 {
   "uid": "tw-cloud-service-auth-outbox-publisher",
   "title": "auth-outbox-publisher (cloud service)",
-  "description": "auth-outbox-publisher, on the Sign-in page, on its own: its requests, then its CPU, memory, instances, concurrency and start-up, with the lines the pager uses. Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.",
+  "description": "auth-outbox-publisher, on the Sign-in page, on its own: the sign-in messages it sends, then its CPU, memory, instances, concurrency and start-up, with the lines the pager uses. Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.",
   "tags": [
     "trellis-watchtower",
     "cloud-service",
@@ -116,7 +116,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "auth-outbox-publisher: requests",
+      "title": "auth-outbox-publisher: the sign-in messages it sends (it takes no web requests)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -129,11 +129,11 @@
     },
     {
       "type": "timeseries",
-      "title": "Requests, by status class",
-      "description": "Requests Cloud Run answered for auth-outbox-publisher per interval. None: it serves no requests (a worker) or none came.",
+      "title": "Oldest unsent message (p99, seconds)",
+      "description": "How long the oldest unsent sign-in text or email has waited, as the messenger reads it every five seconds while one waits (`auth-messages-lag` opens above 30 s for two minutes). It counts emails too, so one email on its retry ladder opens it. Empty until auth-notary's messenger writes JSON (docs/infra/monitoring.md §6).",
       "gridPos": {
         "h": 7,
-        "w": 8,
+        "w": 12,
         "x": 0,
         "y": 1
       },
@@ -154,32 +154,26 @@
             "filters": [
               "metric.type",
               "=",
-              "run.googleapis.com/request_count",
+              "logging.googleapis.com/user/auth_messages_outbox_lag",
               "AND",
               "resource.type",
               "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=~",
-              "auth-outbox-publisher"
+              "cloud_run_revision"
             ],
-            "groupBys": [
-              "metric.label.response_code_class"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_99",
             "alignmentPeriod": "grafana-auto",
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "{{metric.label.response_code_class}}"
+          "aliasBy": "p99"
         }
       ],
       "interval": "1m",
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "s",
           "color": {
             "mode": "palette-classic"
           },
@@ -187,25 +181,30 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "transparent",
                 "value": null
+              },
+              {
+                "color": "red",
+                "value": 30
               }
             ]
           },
           "mappings": [],
+          "noValue": "No message waited in this range",
           "custom": {
-            "drawStyle": "bars",
+            "drawStyle": "line",
             "lineWidth": 1,
-            "fillOpacity": 60,
+            "fillOpacity": 10,
             "showPoints": "never",
             "spanNulls": false,
             "stacking": {
-              "mode": "normal",
+              "mode": "none",
               "group": "A"
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           }
         },
@@ -230,12 +229,12 @@
     },
     {
       "type": "timeseries",
-      "title": "5xx",
-      "description": "auth-outbox-publisher's 5xx answers per interval. `canary-5xx` opens above 0.1% of its requests over five minutes (and five).",
+      "title": "Message vendor refusals, by lane and reason",
+      "description": "Sign-in texts or emails the vendor would not take, by channel and the messenger's reason (`auth_message_vendor_failures`; `sign-in-message-vendor`).",
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 8,
+        "w": 12,
+        "x": 12,
         "y": 1
       },
       "datasource": {
@@ -255,22 +254,15 @@
             "filters": [
               "metric.type",
               "=",
-              "run.googleapis.com/request_count",
+              "logging.googleapis.com/user/auth_message_vendor_failures",
               "AND",
               "resource.type",
               "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=~",
-              "auth-outbox-publisher",
-              "AND",
-              "metric.label.response_code_class",
-              "=",
-              "5xx"
+              "cloud_run_revision"
             ],
             "groupBys": [
-              "resource.label.service_name"
+              "metric.label.lane",
+              "metric.label.code"
             ],
             "crossSeriesReducer": "REDUCE_SUM",
             "perSeriesAligner": "ALIGN_DELTA",
@@ -278,7 +270,7 @@
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "{{resource.label.service_name}}"
+          "aliasBy": "{{metric.label.lane}} {{metric.label.code}}"
         }
       ],
       "interval": "1m",
@@ -298,6 +290,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -334,111 +327,6 @@
       "id": 3
     },
     {
-      "type": "timeseries",
-      "title": "p95 latency (Cloud Run)",
-      "description": "auth-outbox-publisher's p95 request latency from Cloud Run. The red line is `canary-latency`'s: above 2 s for ten minutes pages.",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 1
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-app"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/request_latencies",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_revision",
-              "AND",
-              "resource.label.service_name",
-              "=~",
-              "auth-outbox-publisher"
-            ],
-            "groupBys": [
-              "resource.label.service_name"
-            ],
-            "crossSeriesReducer": "REDUCE_PERCENTILE_95",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "{{resource.label.service_name}}"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 2000
-              }
-            ]
-          },
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 4
-    },
-    {
       "type": "text",
       "title": "No disk on a Cloud Run service",
       "gridPos": {
@@ -456,7 +344,7 @@
           "showMiniMap": false
         }
       },
-      "id": 5
+      "id": 4
     },
     {
       "type": "row",
@@ -469,7 +357,7 @@
         "x": 0,
         "y": 11
       },
-      "id": 6
+      "id": 5
     },
     {
       "type": "timeseries",
@@ -608,6 +496,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: auth-outbox-publisher is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -642,7 +531,7 @@
           "sort": "desc"
         }
       },
-      "id": 7
+      "id": 6
     },
     {
       "type": "timeseries",
@@ -774,6 +663,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: auth-outbox-publisher is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -808,7 +698,7 @@
           "sort": "desc"
         }
       },
-      "id": 8
+      "id": 7
     },
     {
       "type": "timeseries",
@@ -918,6 +808,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "No instance reported: auth-outbox-publisher is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -952,7 +843,7 @@
           "sort": "desc"
         }
       },
-      "id": 9
+      "id": 8
     },
     {
       "type": "timeseries",
@@ -1057,6 +948,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance reported: auth-outbox-publisher is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1091,7 +983,7 @@
           "sort": "desc"
         }
       },
-      "id": 10
+      "id": 9
     },
     {
       "type": "timeseries",
@@ -1188,6 +1080,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance started in this range",
           "custom": {
             "drawStyle": "points",
             "lineWidth": 1,
@@ -1222,7 +1115,7 @@
           "sort": "desc"
         }
       },
-      "id": 11
+      "id": 10
     },
     {
       "type": "timeseries",
@@ -1289,6 +1182,7 @@
           },
           "mappings": [],
           "decimals": 1,
+          "noValue": "No instance reported: auth-outbox-publisher is kept warm, so it is down or not reporting",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1322,7 +1216,7 @@
           "sort": "desc"
         }
       },
-      "id": 12
+      "id": 11
     },
     {
       "type": "timeseries",
@@ -1450,6 +1344,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -1483,7 +1378,7 @@
           "sort": "desc"
         }
       },
-      "id": 13
+      "id": 12
     }
   ]
 }

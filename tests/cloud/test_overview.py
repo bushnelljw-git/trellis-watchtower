@@ -170,9 +170,14 @@ def linked(overview: dict) -> set[str]:
 # administrator-feed importer (the owner, 2026-10-25: "we need it treated just like all the other services"), so a
 # query the overview made with an old pattern is kept when the same query with the new one is made
 # (test_the_app_jobs_gained_the_importer_alone holds each new pattern to its old one and the importer's name).
+# The CRM's jobs pattern gained the copy's three scheduled jobs (they ran in the week to 2026-11-12 and were on no
+# page), checked by test_the_crm_jobs_gained_the_lane_jobs_alone.
 APP_JOBS_BEFORE = "tpa-jobs-.*|migrate-auth|auth-.*"
+CRM_JOBS_BEFORE = "migrate-crm|seed-crm"
+CRM_LANE_JOBS = ("crm-lane-send", "crm-lane-comp", "crm-reset-drain")
 WIDENED = {APP_JOBS_BEFORE: next(a[4] for a in gen.AREAS if a[0] == "app"),
-           gen.TPA_JOBS: f"{gen.TPA_JOBS}|{gen.IMPORTER}", gen.TPA_SCHEDULES: f"{gen.TPA_SCHEDULES}|{gen.IMPORTER}"}
+           gen.TPA_JOBS: f"{gen.TPA_JOBS}|{gen.IMPORTER}", gen.TPA_SCHEDULES: f"{gen.TPA_SCHEDULES}|{gen.IMPORTER}",
+           CRM_JOBS_BEFORE: gen.CRM_JOBS}
 
 
 def check_queries_kept(env: str, pages: dict[str, dict]) -> list[str]:
@@ -342,8 +347,11 @@ class OverviewTest(unittest.TestCase):
     def test_a_tile_per_service_the_environment_runs_and_none_for_one_it_does_not(self):
         for env, pages in RENDERED.items():
             self.assertEqual(check_services(pages["overview"], env), [], env)
-        self.assertNotIn("connectors", [p["title"] for p in services_row(RENDERED["beta"]["overview"])])
-        self.assertIn("connectors", [p["title"] for p in services_row(RENDERED["production"]["overview"])])
+        # connectors and tpa-jobs-drains run in both since 2026-11-11 and 2026-10-24; the call centre in beta alone.
+        for service in ("connectors", "tpa-jobs-drains"):
+            for env in RENDERED:
+                self.assertIn(service, [p["title"] for p in services_row(RENDERED[env]["overview"])], env)
+        self.assertNotIn("svc-voice", [p["title"] for p in services_row(RENDERED["production"]["overview"])])
 
     def test_the_inside_check_is_read_as_inside_down_reads_it(self):
         for env, pages in RENDERED.items():
@@ -362,6 +370,14 @@ class OverviewTest(unittest.TestCase):
             stat_ = next(p for p in row if p["title"] == ("App jobs (24 h)" if env == "beta" else "tpa-jobs (24 h)"))
             self.assertEqual([v for k, _op, v in facts(stat_["targets"][0])["filters"]
                               if k == "resource.label.job_name"], [jobs], env)
+
+    def test_the_crm_jobs_gained_the_lane_jobs_alone(self):
+        self.assertEqual(gen.CRM_JOBS, "|".join((CRM_JOBS_BEFORE, *CRM_LANE_JOBS)))
+        for env in RENDERED:
+            row = next(ps for title, ps in sections(RENDERED[env]["overview"]).items() if title.startswith("CRM"))
+            stat_ = next(p for p in row if p["title"] == "CRM jobs (24 h)")
+            self.assertEqual([v for k, _op, v in facts(stat_["targets"][0])["filters"]
+                              if k == "resource.label.job_name"], [gen.CRM_JOBS], env)
 
     def test_every_query_the_overview_made_is_still_made(self):
         for env, pages in RENDERED.items():

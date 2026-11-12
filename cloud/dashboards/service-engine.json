@@ -130,7 +130,7 @@
     {
       "type": "timeseries",
       "title": "Requests, by status class",
-      "description": "Requests Cloud Run answered for engine per interval. None: it serves no requests (a worker) or none came.",
+      "description": "Requests Cloud Run answered for engine per interval.",
       "gridPos": {
         "h": 7,
         "w": 6,
@@ -193,6 +193,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No requests in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -298,6 +299,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -399,6 +401,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No requests in this range",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -525,6 +528,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No requests in this range",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -730,6 +734,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@E@@No instance: engine does not run here@@No instance in this range: engine scales to zero when idle@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -896,6 +901,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@E@@No instance: engine does not run here@@No instance in this range: engine scales to zero when idle@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1036,6 +1042,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "@@E@@No instance: engine does not run here@@No instance in this range: engine scales to zero when idle@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1175,6 +1182,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@E@@No instance: engine does not run here@@No instance in this range: engine scales to zero when idle@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1306,6 +1314,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "No instance started in this range",
           "custom": {
             "drawStyle": "points",
             "lineWidth": 1,
@@ -1407,6 +1416,7 @@
           },
           "mappings": [],
           "decimals": 1,
+          "noValue": "@@E@@No instance: engine does not run here@@No instance in this range: engine scales to zero when idle@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1568,6 +1578,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,

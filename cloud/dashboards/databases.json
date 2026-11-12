@@ -1,7 +1,7 @@
 {
   "uid": "tw-cloud-databases",
   "title": "Databases (cloud)",
-  "description": "The four Cloud SQL instances: disk space (used, and used against the disk's size), up, CPU, memory, connections, disk operations and throughput, restarts, and each one's backups and point-in-time logs (D-173), read as their alert policies read them. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+  "description": "The four Cloud SQL instances: disk space (used, and used against the disk's size), up, CPU, memory, connections, disk operations and throughput, restarts, and each one's backups and point-in-time logs (D-173), read as their alert policies read them. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
   "tags": [
     "trellis-watchtower",
     "cloud",
@@ -118,7 +118,7 @@
     {
       "type": "stat",
       "title": "Now",
-      "description": "Cloud SQL's own signals for auth-db: `database/up` (the urgent `auth-db-down` pages below 1 for five minutes) and disk used (`auth-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's own signals for auth-db: `database/up` (the urgent `auth-db-down` pages below 1 for five minutes) and disk used (`auth-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 4,
@@ -334,7 +334,7 @@
     {
       "type": "timeseries",
       "title": "Disk space used (%)",
-      "description": "How full auth-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `auth-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "How full auth-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `auth-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 10,
@@ -401,6 +401,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,auth-db,@@Not reporting: no reading from auth-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -536,6 +537,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,auth-db,@@Not reporting: no reading from auth-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -633,7 +635,7 @@
     {
       "type": "state-timeline",
       "title": "Up",
-      "description": "Cloud SQL's `database/up` for auth-db, the lowest in each interval. `auth-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's `database/up` for auth-db, the lowest in each interval. `auth-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -716,6 +718,7 @@
               }
             }
           ],
+          "noValue": "@@R,auth-db,@@Not reporting: no reading from auth-db in this range@@",
           "custom": {
             "fillOpacity": 80
           }
@@ -813,6 +816,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,auth-db,@@Not reporting: no reading from auth-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -919,6 +923,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,auth-db,@@Not reporting: no reading from auth-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1034,6 +1039,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "@@R,auth-db,@@Not reporting: no reading from auth-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1165,6 +1171,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,auth-db,@@Not reporting: no reading from auth-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1295,6 +1302,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,auth-db,@@Not reporting: no reading from auth-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1394,6 +1402,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -1445,7 +1454,7 @@
     {
       "type": "stat",
       "title": "Backups in the last 30 hours",
-      "description": "auth-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `auth-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while auth-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`auth-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "auth-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `auth-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: two have landed up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while auth-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`auth-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -2305,7 +2314,7 @@
     {
       "type": "stat",
       "title": "Logs shipped (30 min)",
-      "description": "Cloud SQL's point-in-time recovery logs for auth-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while auth-db reported for 20 of the 30 minutes or more, as the urgent `auth-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `auth-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "Cloud SQL's point-in-time recovery logs for auth-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while auth-db reported for 20 of the 30 minutes or more, as the urgent `auth-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `auth-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -2909,7 +2918,7 @@
     {
       "type": "timeseries",
       "title": "Point-in-time logs shipped, per hour",
-      "description": "Write-ahead log archives Cloud SQL shipped for auth-db in each hour (`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. An hour with none is a stall: `auth-db-pitr-logs-stalled` (urgent) opens after 30 minutes with none. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Write-ahead log archives Cloud SQL shipped for auth-db in each hour (`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. An hour with none is a stall: `auth-db-pitr-logs-stalled` (urgent) opens after 30 minutes with none. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 12,
@@ -2971,6 +2980,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "@@R,auth-db,@@Not reporting: no reading from auth-db in this range@@",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -3071,6 +3081,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -3202,6 +3213,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "No backup in this range: one a night (the backups tile reads the last 30 hours)",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -3253,7 +3265,7 @@
     {
       "type": "stat",
       "title": "Now",
-      "description": "Cloud SQL's own signals for tpa-db: `database/up` (the urgent `tpa-db-down` pages below 1 for five minutes) and disk used (`tpa-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's own signals for tpa-db: `database/up` (the urgent `tpa-db-down` pages below 1 for five minutes) and disk used (`tpa-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 4,
@@ -3469,7 +3481,7 @@
     {
       "type": "timeseries",
       "title": "Disk space used (%)",
-      "description": "How full tpa-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `tpa-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "How full tpa-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `tpa-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 10,
@@ -3536,6 +3548,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,tpa-db,@@Not reporting: no reading from tpa-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -3671,6 +3684,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,tpa-db,@@Not reporting: no reading from tpa-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -3768,7 +3782,7 @@
     {
       "type": "state-timeline",
       "title": "Up",
-      "description": "Cloud SQL's `database/up` for tpa-db, the lowest in each interval. `tpa-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's `database/up` for tpa-db, the lowest in each interval. `tpa-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -3851,6 +3865,7 @@
               }
             }
           ],
+          "noValue": "@@R,tpa-db,@@Not reporting: no reading from tpa-db in this range@@",
           "custom": {
             "fillOpacity": 80
           }
@@ -3948,6 +3963,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,tpa-db,@@Not reporting: no reading from tpa-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -4054,6 +4070,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,tpa-db,@@Not reporting: no reading from tpa-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -4169,6 +4186,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "@@R,tpa-db,@@Not reporting: no reading from tpa-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -4300,6 +4318,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,tpa-db,@@Not reporting: no reading from tpa-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -4430,6 +4449,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,tpa-db,@@Not reporting: no reading from tpa-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -4529,6 +4549,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -4580,7 +4601,7 @@
     {
       "type": "stat",
       "title": "Backups in the last 30 hours",
-      "description": "tpa-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `tpa-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while tpa-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`tpa-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "tpa-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `tpa-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: two have landed up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while tpa-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`tpa-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -5440,7 +5461,7 @@
     {
       "type": "stat",
       "title": "Logs shipped (30 min)",
-      "description": "Cloud SQL's point-in-time recovery logs for tpa-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while tpa-db reported for 20 of the 30 minutes or more, as the urgent `tpa-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `tpa-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "Cloud SQL's point-in-time recovery logs for tpa-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while tpa-db reported for 20 of the 30 minutes or more, as the urgent `tpa-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `tpa-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -6044,7 +6065,7 @@
     {
       "type": "timeseries",
       "title": "Point-in-time logs shipped, per hour",
-      "description": "Write-ahead log archives Cloud SQL shipped for tpa-db in each hour (`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. An hour with none is a stall: `tpa-db-pitr-logs-stalled` (urgent) opens after 30 minutes with none. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Write-ahead log archives Cloud SQL shipped for tpa-db in each hour (`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. An hour with none is a stall: `tpa-db-pitr-logs-stalled` (urgent) opens after 30 minutes with none. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 12,
@@ -6106,6 +6127,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "@@R,tpa-db,@@Not reporting: no reading from tpa-db in this range@@",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -6206,6 +6228,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -6337,6 +6360,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "No backup in this range: one a night (the backups tile reads the last 30 hours)",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -6374,7 +6398,7 @@
     },
     {
       "type": "row",
-      "title": "crm-db (the CRM; the app project in beta): disk space, CPU, memory, connections, disk I/O",
+      "title": "crm-db (the CRM): disk space, CPU, memory, connections, disk I/O",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -6388,7 +6412,7 @@
     {
       "type": "stat",
       "title": "Now",
-      "description": "Cloud SQL's own signals for crm-db: `database/up` (the urgent `crm-db-down` pages below 1 for five minutes) and disk used (`crm-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's own signals for crm-db: `database/up` (the urgent `crm-db-down` pages below 1 for five minutes) and disk used (`crm-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 4,
@@ -6604,7 +6628,7 @@
     {
       "type": "timeseries",
       "title": "Disk space used (%)",
-      "description": "How full crm-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `crm-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "How full crm-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `crm-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 10,
@@ -6671,6 +6695,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,crm-db,@@Not reporting: no reading from crm-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -6806,6 +6831,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,crm-db,@@Not reporting: no reading from crm-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -6903,7 +6929,7 @@
     {
       "type": "state-timeline",
       "title": "Up",
-      "description": "Cloud SQL's `database/up` for crm-db, the lowest in each interval. `crm-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's `database/up` for crm-db, the lowest in each interval. `crm-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -6986,6 +7012,7 @@
               }
             }
           ],
+          "noValue": "@@R,crm-db,@@Not reporting: no reading from crm-db in this range@@",
           "custom": {
             "fillOpacity": 80
           }
@@ -7083,6 +7110,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,crm-db,@@Not reporting: no reading from crm-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -7189,6 +7217,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,crm-db,@@Not reporting: no reading from crm-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -7304,6 +7333,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "@@R,crm-db,@@Not reporting: no reading from crm-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -7435,6 +7465,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,crm-db,@@Not reporting: no reading from crm-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -7565,6 +7596,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,crm-db,@@Not reporting: no reading from crm-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -7664,6 +7696,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -7715,7 +7748,7 @@
     {
       "type": "stat",
       "title": "Backups in the last 30 hours",
-      "description": "crm-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `crm-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while crm-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`crm-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "crm-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `crm-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: two have landed up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while crm-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`crm-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -8575,7 +8608,7 @@
     {
       "type": "stat",
       "title": "Logs shipped (30 min)",
-      "description": "Cloud SQL's point-in-time recovery logs for crm-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while crm-db reported for 20 of the 30 minutes or more, as the urgent `crm-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `crm-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "Cloud SQL's point-in-time recovery logs for crm-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while crm-db reported for 20 of the 30 minutes or more, as the urgent `crm-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `crm-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -9179,7 +9212,7 @@
     {
       "type": "timeseries",
       "title": "Point-in-time logs shipped, per hour",
-      "description": "Write-ahead log archives Cloud SQL shipped for crm-db in each hour (`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. An hour with none is a stall: `crm-db-pitr-logs-stalled` (urgent) opens after 30 minutes with none. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Write-ahead log archives Cloud SQL shipped for crm-db in each hour (`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. An hour with none is a stall: `crm-db-pitr-logs-stalled` (urgent) opens after 30 minutes with none. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 12,
@@ -9241,6 +9274,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "@@R,crm-db,@@Not reporting: no reading from crm-db in this range@@",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -9341,6 +9375,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -9472,6 +9507,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "No backup in this range: one a night (the backups tile reads the last 30 hours)",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -9523,7 +9559,7 @@
     {
       "type": "stat",
       "title": "Now",
-      "description": "Cloud SQL's own signals for cc-db: `database/up` (the urgent `cc-db-down` pages below 1 for five minutes) and disk used (`cc-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's own signals for cc-db: `database/up` (the urgent `cc-db-down` pages below 1 for five minutes) and disk used (`cc-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 4,
@@ -9739,7 +9775,7 @@
     {
       "type": "timeseries",
       "title": "Disk space used (%)",
-      "description": "How full cc-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `cc-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "How full cc-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `cc-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 10,
@@ -9806,6 +9842,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,cc-db,@@Not reporting: no reading from cc-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -9941,6 +9978,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,cc-db,@@Not reporting: no reading from cc-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -10038,7 +10076,7 @@
     {
       "type": "state-timeline",
       "title": "Up",
-      "description": "Cloud SQL's `database/up` for cc-db, the lowest in each interval. `cc-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's `database/up` for cc-db, the lowest in each interval. `cc-db-down` (urgent) pages below 1 for five minutes. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -10121,6 +10159,7 @@
               }
             }
           ],
+          "noValue": "@@R,cc-db,@@Not reporting: no reading from cc-db in this range@@",
           "custom": {
             "fillOpacity": 80
           }
@@ -10218,6 +10257,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,cc-db,@@Not reporting: no reading from cc-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -10324,6 +10364,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,cc-db,@@Not reporting: no reading from cc-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -10439,6 +10480,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "@@R,cc-db,@@Not reporting: no reading from cc-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -10570,6 +10612,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,cc-db,@@Not reporting: no reading from cc-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -10700,6 +10743,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "@@R,cc-db,@@Not reporting: no reading from cc-db in this range@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -10799,6 +10843,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -10850,7 +10895,7 @@
     {
       "type": "stat",
       "title": "Backups in the last 30 hours",
-      "description": "cc-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `cc-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while cc-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`cc-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "cc-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `cc-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: two have landed up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while cc-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`cc-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -11710,7 +11755,7 @@
     {
       "type": "stat",
       "title": "Logs shipped (30 min)",
-      "description": "Cloud SQL's point-in-time recovery logs for cc-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while cc-db reported for 20 of the 30 minutes or more, as the urgent `cc-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `cc-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "Cloud SQL's point-in-time recovery logs for cc-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while cc-db reported for 20 of the 30 minutes or more, as the urgent `cc-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `cc-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `cc-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -12314,7 +12359,7 @@
     {
       "type": "timeseries",
       "title": "Point-in-time logs shipped, per hour",
-      "description": "Write-ahead log archives Cloud SQL shipped for cc-db in each hour (`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. An hour with none is a stall: `cc-db-pitr-logs-stalled` (urgent) opens after 30 minutes with none. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Write-ahead log archives Cloud SQL shipped for cc-db in each hour (`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. An hour with none is a stall: `cc-db-pitr-logs-stalled` (urgent) opens after 30 minutes with none. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 12,
@@ -12376,6 +12421,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "@@R,cc-db,@@Not reporting: no reading from cc-db in this range@@",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -12476,6 +12522,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -12607,6 +12654,7 @@
           },
           "mappings": [],
           "decimals": 0,
+          "noValue": "No backup in this range: one a night (the backups tile reads the last 30 hours)",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,

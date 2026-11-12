@@ -54,7 +54,13 @@ TPA_JOBS = "tpa-jobs-.*"
 PHI_SERVICES = "records|connectors"
 PHI_JOBS = "migrate-tpa|seed-tpa|tpa-db-export|restore-drill|records-chain-head"
 CRM_SERVICES = "crm-web|engine"
-CRM_JOBS = "migrate-crm|seed-crm"
+# The CRM's Cloud Run jobs (beta's crm.tf, every module of run-job): its migration and made-up data seed, run by a
+# person, and the copy's scheduled lane sender (R430), commission pass (R441) and forgot-password drain (R5106), each
+# behind its own switch; all three ran in the week to 2026-11-12 (job/completed_execution_count, read only).
+CRM_JOBS = "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain"
+CRM_JOBS_WORDS = ("The CRM's jobs: its migration and made-up data seed (`migrate-crm`, `seed-crm`), each run by a "
+                  "person, and the copy's scheduled lane sender (`crm-lane-send`), commission pass "
+                  "(`crm-lane-comp`) and forgot-password drain (`crm-reset-drain`).")
 CC_SERVICES = "svc-voice|svc-ops|svc-twilio-rest"
 TPA_SCHEDULES = "erisa-clocks|nightly-anomalies|stoploss-surveillance|accumulator-reconcile|workload-audit|member-access"
 AUTH_SCHEDULES = "auth-.*"
@@ -361,7 +367,7 @@ def quieten(p: dict, deps) -> dict:
     stopped = [d for d in deps if d in DATABASES]
     if switched:
         p["description"] += (" Reads \"not deployed\", in no colour, while " + " or ".join(f"`{d}`" for d in switched)
-                             + " is not built (beta's switch off; the service's TPA_NOT_DEPLOYED_JOBS), whatever else "
+                             + " is not built (its switch off; the service's TPA_NOT_DEPLOYED_JOBS), whatever else "
                              "holds.")
     p["description"] += (" Reads \"paused\" or \"database stopped\", in no colour, while " +
                          " or ".join(f"`{d}`" for d in paused + stopped) + " is " +
@@ -553,12 +559,56 @@ def dashboard(uid: str, title: str, description: str, tags: list[str], items: li
     }
 
 
+# ---- What an empty panel says (the owner, 2026-11-12, of the engine page's tiles: "investigate why some of these i
+# dont see data") -----------------------------------------------------------------------------------------------------
+# Cloud Monitoring returns a counter's series only with a point inside the range, so a count of something that did not
+# happen is no series at all, and Grafana's own words for that, "No data", read as broken. Every panel that queries says
+# in words what its empty answer means, by what it counts (cloud/README.md, "What an empty panel says"):
+# - a count of bad events (5xx, errors, crashes, kills for memory, failed start-ups, refusals, failed runs and
+#   schedules, restarts, breaks, stalls, dead letters, changes): none happened, NONE (a stat tile "0", in the neutral
+#   colour);
+# - a count of work that comes and goes (requests and their latency, runs of a job, deliveries, alerts raised, messages
+#   waiting): none came, NO_REQUESTS, NO_RUNS or the panel's own words;
+# - a service's instances and what they measure (CPU, memory, concurrency, billed time): per environment, "scales to
+#   zero when idle" for a service Terraform lets rest at none, and "kept warm, so it is down or not reporting" for one
+#   it keeps warm (idle_words);
+# - a signal that should always have points (a heartbeat, an uptime check, a database's own metrics, its logs shipped):
+#   missing, said in words ("Missing: ...", a database's "Not reporting: ..."), never as zero; a database stopped on
+#   purpose reads "database stopped" (db_missing).
+# A failed query shows the same words beside Grafana's red error triangle, so none of them is ever coloured green.
+NONE = "None in this range"
+NO_REQUESTS = "No requests in this range"
+NO_RUNS = "No runs in this range"
+NO_ALERTS = "No alerts raised in this range"
+NO_INSTANCE = "No instance in this range"
+UPTIME_MISSING = "Missing: no uptime check result in this range (none built, or none reporting)"
+TICKS_MISSING = "Missing: no run or drain tick in this range"
+
+
+def db_missing(instance: str) -> str:
+    """What one of a database's own charts says with nothing at all: its metrics are written every minute it runs."""
+    return when_quiet((instance,), f"Not reporting: no reading from {instance} in this range")
+
+
+def idle_words(service: str) -> str:
+    """What a service's instance charts say with nothing at all, per environment: a service kept warm with none is down
+    (its `<service> has no instance` pages), one that scales to zero is resting, and one an environment does not run
+    has nothing to show there."""
+    def words(env: str) -> str:
+        if service in KEPT_WARM[env]:
+            return f"No instance reported: {service} is kept warm, so it is down or not reporting"
+        if service in RUNS[env]:
+            return f"No instance in this range: {service} scales to zero when idle"
+        return f"No instance: {service} does not run here"
+    return per_environment(*(words(env) for env in ENVIRONMENTS))
+
+
 # ---- Shared panels and wording -------------------------------------------------------------------------------------
 NOTHING_BUT_METRICS = ("Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters "
                        "tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.")
-STOPPED_DB = ("\"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy "
-              "NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: "
-              "not built (cc-db exists with the staffed desk only), or reporting nothing.")
+STOPPED_DB = ("\"database stopped\": stopped on purpose (its activation policy NEVER; the service's "
+              "TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists "
+              "with the staffed desk only), or reporting nothing.")
 
 
 def db_stat(title: str, ds: str, instance: str, *, w=4, h=5) -> dict:
@@ -593,7 +643,7 @@ def groups_stat(title: str, ds: str, queries: list[dict], counter: str, deps) ->
 
 
 # What the app project's 24-hour jobs stat says of the importer beside the generic words.
-IMPORTER_FAILS = ("The administrator-feed importer (`feed-ingest-everon-sync`, beta) opens `feed-ingest-failed` on one "
+IMPORTER_FAILS = ("The administrator-feed importer (`feed-ingest-everon-sync`) opens `feed-ingest-failed` on one "
                   "failed run, never retried. ")
 # A scheduled job's deadline tile is titled by its job's name without tpa-jobs' prefix; the importer's by its repository's
 # name, so it fits a tile four columns wide (the whole name is in its description).
@@ -608,7 +658,7 @@ def deadline_title(job: str) -> str:
 DEADLINE_NOTES = {
     IMPORTER: ("The administrator-feed importer's Everon sync runs at 06:00, 14:00 and 22:00 Chicago time, never "
                "retried, and alerts on one failure (`feed-ingest-failed`); its `missed run` policy exists only while "
-               "its schedule is unpaused. Beta's alone: production-full builds none of it.")}
+               "its schedule is unpaused. production-full builds none of it.")}
 
 
 def deadline_stats(w: int, h: int, env: str = "beta") -> list[dict]:
@@ -811,9 +861,9 @@ AREAS = [
     ("cc", "Call centre", CC, CC_SERVICES, "migrate-cc", "cc-db", "✓ call centre", False),
     ("crm", "CRM", CRM, CRM_SERVICES, CRM_JOBS, "crm-db", "✓ CRM", False),
 ]
-AREA_WORDS = ("5xx answers, uptime and inside checks failing (beta's checks pass on IAP's sign-in page), synthetic "
-              "journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the database was "
-              "down, its failed backups and failed point-in-time log archives")
+AREA_WORDS = ("5xx answers, uptime and inside checks failing (behind IAP a check passes on its sign-in page), "
+              "synthetic journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the "
+              "database was down, its failed backups and failed point-in-time log archives")
 
 
 
@@ -877,13 +927,15 @@ LIMITS = {
 
 
 # The Cloud Run services each environment runs, which the overview's Services row tiles (a service an environment does
-# not run gets no tile there). production: what production-full's root builds. beta: what its switches turn on, as
-# beta runs it on 2026-10-13 (`gcloud run services list`, read only): connectors (connectors_enabled) and
-# tpa-jobs-drains (tpa_jobs_drains_enabled) are off, their images not deployed. A switch turned on in beta's tfvars
-# is a line here.
+# not run gets no tile there). production: what production-full's root builds. beta (the estate the owner runs, its
+# root named beta): what its switches turn on, as `gcloud run services list` reads it on 2026-11-12 (read only):
+# tpa-jobs-drains (tpa_jobs_drains_enabled) on since 2026-10-24 and connectors (connectors_enabled) since 2026-11-11.
+# ops-web and auth-event-publisher run too, built by a tpa-platform after the catalogue's pinned commit (06f73b72),
+# whose Terraform the tests read: they join SERVICES with the next re-vendor (tasks/todo.md). A switch turned on in
+# beta's tfvars is a line here.
 RUNS = {
-    "beta": ("web", "tpa-api", "model-gateway", "watchtower", "auth", "auth-outbox-publisher", "records", "svc-voice",
-             "svc-ops", "svc-twilio-rest", "crm-web", "engine"),
+    "beta": ("web", "tpa-api", "model-gateway", "tpa-jobs-drains", "watchtower", "auth", "auth-outbox-publisher",
+             "records", "connectors", "svc-voice", "svc-ops", "svc-twilio-rest", "crm-web", "engine"),
     "production": ("web", "tpa-api", "model-gateway", "tpa-jobs-drains", "auth", "auth-outbox-publisher", "records",
                    "connectors"),
 }
@@ -896,11 +948,14 @@ RUNS = {
 #   service_min_instances defaults, a switch on), pinned to tpa-platform by tests/cloud/test_overview.py.
 # - DEPLOYMENT_WARM: what a deployment's own terraform.tfvars raises besides. Beta's (untracked; read by the
 #   orchestrating session on 2026-10-13, values only) sets service_min_instances = { auth = 1, records = 1,
-#   tpa_api = 1, svc_ops = 1 }. The tests cannot read that file: they hold these to beta's list, and each to a
-#   service_min_instances key its root really has. A change to that file is a line here.
-TERRAFORM_WARM = {"beta": ("auth-outbox-publisher", "svc-voice", "svc-twilio-rest"),
+#   tpa_api = 1, svc_ops = 1 }, and web = 1 since (on 2026-11-12 `gcloud run services list` reads web's minimum 1
+#   and `web has no instance` is an enabled policy, both read only). The tests cannot read that file: they hold these
+#   to beta's list, and each to a service_min_instances key its root really has. A change to that file is a line here.
+# watchtower, this site, reads minimum 1 on 2026-11-12 too (tpa-platform D-334, after the pinned commit): it joins
+# TERRAFORM_WARM with the next re-vendor.
+TERRAFORM_WARM = {"beta": ("auth-outbox-publisher", "tpa-jobs-drains", "connectors", "svc-voice", "svc-twilio-rest"),
                   "production": ("auth", "auth-outbox-publisher", "model-gateway", "tpa-jobs-drains", "connectors")}
-DEPLOYMENT_WARM = {"beta": ("auth", "records", "tpa-api", "svc-ops"), "production": ()}
+DEPLOYMENT_WARM = {"beta": ("auth", "records", "tpa-api", "svc-ops", "web"), "production": ()}
 KEPT_WARM = {env: TERRAFORM_WARM[env] + tuple(s for s in DEPLOYMENT_WARM[env] if s not in TERRAFORM_WARM[env])
              for env in TERRAFORM_WARM}
 # What each root builds that has no tile here, and why (a service the environment does not run, or beta's
@@ -914,9 +969,7 @@ FILE_READER_BETA = ("beta runs it since 2026-10-13 (its deployment's tfvars turn
 # green; production-full builds none of it. A switch turned on is the owner's turn-on (tasks/todo.md, EN: stage b).
 ENROLL_OFF = ("enroll_enabled off (D-185, beta's enroll.tf; it builds nothing without enroll_db_enabled either): {} is "
               "not built, so no tile and no page until the owner's turn-on (tasks/todo.md, EN)")
-NOT_RUN = {"beta": {"connectors": "connectors_enabled off: beta has no destination for it (R120)",
-                    "tpa-jobs-drains": "tpa_jobs_drains_enabled off: its loops wait, idempotent, until it is on",
-                    "file-reader": FILE_READER_BETA,
+NOT_RUN = {"beta": {"file-reader": FILE_READER_BETA,
                     "enroll": ENROLL_OFF.format("the enrollment engine (PHI project, internal)"),
                     "enroll-relay": ENROLL_OFF.format("the portal's API hop into the PHI project (app project)"),
                     "enroll-web": ENROLL_OFF.format("the enrollment portal (app project, behind edge_enroll)")},
@@ -1353,7 +1406,7 @@ def backups_status(db: str, ds: str, title: str, *, w: int = 6, h: int = 4, link
              f"{db}'s successful automated backups in the last {BACKUP_HOURS} hours (`sql_automated_backups`, "
              "windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). " +
              BACKUP_TWO_CLOCKS.replace("{db}", db) + " One backup a night, starting in a four-hour window from "
-             f"{BACKUP_POLICIES['backup-missing']['start']} UTC: on beta two land up to 26.1 hours apart, so a healthy "
+             f"{BACKUP_POLICIES['backup-missing']['start']} UTC: two have landed up to 26.1 hours apart, so a healthy "
              f"instance always has one in {BACKUP_HOURS} hours. ✕ none in {BACKUP_HOURS} h, red: none while {db} "
              f"reported for {BACKUP_RAN_MINUTES // 60} of the {BACKUP_HOURS} hours or more; an instance started since "
              "reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`" + db + "-backup-failed`) is "
@@ -1467,14 +1520,15 @@ def backup_rows(name: str, ds: str) -> list[dict]:
                f"Write-ahead log archives Cloud SQL shipped for {name} in each hour "
                "(`database/replication/log_archive_success_count`): about twelve to fourteen an hour, idle or not. "
                f"An hour with none is a stall: `{name}-pitr-logs-stalled` (urgent) opens after "
-               f"{PITR_MINUTES} minutes with none. " + STOPPED_DB, w=12, h=5, bars=True, decimals=0),
+               f"{PITR_MINUTES} minutes with none. " + STOPPED_DB, w=12, h=5, bars=True, decimals=0,
+               no_value=db_missing(name)),
         series(f"Log archives that failed ({PITR_FAILED_MINUTES} min)", ds,
                q(PITR_FAILED, SQL, align=failed["aligner"], period="+" + failed["period"], reduce=failed["reducer"],
                  name="failed", **where),
                f"Failed attempts to archive {name}'s write-ahead logs in each {PITR_FAILED_MINUTES} minutes "
                f"(`log_archive_failure_count`), as `{name}-pitr-log-archive-failed` reads them: any bar opens it. One "
                f"Cloud SQL retries and recovers from closes it by itself; one that persists stalls the logs.", w=12,
-               h=6, bars=True, decimals=0),
+               h=6, bars=True, decimals=0, no_value=NONE),
         series("Backups taken, and backups that failed", ds,
                [q(log("sql_automated_backups"), SQL, period="+3600s", name="taken", **where),
                 q(log("sql_backup_failures"), SQL, period="+3600s", name="failed", **where)],
@@ -1485,7 +1539,8 @@ def backup_rows(name: str, ds: str) -> list[dict]:
                "reads ✕ a backup failed only while the newest failure is later than the newest success, each by the "
                "hour: a failed attempt that a later attempt made good reads ✓ backed up. "
                + BACKUP_TWO_CLOCKS.replace("{db}", name).replace("This tile shows", "The backups tile beside it shows"),
-               w=12, h=6, bars=True, decimals=0),
+               w=12, h=6, bars=True, decimals=0,
+               no_value=f"No backup in this range: one a night (the backups tile reads the last {BACKUP_HOURS} hours)"),
     ]
 
 # ---- Resources: every Cloud Run service's primitives ---------------------------------------------------------------
@@ -1637,6 +1692,7 @@ def resources(service: str, *, own_page: bool = False) -> list[dict]:
     else:
         link = service_links(service)
     what = f" ({WHAT[service]})" if service in WHAT else ""
+    idle = idle_words(service)
     return [
         row(f"Resources · {service}: CPU, memory, instances, concurrency, start-up{what}"),
         series("CPU (p99, p95, p50)", ds, percentiles(RUN_CPU, REV, CPU_POLICY, **me),
@@ -1644,14 +1700,14 @@ def resources(service: str, *, own_page: bool = False) -> list[dict]:
                f"99th, 95th and 50th percentile across its instances in each {minutes(CPU_POLICY)}-minute window. The "
                f"red line is `run-cpu-high`'s: the p99 above {pct(cpu)} for {minutes(CPU_POLICY, 'duration')} "
                "minutes pages (instances saturated: requests queue and slow).", w=6, h=7, unit="percentunit",
-               line=cpu, soft_max=1, links=link),
+               line=cpu, soft_max=1, links=link, no_value=idle),
         series("Memory (p99, p95, p50)", ds, percentiles(RUN_MEMORY, REV, MEMORY_POLICY, **me),
                f"{service}'s container memory, the share of its memory limit in use (`container/memory/utilizations`), "
                f"percentiles across its instances in each {minutes(MEMORY_POLICY)}-minute window. Cloud Run has no "
                "disk: files the container writes are held in memory and count here. The red line is "
                f"`run-memory-high`'s: the p99 above {pct(memory)} for {minutes(MEMORY_POLICY, 'duration')} minutes "
                "pages; at the limit the container is killed (`run-oom`, the last panel of this row).", w=6, h=7,
-               unit="percentunit", line=memory, soft_max=1),
+               unit="percentunit", line=memory, soft_max=1, no_value=idle),
         series("Instances (total, active, idle)", ds,
                [q(ceiling["metric"], REV, align=ceiling["aligner"], period="+" + ceiling["period"],
                   reduce=ceiling["reducer"], by=("service_name",), name="total", **me),
@@ -1659,24 +1715,25 @@ def resources(service: str, *, own_page: bool = False) -> list[dict]:
                f"{service}'s Cloud Run instances: the total, the most in each minute summed over active and idle, as "
                "the `ceiling-` policies read it, and active (serving or starting) and idle (kept warm, or waiting to "
                "be shut down) apart. " + per_environment(*(instance_words[env] for env in ENVIRONMENTS)), w=6, h=7,
-               decimals=0, lines=instance_lines, soft_max=top),
+               decimals=0, lines=instance_lines, soft_max=top, no_value=idle),
         series("Busiest instance's requests (p99, p50)", ds,
                [q(RUN_CONCURRENCY, REV, align=f"ALIGN_PERCENTILE_{n}", period=window(CONCURRENCY_POLICY),
                   reduce=CONCURRENCY_POLICY["cross_series_reducer"], name=f"p{n}", **me) for n in (99, 50)],
                "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and "
                f"50th percentile in each {minutes(CONCURRENCY_POLICY)}-minute window. " +
                per_environment(*(busy_words[env] for env in ENVIRONMENTS)), w=6, h=7, lines=busy_lines,
-               soft_max=slots),
+               soft_max=slots, no_value=idle),
         series("Start-up time (p99, p50)", ds,
                [q(RUN_STARTUP, REV, align=f"ALIGN_PERCENTILE_{n}", reduce="REDUCE_MAX", name=f"p{n}", **me)
                 for n in (99, 50)],
                "How long a new instance took to start, until it was ready to serve (`container/startup_latencies`): a "
                "dot for each interval in which one started. Nothing drawn: no instance started. No policy reads it; a "
-               "start-up that failed is the last panel.", w=8, h=7, unit="ms", points=True),
+               "start-up that failed is the last panel.", w=8, h=7, unit="ms", points=True,
+               no_value="No instance started in this range"),
         series("Instances billed", ds, q(RUN_BILLABLE, REV, align="ALIGN_RATE", name="billed", **me),
                "Billable instance time per second (`container/billable_instance_time`): how many instances were billed "
                "on average. An instance kept warm with CPU always on bills all the time; one that scales to zero, "
-               "only while it serves.", w=8, h=7, decimals=1),
+               "only while it serves.", w=8, h=7, decimals=1, no_value=idle),
         series("Killed for memory, crashed, failed to start", ds,
                [q(log("run_oom_kills"), REV, name="killed for memory", **me),
                 q(log("run_crash_exits"), REV, name="crashed", **me),
@@ -1684,7 +1741,7 @@ def resources(service: str, *, own_page: bool = False) -> list[dict]:
                "From Cloud Run's own system log: a container killed for exceeding its memory limit (`run_oom_kills`; "
                "`run-oom` pages on one), a container that exited with an error or a signal (`run_crash_exits`; "
                "`run-crash-loop` at three in fifteen minutes), and a failed start-up or liveness probe "
-               "(`run_system_errors`; `canary-startup`).", w=8, h=7, bars=True),
+               "(`run_system_errors`; `canary-startup`).", w=8, h=7, bars=True, no_value=NONE),
     ]
 
 
@@ -1710,7 +1767,7 @@ def project_section(ds: str, where: str, gateway: str | None = None, through: st
                     f"above {quota:g} for {minutes(QUOTA_POLICY, 'duration')} minutes pages. The grey line is the "
                     f"regional quota, {REGIONAL_QUOTA}: at it no service can start another instance, whatever its "
                     "own ceiling." + note, w=4 if gateway else 24, h=7, decimals=0,
-                    lines=[(quota, "red"), (REGIONAL_QUOTA, GREY)], soft_max=REGIONAL_QUOTA)]
+                    lines=[(quota, "red"), (REGIONAL_QUOTA, GREY)], soft_max=REGIONAL_QUOTA, no_value=NO_INSTANCE)]
     if not gateway:
         return items
     dropped, failed = NAT_DROPPED_POLICY, NAT_FAILED_POLICY
@@ -1724,10 +1781,10 @@ def project_section(ds: str, where: str, gateway: str | None = None, through: st
                "(`nat/allocated_ports`), and the most connections one instance held to one destination "
                "(`nat/port_usage`). In use close to an instance's share of the allocated ports, new connections wait "
                "or drop. A cold gateway allocates ports as instances arrive, so the first calls after a quiet spell can "
-               "wait.", w=5, h=7, decimals=0),
+               "wait.", w=5, h=7, decimals=0, no_value="No instance behind the gateway in this range"),
         series("NAT new connections", ds, q(NAT_CONNECTIONS, NAT, by=by, name=alias("gateway_name")),
                f"New connections Cloud NAT opened for {through} (`nat/new_connections_count`), per interval.", w=5,
-               h=7, bars=True),
+               h=7, bars=True, no_value="No connection out in this range"),
         series("NAT dropped packets", ds,
                [q(NAT_DROPPED_SENT, NAT, align=dropped["per_series_aligner"], period=window(dropped),
                   reduce=dropped["cross_series_reducer"], by=by, reason=NAT_OUT_OF_PORTS,
@@ -1741,14 +1798,14 @@ def project_section(ds: str, where: str, gateway: str | None = None, through: st
                f"with no port to leave by; the red line is `nat-port-exhaustion`'s, above {dropped['threshold_value']:g} "
                f"for {minutes(dropped, 'duration')} minutes. Sent, endpoint conflict: two instances reaching one "
                "destination from the same port. Received: replies with no open mapping (a connection already closed); "
-               "a few are normal.", w=5, h=7, line=dropped["threshold_value"]),
+               "a few are normal.", w=5, h=7, line=dropped["threshold_value"], no_value=NONE),
         series("NAT could not allocate", ds,
                q(NAT_FAILED, NAT, align=failed["per_series_aligner"], period=window(failed),
                  reduce=failed["cross_series_reducer"], by=by, name=alias("gateway_name")),
                f"Minutes in each {minutes(failed)} in which Cloud NAT could not allocate an address or ports "
                f"(`nat/nat_allocation_failed`). The red line is `nat-port-exhaustion`'s: above "
                f"{failed['threshold_value']:g} pages.", w=5, h=7, decimals=0, line=failed["threshold_value"],
-               soft_max=minutes(failed)),
+               soft_max=minutes(failed), no_value=NONE),
     ]
 
 
@@ -1759,11 +1816,12 @@ def storage(ds: str, where: str) -> list[dict]:
         series("Bucket size", ds, q(GCS_BYTES, BUCKET, align="ALIGN_MEAN", period="+3600s", by=("bucket_name",)),
                f"Bytes stored in each of the {where}'s buckets, every storage class together "
                "(`storage/total_bytes`, measured every few minutes and reported up to twelve minutes late). Real disk, "
-               "unlike a Cloud Run service's. No series: no bucket here holds anything yet.", w=12, h=7, unit="bytes"),
+               "unlike a Cloud Run service's. No series: no bucket here holds anything yet.", w=12, h=7, unit="bytes",
+               no_value="No bucket here holds anything yet"),
         series("Objects in each bucket", ds,
                q(GCS_OBJECTS, BUCKET, align="ALIGN_MEAN", period="+3600s", by=("bucket_name",)),
                "How many objects each bucket holds (`storage/object_count`). The bucket's name is the only label read: "
-               "never an object's name.", w=12, h=7, decimals=0),
+               "never an object's name.", w=12, h=7, decimals=0, no_value="No bucket here holds anything yet"),
     ]
 
 
@@ -1789,14 +1847,14 @@ def database_rows(name: str, ds: str, who: str, *, now: bool = True) -> list[dic
                f"The red line is `{name}-disk`'s: above {pct(full)} for {minutes(disk, 'duration')} minutes pages. "
                "Automatic storage increase grows the disk before it fills, up to the instance's "
                "disk_autoresize_limit; at that limit a full disk stops the database taking writes. " + STOPPED_DB,
-               w=wide, h=6, unit="percentunit", line=full, soft_max=1),
+               w=wide, h=6, unit="percentunit", line=full, soft_max=1, no_value=db_missing(name)),
         series("Disk space: used and size (bytes)", ds,
                [db_resource(SQL_DISK_BYTES, name, "used", align="ALIGN_MAX"),
                 db_resource(SQL_DISK_SIZE, name, "size", align="ALIGN_MAX")],
                f"{name}'s disk in bytes: used (`database/disk/bytes_used`) and its size (`database/disk/quota`). When "
                "the size steps up, Cloud SQL's automatic storage increase grew the disk; it grows only up to "
                f"disk_autoresize_limit. The dashed red line is {pct(full)} of the size, where `{name}-disk` opens.",
-               w=wide, h=6, unit="bytes",
+               w=wide, h=6, unit="bytes", no_value=db_missing(name),
                transformations=[{"id": "joinByField", "options": {"byField": "Time", "mode": "outer"}},
                                 {"id": "calculateField", "options": {
                                     "mode": "binary", "alias": alert, "replaceFields": False,
@@ -1808,17 +1866,17 @@ def database_rows(name: str, ds: str, who: str, *, now: bool = True) -> list[dic
                    {"id": "custom.fillOpacity", "value": 0}]}]),
         timeline("Up", ds, db_up(name), f"Cloud SQL's `database/up` for {name}, the lowest in each interval. "
                  f"`{name}-down` (urgent) pages below 1 for five minutes. " + STOPPED_DB, w=8, h=6,
-                 mappings=UP_MAPPING, steps=thresholds("red", (1, "green"))),
+                 mappings=UP_MAPPING, steps=thresholds("red", (1, "green")), no_value=db_missing(name)),
         series("CPU", ds, sql_query("cpu-high", name, "CPU"),
                f"Cloud SQL's CPU utilisation for {name} (`database/cpu/utilization`), the mean of each five minutes, "
                f"as the monitoring module's policies read it. Their red lines: above {pct(cpu)} for thirty minutes, "
                f"and above {pct(saturated)} for fifteen (urgent).", w=8, h=6, unit="percentunit",
-               lines=[(cpu, "red"), (saturated, "red")], soft_max=1),
+               lines=[(cpu, "red"), (saturated, "red")], soft_max=1, no_value=db_missing(name)),
         series("Memory", ds, sql_query("memory-high", name, "memory"),
                f"Cloud SQL's memory utilisation for {name} (`database/memory/utilization`), the mean of each five "
                f"minutes. The red line is the monitoring module's: above {pct(memory)} for fifteen minutes; past it "
                "PostgreSQL's out-of-memory killer restarts the server.", w=8, h=6, unit="percentunit", line=memory,
-               soft_max=1),
+               soft_max=1, no_value=db_missing(name)),
         series("Connections", ds, sql_query("connections-high", name, "connections"),
                "Backends connected (num_backends, summed over the instance's databases), the mean of each minute, as "
                "the monitoring module's connection policies read it. " + per_environment(*(
@@ -1827,20 +1885,20 @@ def database_rows(name: str, ds: str, who: str, *, now: bool = True) -> list[dic
                    f"{caps[env]}, the grey line, where new connections are refused." if caps[env] else
                    "This environment does not build it, so no limit is drawn." for env in ENVIRONMENTS)),
                w=6, h=6, decimals=0, lines=connection_lines,
-               soft_max={env: caps[env] for env in ENVIRONMENTS}),
+               soft_max={env: caps[env] for env in ENVIRONMENTS}, no_value=db_missing(name)),
         series("Disk operations per second", ds,
                [q(SQL_READ_OPS, SQL, align="ALIGN_RATE", by=(), name="read", **where),
                 q(SQL_WRITE_OPS, SQL, align="ALIGN_RATE", by=(), name="write", **where)],
                f"{name}'s disk reads and writes per second (`database/disk/read_ops_count`, `write_ops_count`). Reads "
-               "near none are normal: the working set is in memory.", w=6, h=6),
+               "near none are normal: the working set is in memory.", w=6, h=6, no_value=db_missing(name)),
         series("Disk throughput", ds,
                [q(SQL_READ_BYTES, SQL, align="ALIGN_RATE", by=(), name="read", **where),
                 q(SQL_WRITE_BYTES, SQL, align="ALIGN_RATE", by=(), name="write", **where)],
                f"Bytes {name} read from and wrote to its disk per second (`database/disk/read_bytes_count`, "
-               "`write_bytes_count`).", w=6, h=6, unit="Bps"),
+               "`write_bytes_count`).", w=6, h=6, unit="Bps", no_value=db_missing(name)),
         series("Restarts", ds, q(log("sql_restarts"), SQL, by=(), name="restarts", **where),
                "Postgres starting (`sql_restarts`: a crash, a maintenance or a resize restart), counted from Cloud "
-               "SQL's own logs. Failed backups are in the backups row below.", w=6, h=6, bars=True),
+               "SQL's own logs. Failed backups are in the backups row below.", w=6, h=6, bars=True, no_value=NONE),
         *backup_rows(name, ds),
     ]
 
@@ -1853,29 +1911,30 @@ def job_resources(ds: str, where: str, jobs: str | None = None) -> list[dict]:
         row(f"Job resources: {where} (attempts, run length, CPU, memory)"),
         series("Task attempts, by job and result", ds, q(RUN_TASKS, JOB, by=("job_name", "result"), **mine),
                "Each task attempt that finished (`job/completed_task_attempt_count`), by job and result. A job here "
-               "runs one task and no retry, so an attempt is a run.", w=8, h=7, bars=True),
+               "runs one task and no retry, so an attempt is a run.", w=8, h=7, bars=True, no_value=NO_RUNS),
         series("Tasks running, by job (each run's length)", ds,
                q(RUN_TASKS_RUNNING, JOB, align="ALIGN_MAX", by=("job_name",), **mine),
                "Task attempts running (`job/running_task_attempts`), the most in each interval: a run's bar lasts as "
                "long as its task ran. The module's `job-timeout-<job>` opens at 80% of a job's timeout.", w=8, h=7,
-               bars=True, decimals=0),
+               bars=True, decimals=0, no_value=NO_RUNS),
         series("Killed for memory, or failed to start, by job", ds,
                [q(log("run_oom_kills"), JOB, by=("job_name",), name=alias("job_name", prefix="killed for memory · "),
                   **mine),
                 q(log("run_system_errors"), JOB, by=("job_name",),
                   name=alias("job_name", prefix="failed probe or exit · "), **mine)],
                "A job's container killed for exceeding its memory limit (`run_oom_kills`; `run-oom` pages on one), or "
-               "Cloud Run's system log at ERROR for it (`run_system_errors`; `canary-startup`).", w=8, h=7, bars=True),
+               "Cloud Run's system log at ERROR for it (`run_system_errors`; `canary-startup`).", w=8, h=7, bars=True,
+               no_value=NONE),
         series("CPU, by job (p99)", ds,
                q(RUN_CPU, JOB, align="ALIGN_PERCENTILE_99", reduce="REDUCE_MAX", by=("job_name",), **mine),
                "Each job's container CPU, the share of its limit in use (`container/cpu/utilizations`), the 99th "
                "percentile in each interval while it runs. No policy reads a job's CPU: a slow job shows as a long "
-               "bar above.", w=12, h=7, unit="percentunit", soft_max=1),
+               "bar above.", w=12, h=7, unit="percentunit", soft_max=1, no_value=NO_RUNS),
         series("Memory, by job (p99)", ds,
                q(RUN_MEMORY, JOB, align="ALIGN_PERCENTILE_99", reduce="REDUCE_MAX", by=("job_name",), **mine),
                "Each job's container memory, the share of its limit in use (`container/memory/utilizations`), the 99th "
                "percentile in each interval while it runs. At the limit the task is killed (`run-oom`).", w=12, h=7,
-               unit="percentunit", soft_max=1),
+               unit="percentunit", soft_max=1, no_value=NO_RUNS),
     ]
 
 
@@ -1890,7 +1949,77 @@ def own_latency(service: str, *, w: int = 12, h: int = 8, period=None) -> dict:
                      reduce=policy["cross_series_reducer"], name=f"p{n}") for n in (95, 50)],
                   f"{what} (`{metric}`), the p95 and p50 of each {minutes(policy)} minutes. The red line is `{name}`'s: "
                   f"the p95 above {policy['threshold_value']:g} ms for {minutes(policy, 'duration')} minutes pages.",
-                  unit="ms", line=policy["threshold_value"], w=w, h=h)
+                  unit="ms", line=policy["threshold_value"], w=w, h=h, no_value=NO_REQUESTS)
+
+
+# ---- The services that take no web requests ------------------------------------------------------------------------
+# Each runs a loop: the sign-in messenger sends what auth queues, tpa-jobs-drains ticks its drains, connectors delivers
+# its outbox. Cloud Run's request count, 5xx and latency are always empty for them (none in the week to 2026-11-12), so
+# their own pages chart what they do instead, from their own counters: the same panels as on their area's page.
+def messenger_lag(w: int = 12, h: int = 8) -> dict:
+    return series("Oldest unsent message (p99, seconds)", APP,
+                  q(log("auth_messages_outbox_lag"), REV, align="ALIGN_PERCENTILE_99", reduce="REDUCE_MAX",
+                    name="p99"),
+                  "How long the oldest unsent sign-in text or email has waited, as the messenger reads it every five "
+                  "seconds while one waits (`auth-messages-lag` opens above 30 s for two minutes). It counts emails "
+                  "too, so one email on its retry ladder opens it. Empty until auth-notary's messenger writes JSON "
+                  "(docs/infra/monitoring.md §6).", unit="s", line=30, w=w, h=h,
+                  no_value="No message waited in this range")
+
+
+def messenger_refusals(w: int = 12, h: int = 8) -> dict:
+    return series("Message vendor refusals, by lane and reason", APP,
+                  q(log("auth_message_vendor_failures"), REV, by=("lane", "code")),
+                  "Sign-in texts or emails the vendor would not take, by channel and the messenger's reason "
+                  "(`auth_message_vendor_failures`; `sign-in-message-vendor`).", bars=True, w=w, h=h, no_value=NONE)
+
+
+def drain_ticks(w: int = 12, h: int = 8) -> dict:
+    return series("Drain ticks, by drain", APP,
+                  q(log("tpa_jobs_runs"), REV, by=("job",), service_name="tpa-jobs-drains"),
+                  "One run summary per tick of each drain (`tpa_jobs_runs`, from tpa-jobs-drains alone): its "
+                  "heartbeat. A drain that stops writing them has stopped.", bars=True, w=w, h=h,
+                  no_value="Missing: no drain tick in this range")
+
+
+def drains_raised(w: int = 12, h: int = 8) -> dict:
+    return series("Drain ticks that raised", APP, q(log("tpa_jobs_drain_raised"), REV, by=("job", "class")),
+                  "A tick of tpa-jobs-drains that raised instead of finishing (`drain-raised`), by drain and exception "
+                  "class. The loop keeps ticking and delivers nothing until it is fixed.", bars=True, w=w, h=h,
+                  no_value=NONE)
+
+
+def connectors_passes(w: int = 12, h: int = 8) -> dict:
+    return series("Delivery passes (the loop's heartbeat)", PHI, q(log("connectors_passes"), REV, name="passes"),
+                  "One per pass of the delivery loop, its line matched whole. None for five minutes pages as "
+                  "`connectors-stalled`.", bars=True, w=w, h=h,
+                  no_value="Missing: no pass in this range, so the delivery loop is stopped or not reporting")
+
+
+def connectors_deliveries(w: int = 12, h: int = 8) -> dict:
+    return series("Deliveries, by lane and outcome", PHI, q(log("connectors_deliveries"), REV, by=("lane", "outcome")),
+                  "One per send attempt (`connectors_deliveries`). The destination is not a label.", bars=True, w=w,
+                  h=h, no_value="No deliveries in this range")
+
+
+def connectors_dead(w: int = 12, h: int = 8) -> dict:
+    return series("Dead letters, refused destinations, unsigned envelopes", PHI,
+                  [q(log("connectors_dead_letters"), REV, by=("code",), name=alias("code", prefix="dead: ")),
+                   q(log("connectors_deliveries"), REV, by=("lane", "code"),
+                     code=Re("destination_refused|envelope_unsigned"), name=alias("code", "lane"))],
+                  "A row settled dead (`connectors-dead-letters`), a destination outside the allowlist "
+                  "(`connectors-destination-refused`) and a claimed row with no signature "
+                  "(`connectors-envelope-unsigned`).", bars=True, w=w, h=h, no_value=NONE)
+
+
+# Each one: what its row is called on its own page, and its panels there.
+NO_WEB_REQUESTS = {
+    "auth-outbox-publisher": ("the sign-in messages it sends", lambda: [messenger_lag(w=12, h=7),
+                                                                        messenger_refusals(w=12, h=7)]),
+    "tpa-jobs-drains": ("its drain ticks", lambda: [drain_ticks(w=12, h=7), drains_raised(w=12, h=7)]),
+    "connectors": ("its delivery loop", lambda: [connectors_passes(w=8, h=7), connectors_deliveries(w=8, h=7),
+                                                 connectors_dead(w=8, h=7)]),
+}
 
 
 def cloud_run_p95_words(service: str) -> dict:
@@ -1910,22 +2039,32 @@ def service_page(service: str) -> dict:
     ds, page = SERVICES[service]
     words = cloud_run_p95_words(service)
     width = 6 if service in OWN_LATENCY else 8
+    if service in NO_WEB_REQUESTS:
+        # A loop, not a web service: what it does, from its own counters, in place of Cloud Run's empty requests.
+        doing, panels = NO_WEB_REQUESTS[service]
+        top = [row(f"{service}: {doing} (it takes no web requests)"), *panels()]
+    else:
+        doing = "its requests"
+        top = [
+            row(f"{service}: requests"),
+            series("Requests, by status class", ds, requests(service, by=("response_code_class",)),
+                   f"Requests Cloud Run answered for {service} per interval.", w=width, h=7, bars=True,
+                   no_value=NO_REQUESTS),
+            series("5xx", ds, five_xx(service), f"{service}'s 5xx answers per interval. `canary-5xx` opens above 0.1% "
+                   "of its requests over five minutes (and five).", w=width, h=7, bars=True, no_value=NONE),
+            series("p95 latency (Cloud Run" + (", with its streams)" if service in STREAMS else ")"), ds, p95(service),
+                   per_environment(*(words[env] for env in ENVIRONMENTS)), w=width, h=7, unit="ms",
+                   lines={env: [] if service in LATENCY_LEFT_OUT[env] else [(2000, "red")] for env in ENVIRONMENTS},
+                   no_value=NO_REQUESTS),
+            *([own_latency(service, w=width, h=7)] if service in OWN_LATENCY else []),
+        ]
     items = [
-        row(f"{service}: requests"),
-        series("Requests, by status class", ds, requests(service, by=("response_code_class",)),
-               f"Requests Cloud Run answered for {service} per interval. None: it serves no requests (a worker) or "
-               "none came.", w=width, h=7, bars=True),
-        series("5xx", ds, five_xx(service), f"{service}'s 5xx answers per interval. `canary-5xx` opens above 0.1% of "
-               "its requests over five minutes (and five).", w=width, h=7, bars=True),
-        series("p95 latency (Cloud Run" + (", with its streams)" if service in STREAMS else ")"), ds, p95(service),
-               per_environment(*(words[env] for env in ENVIRONMENTS)), w=width, h=7, unit="ms",
-               lines={env: [] if service in LATENCY_LEFT_OUT[env] else [(2000, "red")] for env in ENVIRONMENTS}),
-        *([own_latency(service, w=width, h=7)] if service in OWN_LATENCY else []),
+        *top,
         text("No disk on a Cloud Run service", NO_DISK, w=24, h=3),
         *resources(service, own_page=True),
     ]
     return dashboard(service_uid(service), f"{service} (cloud service)",
-                     f"{service}, on the {AREA_TITLES[page]} page, on its own: its requests, then its CPU, memory, "
+                     f"{service}, on the {AREA_TITLES[page]} page, on its own: {doing}, then its CPU, memory, "
                      "instances, concurrency and start-up, with the lines the pager uses. " + NOTHING_BUT_METRICS,
                      [page], items, kind=SERVICE_TAG,
                      links=({"title": AREA_TITLES[page], "type": "link", "url": f"/d/tw-cloud-{page}", "icon": "dashboard",
@@ -1938,7 +2077,7 @@ DATABASES_ROW = (f"Databases: up, CPU, memory, disk; backups ({BACKUP_HOURS} h) 
                  f"({PITR_MINUTES} min)")
 UPTIME_WORDING = per_environment(
     "Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.",
-    "Beta's hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.")
+    "These hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.")
 
 
 def overview(cc: bool = True, env: str = "beta") -> dict:
@@ -2042,7 +2181,7 @@ def overview(cc: bool = True, env: str = "beta") -> dict:
               "own request line (`engine-latency`, the same bar): Cloud Run's p95 for engine counts its ledger "
               "stream, held open until the 300 s timeout by design.",
               groups_stat("Error groups (24 h)", CRM, crm_errors("+86400s", groups=True),
-                          "crm_errors (beta) or errors", ("crm-db",)),
+                          "crm_errors or errors", ("crm-db",)),
               db_stat("crm-db", CRM, "crm-db"),
               jobs_stat("CRM jobs (24 h)", CRM, CRM_JOBS, None, ("crm-db",))),
     ]
@@ -2057,63 +2196,66 @@ def portal_api() -> dict:
         row("Way in"),
         series("Uptime checks passing, by host", APP,
                q(UPTIME, URL, align="ALIGN_FRACTION_TRUE", reduce="REDUCE_MEAN", by=("host",)),
-               "Share of checker regions passing, by host. " + UPTIME_WORDING, unit="percentunit"),
+               "Share of checker regions passing, by host. " + UPTIME_WORDING, unit="percentunit",
+               no_value=UPTIME_MISSING),
         series("IAP assertions refused, and stale pinned keys", APP,
                [q(log("iap_unknown_key"), REV, by=("service_name",), name=alias("service_name", prefix="refused: ")),
                 q(log("iap_pinned_keys_stale"), REV, by=("service_name",),
                   name=alias("service_name", prefix="keys stale: "))],
                "auth's or tpa-api's refusals of an IAP assertion under a key the image does not pin (urgent "
                "`iap-unknown-key`: most likely Google rotated IAP's keys), and the image's own warning that its keys "
-               "are stale. Silent while beta runs with the header check off (R302).", bars=True),
+               "are stale. Silent while the header check is off (R302).", bars=True, no_value=NONE),
         row("Requests"),
         series("Requests, by service and status class", APP,
                requests(WEB_API, by=("service_name", "response_code_class")),
-               "Requests Cloud Run answered per interval.", bars=True),
+               "Requests Cloud Run answered per interval.", bars=True, no_value=NO_REQUESTS),
         series("5xx, by service", APP, five_xx(WEB_API),
                "5xx answers per interval. `canary-5xx` opens above 0.1% of a service's requests over five minutes "
                "(and five); `backend-down` (urgent) when everything web, auth or tpa-api answered for ten minutes was "
-               "a 5xx.", bars=True),
+               "a 5xx.", bars=True, no_value=NONE),
         series("p95 latency, by service (Cloud Run)", APP, p95(WEB_API),
                "Cloud Run's p95 request latency. web and tpa-api relay the desk's event streams, held open about "
-               "40 s by design, so theirs climbs whenever a desk page is open; beta's `canary-latency` leaves both "
-               "out. tpa-api's real latency is the next panel.", unit="ms", line=2000),
+               "40 s by design, so theirs climbs whenever a desk page is open; " +
+               per_environment("`canary-latency` reads both.", "`canary-latency` leaves both out here.") +
+               " tpa-api's real latency is the next panel.", unit="ms", line=2000, no_value=NO_REQUESTS),
         own_latency("tpa-api"),
         table("tpa-api calls, by operation and outcome", APP,
               q(log("tpa_api_requests"), REV, by=("operation", "outcome", "status_class")),
               "tpa-api's request lines in the time range, by the operation the route called, its outcome and "
               "status class (`tpa_api_requests`). Never the filled path, the tenant or the session.",
-              columns={"operation": "Operation", "outcome": "Outcome", "status_class": "Status class"}),
+              columns={"operation": "Operation", "outcome": "Outcome", "status_class": "Status class"},
+              no_value=NO_REQUESTS),
         series("tpa-api outcomes", APP, q(log("tpa_api_requests"), REV, by=("outcome",)),
-               "tpa-api's request lines per interval, by outcome.", bars=True),
+               "tpa-api's request lines per interval, by outcome.", bars=True, no_value=NO_REQUESTS),
         series("Model gateway: vendor answers that failed, by kind", APP,
                q(log("model_gateway_calls"), REV, by=("code",)),
                "model-gateway's calls to the model vendor that came back as an error, busy, unavailable or rejected "
-               "(`model_gateway_calls`; `model-vendor-errors`). Silent while model-gateway is not built.", bars=True),
+               "(`model_gateway_calls`; `model-vendor-errors`). None while model-gateway is not built or idle.",
+               bars=True, no_value=NONE),
         *area_resources("portal-api"),
         *project_section(APP, "app project", "app-net-nat",
                          "auth's messenger, the model gateway and the synthetic journeys"),
         row("Instances and start-up"),
         series("Instances, by service", APP, instances(APP_SERVICES),
                "Cloud Run instances per service (the most in each interval). A warm service with none pages as "
-               "`no instance` (urgent)."),
+               "`no instance` (urgent).", no_value=NO_INSTANCE),
         series("Start-up or runtime failures, and database proxy refusals", APP,
                [q(log("run_system_errors"), REV, by=("service_name",), service_name=Re(APP_SERVICES),
                   name=alias("service_name", prefix="system: ")),
                 q(log("sql_proxy_errors"), REV, by=("service_name",), service_name=Re(APP_SERVICES),
                   name=alias("service_name", prefix="sql proxy: "))],
                "Cloud Run's system log at ERROR (a failed probe, an exit, a memory limit: `canary-startup`) and the "
-               "Cloud SQL Auth Proxy's refusals (`canary-sql`), for these services.", bars=True),
+               "Cloud SQL Auth Proxy's refusals (`canary-sql`), for these services.", bars=True, no_value=NONE),
         row("Background work (tpa-jobs)"),
         series("Run summaries, by job", APP, q(log("tpa_jobs_runs"), by=("job",)),
                "One per scheduled run and per drain tick (`tpa_jobs_runs`). A drain that stops writing them has "
-               "stopped.", bars=True),
+               "stopped.", bars=True, no_value=TICKS_MISSING),
         table("Alerts raised by runs", APP, q(log("tpa_jobs_alerts"), by=("job", "code")),
               "Alert records the runs raised in the time range, by job and the registry's alert name "
               "(`jobs-alerts`; `anomaly_freeze`, `crm_signature_failure` and `member_access_mass_end` page as "
-              "urgent). The record's tenant and detail are never read.", columns={"job": "Job", "code": "Alert"}),
-        series("Drain ticks that raised", APP, q(log("tpa_jobs_drain_raised"), REV, by=("job", "class")),
-               "A tick of tpa-jobs-drains that raised instead of finishing (`drain-raised`), by drain and exception "
-               "class. The loop keeps ticking and delivers nothing until it is fixed.", bars=True),
+              "urgent). The record's tenant and detail are never read.", columns={"job": "Job", "code": "Alert"},
+              no_value=NO_ALERTS),
+        drains_raised(),
     ]
     return dashboard("tw-cloud-portal-api", "Portal & API (cloud)",
                      "web, tpa-api and model-gateway in the app project, the way in, and tpa-jobs' background work.",
@@ -2125,76 +2267,71 @@ def sign_in() -> dict:
         row("Sign-in"),
         series("Requests, by service and status class", APP,
                requests(AUTH_SERVICES, by=("service_name", "response_code_class")),
-               "Requests Cloud Run answered per interval for auth and its messenger.", bars=True),
+               "Requests Cloud Run answered per interval for auth and its messenger.", bars=True, no_value=NO_REQUESTS),
         series("p95 latency (Cloud Run)", APP, p95(AUTH_SERVICES),
-               "auth's p95 request latency. `canary-latency` opens above 2 s for ten minutes.", unit="ms", line=2000),
+               "auth's p95 request latency. `canary-latency` opens above 2 s for ten minutes.", unit="ms", line=2000,
+               no_value=NO_REQUESTS),
         series("Refused sign-ins and lockouts", APP,
                [q(log("auth_login_failures"), REV, name="401 refused"), q(log("auth_lockouts"), REV, name="423 locked")],
                "Password sign-ins refused with 401 (`auth_login_failures`) and answers of `423 locked` "
                "(`auth_lockouts`; `auth-lockouts` opens above 20 in five minutes: credential stuffing, most often).",
-               bars=True),
+               bars=True, no_value=NONE),
         series("Not ready, by the check that failed", APP, q(log("auth_not_ready"), REV, by=("code",)),
                "auth's `/ready` refusing, by its first failed check. `database` pages as `auth-database` (urgent: "
-               "nobody can sign in).", bars=True),
+               "nobody can sign in).", bars=True, no_value=NONE),
         series("Answered 500 (unhandled), by class", APP,
                q(log("auth_errors"), REV, by=("class",), operation="unhandled"),
                "An exception that reached auth's catch-all handler (`auth-unhandled`), by exception class.",
-               bars=True),
+               bars=True, no_value=NONE),
         db_stat("auth-db", APP, "auth-db", w=4, h=8),
         series("5xx, by service", APP, five_xx(AUTH_SERVICES),
                "5xx answers per interval. `backend-down` (urgent) opens when everything auth answered for ten "
-               "minutes was a 5xx.", bars=True, w=8),
+               "minutes was a 5xx.", bars=True, w=8, no_value=NONE),
         *area_resources("sign-in"),
         *database_rows("auth-db", APP, "auth and its jobs; app project", now=False),
         row("Sign-in messages"),
-        series("Oldest unsent message (p99, seconds)", APP,
-               q(log("auth_messages_outbox_lag"), REV, align="ALIGN_PERCENTILE_99", reduce="REDUCE_MAX", name="p99"),
-               "How long the oldest unsent sign-in text or email has waited, as the messenger reads it every five "
-               "seconds while one waits (`auth-messages-lag` opens above 30 s for two minutes). It counts emails "
-               "too, so one email on its retry ladder opens it. Empty until auth-notary's messenger writes JSON "
-               "(docs/infra/monitoring.md §6).", unit="s", line=30),
-        series("Message vendor refusals, by lane and reason", APP,
-               q(log("auth_message_vendor_failures"), REV, by=("lane", "code")),
-               "Sign-in texts or emails the vendor would not take, by channel and the messenger's reason "
-               "(`auth_message_vendor_failures`; `sign-in-message-vendor`).", bars=True),
+        messenger_lag(),
+        messenger_refusals(),
         series("Messenger instances", APP, instances("auth-outbox-publisher"),
                "auth-outbox-publisher's instances. With none, no sign-in message is sent: `auth-messages-lag` opens "
-               "on that too."),
+               "on that too.", no_value=idle_words("auth-outbox-publisher")),
         row("Audit and credentials"),
         series("Step-up refused, by status", APP, q(log("auth_stepup_failures"), REV, by=("code",)),
                "auth refusing a step-up (`auth_stepup_failures`, POST /auth/step-up): 401 a wrong code, password or "
                "passkey; 403 a CSRF or session refusal; 410 a challenge expired, spent or not the session's. Five in "
-               "fifteen minutes revoke the session.", bars=True),
+               "fifteen minutes revoke the session.", bars=True, no_value=NONE),
         series("Access ended by an administrator", APP, q(log("auth_admin_revocations"), REV, by=(), name="ended"),
                "An administrator ending a person's sessions or suspending the login (`auth_admin_revocations`), "
                "counted: its `operation` label's extractor is anchored at the end alone, so this repository's rule "
                "keeps it off the page until the catalogue anchors it at the start. Who and why are in auth's audit "
-               "chain, never here.", bars=True),
+               "chain, never here.", bars=True, no_value=NONE),
         series("Credential or workload tags that failed at use", APP,
                q(log("auth_credential_tag_invalid"), by=("code", "gate"),
                  name=alias("code") + " at " + alias("gate")),
                "A stored factor, workload, key or bearer row whose tag failed when a door used it, by kind and door "
-               "(`audit-credential-tag`, urgent: forgery or tampering until shown otherwise).", bars=True),
+               "(`audit-credential-tag`, urgent: forgery or tampering until shown otherwise).", bars=True,
+               no_value=NONE),
         series("Membership reconcile: runs, and runs not clean", APP,
                [q(log("auth_audit_reconciled"), JOB, name="runs"),
                 q(log("auth_audit_reconcile_outcomes"), JOB, by=("code",), name=alias("code", prefix="not clean: "))],
                "The auth-sweeper job's heartbeat, one per run (`audit-reconcile` pages when it is absent 90 "
-               "minutes), and the runs that were not clean, by result.", bars=True),
+               "minutes), and the runs that were not clean, by result.", bars=True,
+               no_value="Missing: no reconcile run in this range (its heartbeat)"),
         series("Reconcile findings and new chain breaks", APP,
                [q(log("auth_audit_reconcile_findings"), JOB, by=("code",), name=alias("code", prefix="finding: ")),
                 q(log("auth_audit_chain_breaks_new"), JOB, by=("code",), name=alias("code", prefix="new break: "))],
                "What the membership reconcile found (by kind) and audit-chain breaks it had not paged before (by "
-               "check). Both page as `audit-reconcile` (urgent).", bars=True),
+               "check). Both page as `audit-reconcile` (urgent).", bars=True, no_value=NONE),
         series("audit verify printed BREAK", APP, q(log("auth_audit_break"), JOB, by=("job_name",)),
                "`auth audit verify` printing a break (`audit-chain`, urgent). Only the line's prefix is matched.",
-               bars=True),
+               bars=True, no_value=NONE),
         row("auth's jobs"),
         series("Executions, by job and result", APP, executions(AUTH_JOBS),
                "Completed executions of auth's jobs per interval. Two failed in a row open `jobs-failed` (R380); one "
-               "opens the urgent `audit-chain` for the audit jobs.", bars=True),
+               "opens the urgent `audit-chain` for the audit jobs.", bars=True, no_value=NO_RUNS),
         series("Schedules that could not start their job", APP, schedule_failures(AUTH_SCHEDULES),
                "Cloud Scheduler attempts for auth's schedules that finished in error, by schedule and status.",
-               bars=True),
+               bars=True, no_value=NONE),
     ]
     return dashboard("tw-cloud-sign-in", "Sign-in (cloud)",
                      "auth, its messenger and its jobs in the app project: sign-in health, messages, audit.",
@@ -2206,40 +2343,42 @@ def records(env: str = "beta") -> dict:
     items = [
         row("The Records Gateway"),
         series("Requests, by status class", PHI, requests("records", by=("response_code_class",)),
-               "Requests Cloud Run answered per interval. A refusal is a 4xx.", bars=True),
+               "Requests Cloud Run answered per interval. A refusal is a 4xx.", bars=True, no_value=NO_REQUESTS),
         series("p95 latency (Cloud Run)", PHI, p95("records"),
                "records' p95 request latency. `canary-latency` opens above 2 s for ten minutes.", unit="ms",
-               line=2000),
+               line=2000, no_value=NO_REQUESTS),
         series("Refusals, by gate and code", PHI,
                q(log("records_refusals"), REV, by=("gate", "code"), name="gate " + alias("gate", "code")),
-               "Every refusal the gateway answered, by gate and CONTRACT §7 code (`records_refusals`).", bars=True),
+               "Every refusal the gateway answered, by gate and CONTRACT §7 code (`records_refusals`).", bars=True,
+               no_value=NONE),
         table("Refusals, by gate, code and operation", PHI,
               q(log("records_refusals"), REV, by=("gate", "code", "operation")),
               "Refusals in the time range, by gate, code and catalogue operation.",
-              columns={"gate": "Gate", "code": "Code", "operation": "Operation"}),
+              columns={"gate": "Gate", "code": "Code", "operation": "Operation"}, no_value=NONE),
         series("Audit flush failed, or database unreachable", PHI, q(log("records_critical"), by=("code",)),
                "The two lines that mean the gateway is failing its promise (`records-critical`, urgent): a "
-               "refusal's audit rows did not land, or tpa-db did not answer. From the service or a job.", bars=True),
+               "refusal's audit rows did not land, or tpa-db did not answer. From the service or a job.", bars=True,
+               no_value=NONE),
         series("Rate limited, by operation", PHI, q(log("records_rate_limited"), REV, by=("operation",)),
-               "Gate 8's rate limiter refusing a call (`records_rate_limited`).", bars=True),
+               "Gate 8's rate limiter refusing a call (`records_rate_limited`).", bars=True, no_value=NONE),
         series("Mirror warnings and errors, by gate", PHI,
                q(log("records_mirror_problems"), REV, by=("gate",), name="gate " + alias("gate")),
                "The mirror's warnings and errors: gate 2 is the JWKS fetch, gate 3 the event and revocation feeds "
-               "(`records_mirror_problems`).", bars=True),
+               "(`records_mirror_problems`).", bars=True, no_value=NONE),
         series("Database connection errors", PHI,
                [q(log("errors"), REV, by=("sqlstate",), sqlstate=Re("08.*"),
                   name=alias("sqlstate", prefix="SQLSTATE ")),
                 q(log("sql_proxy_errors"), name="sql proxy refusals")],
                "records lines with a class-08 SQLSTATE (`records-sql-errors`) and the Cloud SQL Auth Proxy's own "
-               "refusals in this project, services and jobs (`canary-sql`).", bars=True),
+               "refusals in this project, services and jobs (`canary-sql`).", bars=True, no_value=NONE),
         series("Instances, and start-up or runtime failures", PHI,
                [instances(PHI_SERVICES), q(log("run_system_errors"), name="system log errors")],
                "Cloud Run instances of records and connectors, and Cloud Run's system log at ERROR in this project "
-               "(`canary-startup`)."),
+               "(`canary-startup`).", no_value=idle_words("records")),
         db_stat("tpa-db", PHI, "tpa-db", w=4, h=8),
         series("5xx", PHI, five_xx("records"),
                "records' 5xx answers per interval. `records-down` (urgent) opens when everything it answered for ten "
-               "minutes was a 5xx.", bars=True, w=8),
+               "minutes was a 5xx.", bars=True, w=8, no_value=NONE),
         *area_resources("records"),
         *database_rows("tpa-db", PHI, "records and its jobs; PHI project", now=False),
         *project_section(PHI, "PHI project", "phi-net-nat", "connectors' messages"),
@@ -2250,25 +2389,16 @@ def records(env: str = "beta") -> dict:
                 schedule_failures("records-chain-head", by=("code",),
                                   name=alias("code", prefix="schedule failed: "))],
                "Each closed day's chain head written to the vault. A failed execution or schedule pages as "
-               "`audit-chain` (urgent).", bars=True),
+               "`audit-chain` (urgent).", bars=True, no_value=NO_RUNS),
         series("A chain head was already in the vault", PHI,
                q(log("records_chain_head_exists"), JOB, name="already there"),
                "The chain-head job found the latest day's head already written on its first attempt "
                "(`chain-head-exists`, normal): written before it (O137), a person's rerun, or the autumn clock "
-               "change.", bars=True),
+               "change.", bars=True, no_value=NONE),
         row("Connectors"),
-        series("Delivery passes (the loop's heartbeat)", PHI, q(log("connectors_passes"), REV, name="passes"),
-               "One per pass of the delivery loop, its line matched whole. None for five minutes pages as "
-               "`connectors-stalled`.", bars=True),
-        series("Deliveries, by lane and outcome", PHI, q(log("connectors_deliveries"), REV, by=("lane", "outcome")),
-               "One per send attempt (`connectors_deliveries`). The destination is not a label.", bars=True),
-        series("Dead letters, refused destinations, unsigned envelopes", PHI,
-               [q(log("connectors_dead_letters"), REV, by=("code",), name=alias("code", prefix="dead: ")),
-                q(log("connectors_deliveries"), REV, by=("lane", "code"),
-                  code=Re("destination_refused|envelope_unsigned"), name=alias("code", "lane"))],
-               "A row settled dead (`connectors-dead-letters`), a destination outside the allowlist "
-               "(`connectors-destination-refused`) and a claimed row with no signature "
-               "(`connectors-envelope-unsigned`).", bars=True),
+        connectors_passes(),
+        connectors_deliveries(),
+        connectors_dead(),
         *(administrator_sync() if importer else []),
         *records_limit(),
         row("Perimeter and alert changes"),
@@ -2276,20 +2406,20 @@ def records(env: str = "beta") -> dict:
                q(log("perimeter_violations"), AUDITED, by=("code", "service", "outcome"),
                  name=alias("code", "service") + " dry run " + alias("outcome")),
                "VPC Service Controls violations logged in this project, by reason, service and whether it was a dry "
-               "run (`perimeter-violations`).", bars=True),
+               "run (`perimeter-violations`).", bars=True, no_value=NONE),
         series("Alert, snooze and log-counter changes", PHI,
                [q(log("monitoring_changes"), by=("operation",)), q(log("log_metric_changes"), by=("operation",))],
                "Changes to this project's alert policies, notification channels or snoozes (`monitoring-changed`, "
                "D-137) and to its log-based counters (`log-counters-changed`, D-141), from the Admin Activity log, "
                "by method. The entry says who and what. No resource type is named: the catalogue has not yet "
-               "confirmed which resource Google writes these on.", bars=True),
+               "confirmed which resource Google writes these on.", bars=True, no_value=NONE),
         row("Protected jobs"),
         series("Executions, by job and result", PHI, executions(PHI_JOBS),
-               "The migration, the nightly export, the chain head, beta's seed and the quarterly restore drill.",
-               bars=True),
+               "The migration, the nightly export, the chain head, the made-up data seed and the quarterly restore "
+               "drill.", bars=True, no_value=NO_RUNS),
         series("Schedules that could not start their job", PHI, schedule_failures(PHI_SCHEDULES),
                "Cloud Scheduler is outside the perimeter's restricted services: a refusal here may be the perimeter.",
-               bars=True),
+               bars=True, no_value=NONE),
     ]
     return dashboard("tw-cloud-records", "Member records (cloud)",
                      "records, connectors and their jobs in the PHI project, read with `cloud-phi` alone. Health "
@@ -2313,9 +2443,9 @@ def administrator_sync() -> list[dict]:
                f"{policy['display_name'].strip(chr(34))}, pages on one). **It reads zero until records logs that "
                "line (TP-249):** records writes the alert's outbox row and logs nothing today, so this chart cannot "
                "show an alert yet. Zero too while the importer is not deployed (feed_ingest_enabled off) or its "
-               "schedule is paused: beta makes the counter whatever that switch says (tpa-platform D-181). A count "
+               "schedule is paused: the counter is made whatever that switch says (tpa-platform D-181). A count "
                "with no label: never the run, the tenant, an employer or a count of people. The run itself, its counts and its issues are on the ops portal's sync runs and data issues "
-               "pages.", w=24, h=6, bars=True),
+               "pages.", w=24, h=6, bars=True, no_value=NONE),
     ]
 
 
@@ -2329,17 +2459,20 @@ def records_limit() -> list[dict]:
                q(log("records_velocity"), REV, by=("code", "outcome"), name=alias("code", "outcome")),
                "records' limit crossing one staff person's line (`records_velocity`): a flag, a hold or a freeze "
                "(`code`), enforced or reported only (`outcome`). Never the person, a member, the measure or the "
-               "count; who, and the limits, are on the ops portal's Admin, Security limits.", w=6, h=7, bars=True),
+               "count; who, and the limits, are on the ops portal's Admin, Security limits.", w=6, h=7, bars=True,
+               no_value=NONE),
         series("Limit settings changed", PHI, q(log("records_velocity_settings_changes"), REV, by=(), name="changes"),
                "A TPA administrator's saved change to the records limit, one per changed field "
                "(`records_velocity_settings_changes`). Which way and whose role are the Security page's; never the "
-               "value, the administrator or the tenant.", w=6, h=7, bars=True),
+               "value, the administrator or the tenant.", w=6, h=7, bars=True, no_value=NONE),
         series("Reveals served, by operation", PHI, q(log("records_reveals"), REV, by=("operation",)),
                "A reveal records served (`records_reveals`: `eligibility.reveal`, `network.reveal_field`). Who "
-               "revealed what is in the audit chain and the ops portal's Access limits.", w=6, h=7, bars=True),
+               "revealed what is in the audit chain and the ops portal's Access limits.", w=6, h=7, bars=True,
+               no_value=NONE),
         series("Staff member reads, by operation", PHI, q(log("records_staff_member_reads"), REV, by=("operation",)),
                "A member read records served at a staff door (`records_staff_member_reads`), by operation; night "
-               "activity shows by the hour. Never the member, the person or the tenant.", w=6, h=7, bars=True),
+               "activity shows by the hour. Never the member, the person or the tenant.", w=6, h=7, bars=True,
+               no_value=NONE),
     ]
 
 
@@ -2361,28 +2494,28 @@ def voice_loop() -> list[dict]:
                "late (`voice_loop_lag_over_5s`), and faulthandler's stack dumps, one per thread, written once the loop "
                "has not beaten for five seconds whether or not it came back (`voice_stack_dumps`). Above "
                f"{held_5s['threshold_value']:g} of either opens `voice-loop-stall`: a caller hears dead air. Nothing of "
-               "a call is on the lines.", w=6, h=7, bars=True),
+               "a call is on the lines.", w=6, h=7, bars=True, no_value=NONE),
         series(f"Loop held 1 s+ ({minutes(held_1s)} min)", CC,
                as_policy("voice_loop_lag_over_1s", held_1s, name="held 1 s or more"),
                f"The loop's timer firing a second or more late (`voice_loop_lag_over_1s`), in each "
                f"{minutes(held_1s)} minutes. The red line is `voice-loop-stall`'s: above "
                f"{held_1s['threshold_value']:g} (three or more) opens it.", w=6, h=7, bars=True,
-               line=held_1s["threshold_value"]),
+               line=held_1s["threshold_value"], no_value=NONE),
         series("How late its timer fired (p99, p50)", CC,
                [q(log("voice_loop_lag_ms"), REV, align=f"ALIGN_PERCENTILE_{n}", reduce="REDUCE_MAX", name=f"p{n}")
                 for n in (99, 50)],
                "Each late timer's lag (`voice_loop_lag_ms`, a line's `lag_ms`): nothing drawn, no timer fired late. "
                "No policy reads the distribution; it is for reading a stall afterwards.", w=6, h=7, unit="ms",
-               points=True),
+               points=True, no_value=NONE),
         series("Late timers, by where", CC, q(log("voice_loop_lag"), REV, by=("code",)),
                "Every late-timer line (`voice_loop_lag`) by its closed `where` code: the kind of stall.", w=6, h=7,
-               bars=True),
+               bars=True, no_value=NONE),
         series(f"Keep-warm steps that failed, by step ({minutes(warm)} min)", CC,
                as_policy("voice_keep_warm_failures", warm, by=("code",)),
                f"svc-voice's failed or timed-out keep-warm steps (`voice_keep_warm_failures`), by step, in each "
                f"{minutes(warm)} minutes. The red line is `voice-keep-warm-failing`'s: above "
                f"{warm['threshold_value']:g} of one step opens it; that path is cold for the next call.", w=24, h=6,
-               bars=True, line=warm["threshold_value"]),
+               bars=True, line=warm["threshold_value"], no_value=NONE),
     ]
 
 
@@ -2391,22 +2524,24 @@ def call_centre() -> dict:
         row("Services"),
         series("Requests, by service and status class", CC,
                requests(CC_SERVICES, by=("service_name", "response_code_class")),
-               "Requests Cloud Run answered per interval. A refused webhook signature is a 4xx.", bars=True),
+               "Requests Cloud Run answered per interval. A refused webhook signature is a 4xx.", bars=True,
+               no_value=NO_REQUESTS),
         series("5xx, by service", CC, five_xx(CC_SERVICES),
                "5xx answers per interval. `voice-down` (urgent) opens when everything svc-voice answered for ten "
-               "minutes was a 5xx.", bars=True),
+               "minutes was a 5xx.", bars=True, no_value=NONE),
         series("Relay p95 latency", CC, p95("svc-twilio-rest"),
                "svc-twilio-rest's p95. svc-voice (a call's socket, up to an hour) and svc-ops (the desk's streams) "
-               "are left out, as `canary-latency` leaves them out.", unit="ms", line=2000),
+               "are left out, as `canary-latency` leaves them out.", unit="ms", line=2000, no_value=NO_REQUESTS),
         series("Instances, by service", CC, instances(CC_SERVICES),
-               "Cloud Run instances. svc-voice is kept warm: none for five minutes pages as `no instance`."),
+               "Cloud Run instances. svc-voice is kept warm: none for five minutes pages as `no instance`.",
+               no_value=NO_INSTANCE),
         series("Errors, by class", CC, error_counts("errors", ("class",)),
                "call-center's lines at ERROR, by the class a whole last line of the redacted traceback opens with "
-               "(`errors`; new-group and spike policies).", bars=True),
+               "(`errors`; new-group and spike policies).", bars=True, no_value=NONE),
         series("Start-up or runtime failures, and database proxy refusals", CC,
                [q(log("run_system_errors"), name="system log errors"),
                 q(log("sql_proxy_errors"), name="sql proxy refusals")],
-               "`canary-startup` and `canary-sql` in the call-centre project.", bars=True),
+               "`canary-startup` and `canary-sql` in the call-centre project.", bars=True, no_value=NONE),
         *voice_loop(),
         *area_resources("callcentre"),
         *database_rows("cc-db", CC, "the staffed desk and svc-voice's hand-off ledger", now=False),
@@ -2416,10 +2551,10 @@ def call_centre() -> dict:
         db_stat("cc-db", CC, "cc-db", w=6, h=7),
         series("migrate-cc executions", CC, executions("migrate-cc"),
                "cc-db's schema migration, run by a person (staffed desk only). A failure opens `jobs-failed`.",
-               bars=True, w=18, h=7),
+               bars=True, w=18, h=7, no_value=NO_RUNS),
     ]
     return dashboard("tw-cloud-callcentre", "Call centre (cloud)",
-                     "Beta's call-centre project: svc-voice, svc-ops, the relay, cc-db. production-full has no "
+                     "The call-centre project: svc-voice, svc-ops, the relay, cc-db. production-full has no "
                      "call-centre project, so this page is empty there.", ["callcentre"], items)
 
 
@@ -2428,22 +2563,23 @@ def crm() -> dict:
         row("Services"),
         series("Uptime check passing", CRM,
                q(UPTIME, URL, align="ALIGN_FRACTION_TRUE", reduce="REDUCE_MEAN", by=("host",), host="crm.*"),
-               "The CRM host's check (beta, once its certificate is active and `crm_uptime_check_enabled` is on). "
-               "Behind IAP it passes on Google's sign-in page.", unit="percentunit"),
+               "The CRM host's check (once its certificate is active and `crm_uptime_check_enabled` is on). "
+               "Behind IAP it passes on Google's sign-in page.", unit="percentunit", no_value=UPTIME_MISSING),
         series("Requests, by service and status class", CRM,
                requests(CRM_SERVICES, by=("service_name", "response_code_class")),
-               "Requests Cloud Run answered per interval.", bars=True),
-        series("5xx, by service", CRM, five_xx(CRM_SERVICES), "5xx answers per interval.", bars=True),
+               "Requests Cloud Run answered per interval.", bars=True, no_value=NO_REQUESTS),
+        series("5xx, by service", CRM, five_xx(CRM_SERVICES), "5xx answers per interval.", bars=True, no_value=NONE),
         series("p95 latency, by service (Cloud Run; engine's with its streams)", CRM, p95(CRM_SERVICES),
                "Cloud Run's p95 request latency. The red line is `canary-latency`'s, for crm-web: above 2 s for ten "
                f"minutes pages. engine's includes its streams: it {STREAMS['engine']}, and Cloud Run's p95 counts a "
                "stream's whole life, so engine's sits near 300 s while one is open. `canary-latency` leaves engine "
-               "out; its own latency is the next panel (`engine-latency`).", unit="ms", line=2000),
+               "out; its own latency is the next panel (`engine-latency`).", unit="ms", line=2000,
+               no_value=NO_REQUESTS),
         own_latency("engine"),
-        series("Instances, by service", CRM, instances(CRM_SERVICES), "Cloud Run instances."),
+        series("Instances, by service", CRM, instances(CRM_SERVICES), "Cloud Run instances.", no_value=NO_INSTANCE),
         series("Errors, by class" if CRM_CLASS else "Errors, by service", CRM, crm_errors(),
-               "The CRM's lines at ERROR. Beta counts them as `crm_errors` (the CRM shares the app project); a CRM "
-               "project of its own as `errors`." + CRM_CLASS_NOTE, bars=True),
+               "The CRM's lines at ERROR, counted as `crm_errors` where the CRM shares the app project and as "
+               "`errors` in a CRM project of its own." + CRM_CLASS_NOTE, bars=True, no_value=NONE),
         series("Start-up or runtime failures, and database proxy refusals", CRM,
                [q(log("run_system_errors"), REV, by=("service_name",), service_name=Re(CRM_SERVICES),
                   name=alias("service_name", prefix="system: ")),
@@ -2453,21 +2589,22 @@ def crm() -> dict:
                   name=alias("service_name", prefix="sql proxy: ")),
                 q(log("sql_proxy_errors"), JOB, by=("job_name",), job_name=Re(CRM_JOBS),
                   name=alias("job_name", prefix="sql proxy: "))],
-               "`canary-startup` and `canary-sql` for the CRM's services and jobs (beta's are in the app project).",
-               bars=True),
+               "`canary-startup` and `canary-sql` for the CRM's services and jobs (in the app project where the CRM "
+               "shares it).", bars=True, no_value=NONE),
         *area_resources("crm"),
-        *database_rows("crm-db", CRM, "the CRM; the app project in beta", now=False),
-        *project_section(CRM, "CRM's project", note=" In beta the CRM runs in the app project, so every app service "
-                         "counts here too."),
+        *database_rows("crm-db", CRM, "the CRM", now=False),
+        *project_section(CRM, "CRM's project",
+                         note=per_environment("", " The CRM runs in the app project here, so every app service counts "
+                                                  "too.")),
         row("Database and jobs"),
         db_stat("crm-db", CRM, "crm-db", w=6, h=7),
         series("CRM job executions", CRM, executions(CRM_JOBS),
-               "The CRM's migration and made-up data seed, each run by a person. Two failures in a row open "
-               "`jobs-failed` (`crm-jobs-failed` in beta; R380).", bars=True, w=18, h=7),
+               CRM_JOBS_WORDS + " Two failures in a row open `jobs-failed` (`crm-jobs-failed` where the CRM shares "
+               "the app project; R380).", bars=True, w=18, h=7, no_value=NO_RUNS),
     ]
     return dashboard("tw-cloud-crm", "CRM (cloud)",
-                     "crm-web, engine and crm-db. In beta the CRM runs in the app project (R282), which `cloud-crm` "
-                     "then reads.", ["crm"], items)
+                     "crm-web, engine and crm-db. Where the CRM shares the app project (R282), `cloud-crm` reads that "
+                     "project.", ["crm"], items)
 
 
 def errors(cc: bool = True) -> dict:
@@ -2479,11 +2616,11 @@ def errors(cc: bool = True) -> dict:
                       f"Every error group of `{metric}` in the time range: the Cloud Run service or job, then the "
                       "counter's labels, and its ERROR lines. A line carries an exception's class and never its "
                       "message or a stack trace. A group new in the last hour (absent the 23 before) opens the "
-                      "`new error group` policy.", columns={**run, **columns}, w=16, h=9),
+                      "`new error group` policy.", columns={**run, **columns}, w=16, h=9, no_value=NONE),
                 series("ERROR lines, by service or job", ds,
                        [q(log(metric), REV, by=("service_name",)), q(log(metric), JOB, by=("job_name",))],
                        f"`{metric}` per interval. A group's hour above 5 times its 23-hour mean (and 10) opens the "
-                       "`error spike` policy.", bars=True, w=8, h=9)]
+                       "`error spike` policy.", bars=True, w=8, h=9, no_value=NONE)]
 
     items = [
         *section("App tier: tpa-api, tpa-jobs, drains, model-gateway (app project)", APP, "errors",
@@ -2499,10 +2636,11 @@ def errors(cc: bool = True) -> dict:
         row("CRM"),
         table("Error groups in the time range (crm_errors or errors)", CRM, crm_errors(),
               "The CRM's error groups: the service" + (" and the exception class" if CRM_CLASS else "") +
-              ". Beta counts them as `crm_errors`." + CRM_CLASS_NOTE,
-              columns={"service_name": "Cloud Run service", **({"class": "Class"} if CRM_CLASS else {})}, w=16, h=9),
+              ". Counted as `crm_errors` where the CRM shares the app project." + CRM_CLASS_NOTE,
+              columns={"service_name": "Cloud Run service", **({"class": "Class"} if CRM_CLASS else {})}, w=16, h=9,
+              no_value=NONE),
         series("ERROR lines, by service", CRM, crm_errors(by=("service_name",)),
-               "The CRM's ERROR lines per interval.", bars=True, w=8, h=9),
+               "The CRM's ERROR lines per interval.", bars=True, w=8, h=9, no_value=NONE),
         row("Crashes, out-of-memory kills, and secret or key versions taken away"),
         *[series(f"{where}", ds,
                  [q(log("run_crash_exits"), REV, by=("service_name",), name=alias("service_name", prefix="crashed: ")),
@@ -2514,7 +2652,8 @@ def errors(cc: bool = True) -> dict:
                  "(`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret "
                  "Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, "
                  "`kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the "
-                 "method alone; who and which stay in the entry.", bars=True, w=24 // (4 if cc else 3), h=7)
+                 "method alone; who and which stay in the entry.", bars=True, w=24 // (4 if cc else 3), h=7,
+                 no_value=NONE)
           for where, ds in (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
                             ("CRM", CRM))],
     ]
@@ -2528,7 +2667,7 @@ def databases(cc: bool = True) -> dict:
     items = []
     for name, ds, who in (("auth-db", APP, "auth and its jobs; app project"),
                           ("tpa-db", PHI, "records and its jobs; PHI project"),
-                          ("crm-db", CRM, "the CRM; the app project in beta"),
+                          ("crm-db", CRM, "the CRM"),
                           *((("cc-db", CC, "the call centre's staffed desk and svc-voice's hand-off ledger"),)
                             if cc else ())):
         items += database_rows(name, ds, who)
@@ -2546,41 +2685,49 @@ def jobs(cc: bool = True, env: str = "beta") -> dict:
         *deadline_stats(w=4, h=4, env=env),
         row("App project jobs (tpa-jobs, auth" + (", the importer)" if importer else ")")),
         series("Successful executions, by job", APP, executions(result="succeeded", by=("job_name",)),
-               "A gap where a job's cadence says a run should be is a missed run.", bars=True),
+               "A gap where a job's cadence says a run should be is a missed run.", bars=True, no_value=NO_RUNS),
         series("Failed executions, by job", APP, executions(result="failed", by=("job_name",)),
                "Executions that failed after their retries: two in a row open `jobs-failed` (R380); one opens "
                "`audit-chain` for the audit jobs (urgent)" +
                (" and `feed-ingest-failed` for the importer" if importer else "") +
-               ". For tpa-jobs a failed run is any tenant not `ok`.", bars=True),
+               ". For tpa-jobs a failed run is any tenant not `ok`.", bars=True, no_value=NONE),
         series("Schedules that could not start their job", APP, schedule_failures(),
                "Cloud Scheduler attempts that finished in error, by schedule and status (`scheduler-failed`). "
-               "PERMISSION_DENIED means an invoker binding is not what the gate thinks.", bars=True),
+               "PERMISSION_DENIED means an invoker binding is not what the gate thinks.", bars=True, no_value=NONE),
         series("Run summaries, by job", APP, q(log("tpa_jobs_runs"), JOB, by=("job",)),
                "One per tpa-jobs scheduled run (`tpa_jobs_runs`); the drains' ticks are on the Portal & API page.",
-               bars=True),
+               bars=True, no_value=NO_RUNS),
         table("Alerts raised, by job", APP, q(log("tpa_jobs_alerts"), JOB, by=("job", "code")),
               "Alert records the scheduled runs raised in the time range (`jobs-alerts`; the paging ones urgent; "
-              "two `tenants_partial` in a day `jobs-partial-recurring`).", columns={"job": "Job", "code": "Alert"}),
+              "two `tenants_partial` in a day `jobs-partial-recurring`).", columns={"job": "Job", "code": "Alert"},
+              no_value=NO_ALERTS),
+        # A distribution (one point per tenant per run): Cloud Monitoring refuses ALIGN_MEAN on one (400, "The
+        # aligner cannot be applied to metrics with kind DELTA and value type DISTRIBUTION"), so the mean is the
+        # merged distribution's, ALIGN_DELTA then REDUCE_MEAN.
         series("Reconciliations left open per tenant", APP,
-               [q(log("tpa_jobs_accumulator_backlog"), JOB, align="ALIGN_MEAN", reduce="REDUCE_MAX", by=("job",),
+               [q(log("tpa_jobs_accumulator_backlog"), JOB, align="ALIGN_DELTA", reduce="REDUCE_MEAN", by=("job",),
                   name=alias("job", prefix="mean: ")),
                 q(log("tpa_jobs_accumulator_backlog"), JOB, align="ALIGN_PERCENTILE_99", reduce="REDUCE_MAX",
                   by=("job",), name=alias("job", prefix="largest (p99): "))],
-               "The outstanding reconciliations accumulator_reconcile left open, one point per tenant per run. "
-               "`accumulator-backlog-growing` opens when tonight's total is above last night's."),
+               "The outstanding reconciliations accumulator_reconcile left open, one point per tenant per run that "
+               "leaves one open: the mean of each run's, and the largest. `accumulator-backlog-growing` opens when "
+               "tonight's total is above last night's. None: no run left one open in this range, or no run; "
+               "\"paused\" while the sweep is paused on purpose.",
+               no_value=when_quiet(("accumulator-reconcile",), "None left open in this range")),
         *(importer_rows() if importer else []),
         row("PHI project jobs"),
         series("Executions, by job and result", PHI, executions(PHI_JOBS),
-               "migrate-tpa, seed-tpa, tpa-db-export, records-chain-head and the restore drill.", bars=True),
+               "migrate-tpa, seed-tpa, tpa-db-export, records-chain-head and the restore drill.", bars=True,
+               no_value=NO_RUNS),
         series("Schedules that could not start their job", PHI, schedule_failures(PHI_SCHEDULES),
-               "`scheduler-failed` in the PHI project; `audit-chain` for the chain head.", bars=True),
+               "`scheduler-failed` in the PHI project; `audit-chain` for the chain head.", bars=True, no_value=NONE),
         row("Call centre and CRM jobs" if cc else "CRM jobs"),
-        *([series("migrate-cc", CC, executions("migrate-cc"), "cc-db's migration, run by a person.", bars=True)]
+        *([series("migrate-cc", CC, executions("migrate-cc"), "cc-db's migration, run by a person.", bars=True,
+                  no_value=NO_RUNS)]
           if cc else []),
-        series("migrate-crm and seed-crm", CRM, executions(CRM_JOBS), "The CRM's jobs, each run by a person.",
-               bars=True),
+        series("CRM jobs", CRM, executions(CRM_JOBS), CRM_JOBS_WORDS, bars=True, no_value=NO_RUNS),
         *job_resources(APP, "app project (tpa-jobs, auth's jobs, " + ("the importer, " if importer else "") +
-                       "the synthetic journeys; the CRM's in beta)"),
+                       "the synthetic journeys, and the CRM's where it shares the project)"),
         *job_resources(PHI, "PHI project"),
         *(job_resources(CC, "call-centre project") if cc else []),
         *job_resources(CRM, "the CRM's jobs", jobs=CRM_JOBS),
@@ -2598,22 +2745,23 @@ def importer_rows() -> list[dict]:
     is on Member records (Administrator sync)."""
     failed = CATALOGUE.policy("feed-ingest-failed", section="feed_ingest")
     return [
-        row(f"The administrator-feed importer ({IMPORTER}; beta)"),
+        row(f"The administrator-feed importer ({IMPORTER})"),
         series("Executions, by result", APP, executions(IMPORTER, by=("result",)),
                f"Completed executions of `{IMPORTER}` (`feeds everon sync --scheduled`), by result. One failed run "
                f"opens `feed-ingest-failed` ({failed['display_name'].strip(chr(34))}), never retried: the next slot "
-               "(06:00, 14:00, 22:00 Chicago time) is the retry. None at all: not deployed (beta's "
+               "(06:00, 14:00, 22:00 Chicago time) is the retry. None at all: not deployed ("
                "feed_ingest_enabled off), its schedule paused (feed_ingest_paused), or no run yet; its deadline tile "
-               "above says which.", bars=True, w=8, h=7),
+               "above says which.", bars=True, w=8, h=7, no_value=when_quiet((IMPORTER,), NO_RUNS)),
         series("Its schedule could not start it", APP, schedule_failures(IMPORTER, by=("code",)),
                "Cloud Scheduler's attempts to start the importer that finished in error, by status "
                "(`scheduler-failed` pages on one). PERMISSION_DENIED means its runner binding (row 205) is not what "
-               "the gate thinks.", bars=True, w=8, h=7),
+               "the gate thinks.", bars=True, w=8, h=7, no_value=when_quiet((IMPORTER,), NONE)),
         series("Its run, while it runs", APP,
                q(RUN_TASKS_RUNNING, JOB, align="ALIGN_MAX", by=("job_name",), job_name=IMPORTER),
                "The importer's task while it runs (`job/running_task_attempts`, the most in each interval): a run's "
                "bar lasts as long as it ran. Its limit is 2h10m (7800 s); `job-timeout-feed-ingest-everon-sync` "
-               "opens at 80% of it.", bars=True, decimals=0, w=8, h=7),
+               "opens at 80% of it.", bars=True, decimals=0, w=8, h=7,
+               no_value=when_quiet((IMPORTER,), "Not running in this range")),
     ]
 
 

@@ -188,7 +188,7 @@ class PagesTest(unittest.TestCase):
 
     def test_its_own_row_on_betas_jobs_page(self):
         rows = sections(RENDERED["beta"]["jobs"])
-        mine = rows[f"The administrator-feed importer ({IMPORTER}; beta)"]
+        mine = rows[f"The administrator-feed importer ({IMPORTER})"]
         self.assertEqual([p["title"] for p in mine], ["Executions, by result", "Its schedule could not start it",
                                                       "Its run, while it runs"])
         for p in mine:
@@ -196,7 +196,15 @@ class PagesTest(unittest.TestCase):
                       if k in ("resource.label.job_name", "resource.label.job_id")]
             self.assertEqual(values, [IMPORTER], p["title"])
             self.assertEqual({t["datasource"]["uid"] for t in p["targets"]}, {"cloud-app"})
-        self.assertNotIn(f"The administrator-feed importer ({IMPORTER}; beta)", sections(RENDERED["production"]["jobs"]))
+        # With nothing arrived each chart says why as its deadline tile does: "paused" or "not deployed" while that
+        # holds (raw: the importer's quiet token), else its own words.
+        raw = json.loads((ROOT / "cloud" / "dashboards" / "jobs.json").read_text())
+        raw_row = sections(raw)[f"The administrator-feed importer ({IMPORTER})"]
+        self.assertEqual([p["fieldConfig"]["defaults"]["noValue"] for p in raw_row],
+                         [gen.when_quiet((IMPORTER,), w) for w in (gen.NO_RUNS, gen.NONE, "Not running in this range")])
+        self.assertEqual([p["fieldConfig"]["defaults"]["noValue"] for p in mine],
+                         [gen.NO_RUNS, gen.NONE, "Not running in this range"])
+        self.assertNotIn(f"The administrator-feed importer ({IMPORTER})", sections(RENDERED["production"]["jobs"]))
         # The app project's job resources are every job's there, the importer's among them (no job filter).
         resources = next(title for title in rows if title.startswith("Job resources: app project"))
         self.assertIn("the importer", resources)

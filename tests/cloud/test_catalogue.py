@@ -107,9 +107,13 @@ RESOURCE_LABELS = {"cloud_run_revision": {"service_name"}, "cloud_run_job": {"jo
                    "cloudsql_database": {"database_id"}, "uptime_url": {"host"}, "cloud_scheduler_job": {"job_id"},
                    "audited_resource": set(), "servicedirectory_service": {"service_name"},
                    "nat_gateway": {"gateway_name"}, "gcs_bucket": {"bucket_name"}}
-# A distribution (a latency, a lag, a backlog) is read through a percentile or its mean; a counter by its count.
-DISTRIBUTION_ALIGNERS = {"ALIGN_PERCENTILE_99", "ALIGN_PERCENTILE_95", "ALIGN_PERCENTILE_50", "ALIGN_PERCENTILE_05",
-                         "ALIGN_MEAN"}
+# A distribution (a latency, a lag, a backlog) is read through a percentile, or merged across series (ALIGN_DELTA)
+# and then a percentile or the mean; a counter by its count. Never ALIGN_MEAN: Cloud Monitoring refuses it on a
+# distribution (400, "The aligner cannot be applied to metrics with kind DELTA and value type DISTRIBUTION"; the Jobs
+# page's backlog chart, 2026-11-12), and a filter-form query that fails shows only the error.
+DISTRIBUTION_ALIGNERS = {"ALIGN_PERCENTILE_99", "ALIGN_PERCENTILE_95", "ALIGN_PERCENTILE_50", "ALIGN_PERCENTILE_05"}
+MERGED_REDUCERS = {"REDUCE_MEAN", "REDUCE_PERCENTILE_99", "REDUCE_PERCENTILE_95", "REDUCE_PERCENTILE_50",
+                   "REDUCE_PERCENTILE_05"}
 COUNTER_ALIGNERS = {"ALIGN_DELTA", "ALIGN_RATE", "ALIGN_SUM", "ALIGN_COUNT"}
 ALIGNERS = {"counter": COUNTER_ALIGNERS, "distribution": DISTRIBUTION_ALIGNERS,
             # ALIGN_COUNT: how many points arrived, whatever they said (the home's "reporting" rows).
@@ -153,21 +157,23 @@ NAMES = {
         "job_id": {"tpa-db-export", "records-chain-head", "restore-drill"},
         "database_id": {"tpa-db", "enroll-db"},
     },
-    # crm-lane-send and crm-lane-comp: beta's CRM copy's won-deal sender and commission pass (crm.tf, R430 and R441),
-    # each built only behind its own switch, off today; the catalogue's crm_lane_* sections name them. No page charts
-    # them yet.
+    # crm-lane-send, crm-lane-comp and crm-reset-drain: the CRM copy's won-deal sender, commission pass and
+    # forgot-password drain (crm.tf, R430, R441 and R5106), each behind its own switch, all three run (the week to
+    # 2026-11-12); the catalogue's crm_lane_* sections name the first two, a later catalogue the drain
+    # (AHEAD_OF_THE_CATALOGUE). The CRM's job tiles and charts read all five (gen.CRM_JOBS).
     "crm": {"service_name": {"crm-web", "engine"}, "job_name": {"migrate-crm", "seed-crm", "crm-lane-send",
-                                                                 "crm-lane-comp"}, "job_id": set(),
+                                                                 "crm-lane-comp", "crm-reset-drain"}, "job_id": set(),
             "database_id": {"crm-db"}},
     "cc": {"service_name": {"svc-voice", "svc-ops", "svc-twilio-rest"}, "job_name": {"migrate-cc"}, "job_id": set(),
            "database_id": {"cc-db"}},
 }
 
 
-# Names a page reads ahead of the vendored catalogue (none today: the catalogue names the importer's schedule since
-# tpa-platform's watch/feed-ingest, D-181). test_names_agree_with_the_catalogue refuses a name here that the vendored
-# catalogue already names, so a re-vendor that lands one empties this.
-AHEAD_OF_THE_CATALOGUE: dict[str, set[str]] = {}
+# Names a page reads ahead of the vendored catalogue: crm-reset-drain, the CRM copy's forgot-password drain (crm.tf,
+# R5106; tpa-platform's catalogue names it after the pinned commit, its crm_reset_drain section).
+# test_names_agree_with_the_catalogue refuses a name here that the vendored catalogue already names, so a re-vendor that
+# lands one empties this.
+AHEAD_OF_THE_CATALOGUE: dict[str, set[str]] = {"job_name": {"crm-reset-drain"}}
 
 
 def queries(paths=None):
@@ -241,8 +247,9 @@ class CatalogueTest(unittest.TestCase):
         problems = []
         for name, title, ref, uid, (aligner, reducer), facts in queries():
             metric, where = facts["metric"], f"{name}: {title} ({ref}) on {uid}"
-            # A distribution is also read whole: merged across series, then a percentile (canary-latency's way).
-            merged = aligner == "ALIGN_DELTA" and str(reducer).startswith("REDUCE_PERCENTILE_")
+            # A distribution is also read whole: merged across series, then a percentile (canary-latency's way) or
+            # the mean.
+            merged = aligner == "ALIGN_DELTA" and reducer in MERGED_REDUCERS
             if metric.startswith(LOG_PREFIX):
                 found = self._log_metric(ROLE[uid], metric[len(LOG_PREFIX):])
                 if found is None:

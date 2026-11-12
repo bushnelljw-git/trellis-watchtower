@@ -118,7 +118,7 @@
     {
       "type": "stat",
       "title": "Portal & sign-in",
-      "description": "The last 15 minutes in this project: how many problems, of 5xx answers, uptime and inside checks failing (beta's checks pass on IAP's sign-in page), synthetic journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the database was down, its failed backups and failed point-in-time log archives, and five minutes or more with no instance for a service kept warm (auth-outbox-publisher, auth, tpa-api: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Portal & API and Sign-in. A backup missing (its alert judges today's backup from 14:00 UTC) or point-in-time logs stalled for 30 minutes cannot be read in fifteen minutes: auth-db's backups and logs tiles (Databases, and What's wrong now) show them. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "The last 15 minutes in this project: how many problems, of 5xx answers, uptime and inside checks failing (behind IAP a check passes on its sign-in page), synthetic journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the database was down, its failed backups and failed point-in-time log archives, and five minutes or more with no instance for a service kept warm (auth-outbox-publisher, tpa-jobs-drains, auth, tpa-api, web: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Portal & API and Sign-in. A backup missing (its alert judges today's backup from 14:00 UTC) or point-in-time logs stalled for 30 minutes cannot be read in fifteen minutes: auth-db's backups and logs tiles (Databases, and What's wrong now) show them. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -622,6 +622,39 @@
               "AND",
               "resource.label.service_name",
               "=",
+              "tpa-jobs-drains"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "tpa-jobs-drains instances"
+        },
+        {
+          "refId": "P",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
               "auth"
             ],
             "groupBys": [
@@ -636,7 +669,7 @@
           "aliasBy": "auth instances"
         },
         {
-          "refId": "P",
+          "refId": "Q",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -669,7 +702,40 @@
           "aliasBy": "tpa-api instances"
         },
         {
-          "refId": "Q",
+          "refId": "R",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "web"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "web instances"
+        },
+        {
+          "refId": "S",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -700,7 +766,7 @@
           "aliasBy": "✕ backup failed · auth-db"
         },
         {
-          "refId": "R",
+          "refId": "T",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -731,7 +797,7 @@
           "aliasBy": "✕ point-in-time log archive failed · auth-db"
         },
         {
-          "refId": "S",
+          "refId": "U",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -764,7 +830,7 @@
           "aliasBy": "auth-db up"
         },
         {
-          "refId": "T",
+          "refId": "V",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -795,7 +861,7 @@
           "aliasBy": "auth-db points"
         },
         {
-          "refId": "U",
+          "refId": "W",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -1155,6 +1221,118 @@
           "id": "calculateField",
           "options": {
             "mode": "reduceRow",
+            "alias": "tpa-jobs-drains instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "tpa-jobs-drains instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "tpa-jobs-drains ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-jobs-drains instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "tpa-jobs-drains ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-jobs-drains instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-jobs-drains ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "tpa-jobs-drains ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "tpa-jobs-drains ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · tpa-jobs-drains (minutes)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "tpa-jobs-drains ran"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · tpa-jobs-drains (spells)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "✕ no instance · tpa-jobs-drains (minutes)"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
             "alias": "auth instances or none",
             "replaceFields": false,
             "reduce": {
@@ -1366,6 +1544,118 @@
                 "matcher": {
                   "id": "byName",
                   "options": "✕ no instance · tpa-api (minutes)"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "web instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "web instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "web ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "web instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "web ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "web instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "web ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "web ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "web ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · web (minutes)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "web ran"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · web (spells)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "✕ no instance · web (minutes)"
                 }
               },
               "operator": "/",
@@ -1681,6 +1971,12 @@
               "auth-outbox-publisher ran /": true,
               "auth-outbox-publisher ran": true,
               "✕ no instance · auth-outbox-publisher (minutes)": true,
+              "tpa-jobs-drains instances": true,
+              "tpa-jobs-drains instances or none": true,
+              "tpa-jobs-drains ran +1": true,
+              "tpa-jobs-drains ran /": true,
+              "tpa-jobs-drains ran": true,
+              "✕ no instance · tpa-jobs-drains (minutes)": true,
               "auth instances": true,
               "auth instances or none": true,
               "auth ran +1": true,
@@ -1693,6 +1989,12 @@
               "tpa-api ran /": true,
               "tpa-api ran": true,
               "✕ no instance · tpa-api (minutes)": true,
+              "web instances": true,
+              "web instances or none": true,
+              "web ran +1": true,
+              "web ran /": true,
+              "web ran": true,
+              "✕ no instance · web (minutes)": true,
               "inside passing · tpa-api": true,
               "inside reporting · tpa-api": true,
               "inside passed · tpa-api +1": true,
@@ -1851,7 +2153,7 @@
     {
       "type": "stat",
       "title": "Member records",
-      "description": "The last 15 minutes in this project: how many problems, of its 5xx answers, crashes, out-of-memory kills, failed job runs, the minutes tpa-db was down, and its failed backups and point-in-time log archives, and five minutes or more with no instance for a service kept warm (records: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Member records. A backup missing (its alert judges today's backup from 14:00 UTC) or point-in-time logs stalled for 30 minutes cannot be read in fifteen minutes: tpa-db's backups and logs tiles (Databases, and What's wrong now) show them. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "The last 15 minutes in this project: how many problems, of its 5xx answers, crashes, out-of-memory kills, failed job runs, the minutes tpa-db was down, and its failed backups and point-in-time log archives, and five minutes or more with no instance for a service kept warm (connectors, records: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Member records. A backup missing (its alert judges today's backup from 14:00 UTC) or point-in-time logs stalled for 30 minutes cannot be read in fifteen minutes: tpa-db's backups and logs tiles (Databases, and What's wrong now) show them. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -2090,6 +2392,39 @@
               "AND",
               "resource.label.service_name",
               "=",
+              "connectors"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "connectors instances"
+        },
+        {
+          "refId": "H",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
               "records"
             ],
             "groupBys": [
@@ -2104,7 +2439,7 @@
           "aliasBy": "records instances"
         },
         {
-          "refId": "H",
+          "refId": "I",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-phi"
@@ -2135,7 +2470,7 @@
           "aliasBy": "✕ backup failed · tpa-db"
         },
         {
-          "refId": "I",
+          "refId": "J",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-phi"
@@ -2166,7 +2501,7 @@
           "aliasBy": "✕ point-in-time log archive failed · tpa-db"
         },
         {
-          "refId": "J",
+          "refId": "K",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-phi"
@@ -2199,7 +2534,7 @@
           "aliasBy": "tpa-db up"
         },
         {
-          "refId": "K",
+          "refId": "L",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-phi"
@@ -2230,7 +2565,7 @@
           "aliasBy": "tpa-db points"
         },
         {
-          "refId": "L",
+          "refId": "M",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-phi"
@@ -2482,6 +2817,118 @@
           "id": "calculateField",
           "options": {
             "mode": "reduceRow",
+            "alias": "connectors instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "connectors instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "connectors ran +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "connectors instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "connectors ran /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "connectors instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "connectors ran +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "connectors ran",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "connectors ran /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · connectors (minutes)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "project ran"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "connectors ran"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ no instance · connectors (spells)",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "✕ no instance · connectors (minutes)"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
             "alias": "records instances or none",
             "replaceFields": false,
             "reduce": {
@@ -2624,6 +3071,12 @@
               "project ran +1": true,
               "project ran /": true,
               "project ran": true,
+              "connectors instances": true,
+              "connectors instances or none": true,
+              "connectors ran +1": true,
+              "connectors ran /": true,
+              "connectors ran": true,
+              "✕ no instance · connectors (minutes)": true,
               "records instances": true,
               "records instances or none": true,
               "records ran +1": true,
@@ -2914,7 +3367,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "migrate-crm|seed-crm"
+              "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain"
             ],
             "groupBys": [
               "resource.label.job_name"
@@ -2947,7 +3400,7 @@
               "AND",
               "resource.label.job_name",
               "=~",
-              "migrate-crm|seed-crm",
+              "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain",
               "AND",
               "metric.label.result",
               "=",
@@ -3456,7 +3909,7 @@
     {
       "type": "stat",
       "title": "Uptime",
-      "description": "now: the hosts as their outage policy reads them (each checker region's latest result over twenty minutes, the regions failing counted): ✕ down, red, when more than 1 region fails on any host, as `outage: <host>` pages; one region failing alone does not page. 24 h: the worst host's share of checks passed in the last 24 hours (each host's is in the shut row Right now (details), and over time on Portal & API). @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@Beta's hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
+      "description": "now: the hosts as their outage policy reads them (each checker region's latest result over twenty minutes, the regions failing counted): ✕ down, red, when more than 1 region fails on any host, as `outage: <host>` pages; one region failing alone does not page. 24 h: the worst host's share of checks passed in the last 24 hours (each host's is in the shut row Right now (details), and over time on Portal & API). @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@These hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
       "gridPos": {
         "h": 5,
         "w": 4,
@@ -4041,7 +4494,7 @@
     {
       "type": "stat",
       "title": "web",
-      "description": "web (Portal & API). Its status, worst first: ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running; idle with none, as a service Terraform lets scale to zero rests. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "web (Portal & API). Its status, worst first: ✕ down when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -4202,14 +4655,14 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
                 "value": null
               }
             ]
           },
           "mappings": [],
           "decimals": 0,
-          "noValue": "@@R,auth-db,tpa-db,@@idle@@",
+          "noValue": "@@R,auth-db,tpa-db,@@✕ down@@",
           "displayName": "@@R,auth-db,tpa-db,@@@@"
         },
         "overrides": [
@@ -4596,6 +5049,46 @@
               "operator": "*",
               "right": {
                 "fixed": "3"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
               }
             }
           }
@@ -6002,12 +6495,650 @@
     },
     {
       "type": "stat",
+      "title": "tpa-jobs-drains",
+      "description": "tpa-jobs-drains (Portal & API). Its status, worst first: ✕ down when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 7
+      },
+      "links": [
+        {
+          "title": "tpa-jobs-drains: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-tpa-jobs-drains?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "tpa-jobs-drains",
+              "AND",
+              "metric.label.response_code_class",
+              "=",
+              "5xx"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "answered 5xx"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "tpa-jobs-drains"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "instances"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "tpa-jobs-drains"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "tpa-jobs-drains"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "15m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "@@R,auth-db,tpa-db,@@✕ down@@",
+          "displayName": "@@R,auth-db,tpa-db,@@@@"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,auth-db,tpa-db,@@portal@@"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "idle",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "✓ up",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "errors",
+                        "index": 2
+                      },
+                      "3": {
+                        "text": "⚠ crashing",
+                        "index": 3
+                      },
+                      "4": {
+                        "text": "✕ down",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@#14b8a6@@",
+                      "value": 1
+                    },
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@#fab219@@",
+                      "value": 2
+                    },
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@#fab219@@",
+                      "value": 3
+                    },
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "instances"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "answered 5xx"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,auth-db,tpa-db,@@5xx (15 m)@@"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,auth-db,tpa-db,@@text@@#fab219@@",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "@@F,auth-db,tpa-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "lastNotNull"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "concatenate",
+          "options": {
+            "frameNameMode": "drop"
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "running +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "running /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "running",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "running /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "erroring +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "answered 5xx"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "erroring /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "answered 5xx"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "erroring +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "erroring",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "erroring /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "errors ×2",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "erroring"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "exits",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "crashed",
+                "killed for memory"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "crashing",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "crashing /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing ×3",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "3"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "status",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "max",
+              "include": [
+                "running",
+                "errors ×2",
+                "crashing ×3",
+                "inside down ×4",
+                "no instance ×4"
+              ]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "status": true,
+              "instances": true,
+              "answered 5xx": true
+            },
+            "indexByName": {
+              "status": 0,
+              "instances": 1,
+              "answered 5xx": 2
+            }
+          }
+        }
+      ],
+      "id": 12
+    },
+    {
+      "type": "stat",
       "title": "watchtower",
       "description": "watchtower (Portal & API). Its status, worst first: ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running; idle with none, as a service Terraform lets scale to zero rests. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page.",
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 12,
+        "x": 16,
         "y": 7
       },
       "links": [
@@ -6595,7 +7726,7 @@
           }
         }
       ],
-      "id": 12
+      "id": 13
     },
     {
       "type": "stat",
@@ -6604,7 +7735,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 16,
+        "x": 20,
         "y": 7
       },
       "links": [
@@ -7361,7 +8492,7 @@
           }
         }
       ],
-      "id": 13
+      "id": 14
     },
     {
       "type": "stat",
@@ -7370,8 +8501,8 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 20,
-        "y": 7
+        "x": 0,
+        "y": 11
       },
       "links": [
         {
@@ -7999,7 +9130,7 @@
           }
         }
       ],
-      "id": 14
+      "id": 15
     },
     {
       "type": "stat",
@@ -8008,7 +9139,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 0,
+        "x": 4,
         "y": 11
       },
       "links": [
@@ -8637,7 +9768,645 @@
           }
         }
       ],
-      "id": 15
+      "id": 16
+    },
+    {
+      "type": "stat",
+      "title": "connectors",
+      "description": "connectors (Member records). Its status, worst first: ✕ down when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 11
+      },
+      "links": [
+        {
+          "title": "connectors: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-connectors?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "connectors",
+              "AND",
+              "metric.label.response_code_class",
+              "=",
+              "5xx"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "answered 5xx"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "connectors"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "instances"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "connectors"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "connectors"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "15m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,tpa-db,@@text@@#d03b3b@@",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "@@R,tpa-db,@@✕ down@@",
+          "displayName": "@@R,tpa-db,@@@@"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,tpa-db,@@records@@"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "idle",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "✓ up",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "errors",
+                        "index": 2
+                      },
+                      "3": {
+                        "text": "⚠ crashing",
+                        "index": 3
+                      },
+                      "4": {
+                        "text": "✕ down",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,tpa-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,tpa-db,@@text@@#14b8a6@@",
+                      "value": 1
+                    },
+                    {
+                      "color": "@@F,tpa-db,@@text@@#fab219@@",
+                      "value": 2
+                    },
+                    {
+                      "color": "@@F,tpa-db,@@text@@#fab219@@",
+                      "value": 3
+                    },
+                    {
+                      "color": "@@F,tpa-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "instances"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,tpa-db,@@text@@text@@",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "answered 5xx"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,tpa-db,@@5xx (15 m)@@"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,tpa-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,tpa-db,@@text@@#fab219@@",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "@@F,tpa-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "lastNotNull"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "concatenate",
+          "options": {
+            "frameNameMode": "drop"
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "running +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "running /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "running",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "running /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "erroring +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "answered 5xx"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "erroring /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "answered 5xx"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "erroring +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "erroring",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "erroring /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "errors ×2",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "erroring"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "exits",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "crashed",
+                "killed for memory"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "crashing",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "crashing /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing ×3",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "3"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "status",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "max",
+              "include": [
+                "running",
+                "errors ×2",
+                "crashing ×3",
+                "inside down ×4",
+                "no instance ×4"
+              ]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "status": true,
+              "instances": true,
+              "answered 5xx": true
+            },
+            "indexByName": {
+              "status": 0,
+              "instances": 1,
+              "answered 5xx": 2
+            }
+          }
+        }
+      ],
+      "id": 17
     },
     {
       "type": "stat",
@@ -8646,7 +10415,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 4,
+        "x": 12,
         "y": 11
       },
       "links": [
@@ -9235,7 +11004,7 @@
           }
         }
       ],
-      "id": 16
+      "id": 18
     },
     {
       "type": "stat",
@@ -9244,7 +11013,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 8,
+        "x": 16,
         "y": 11
       },
       "links": [
@@ -9833,7 +11602,7 @@
           }
         }
       ],
-      "id": 17
+      "id": 19
     },
     {
       "type": "row",
@@ -9846,12 +11615,12 @@
         "x": 0,
         "y": 15
       },
-      "id": 18
+      "id": 20
     },
     {
       "type": "stat",
       "title": "auth-db",
-      "description": "Cloud SQL's own signals for auth-db, now: up (its `auth-db-down` pages, urgent), CPU (amber at the module's 80%, red at its urgent 95%), memory (red at 90%), disk used (amber at 75%, red at `auth-db-disk`'s 85%). Its disk space in bytes against its size, connections and disk I/O are on Databases (the link by the title). Its backups and point-in-time logs are the two tiles under it. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's own signals for auth-db, now: up (its `auth-db-down` pages, urgent), CPU (amber at the module's 80%, red at its urgent 95%), memory (red at 90%), disk used (amber at 75%, red at `auth-db-disk`'s 85%). Its disk space in bytes against its size, connections and disk I/O are on Databases (the link by the title). Its backups and point-in-time logs are the two tiles under it. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 8,
@@ -10214,12 +11983,12 @@
           "targetBlank": false
         }
       ],
-      "id": 19
+      "id": 21
     },
     {
       "type": "stat",
       "title": "tpa-db",
-      "description": "Cloud SQL's own signals for tpa-db, now: up (its `tpa-db-down` pages, urgent), CPU (amber at the module's 80%, red at its urgent 95%), memory (red at 90%), disk used (amber at 75%, red at `tpa-db-disk`'s 85%). Its disk space in bytes against its size, connections and disk I/O are on Databases (the link by the title). Its backups and point-in-time logs are the two tiles under it. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's own signals for tpa-db, now: up (its `tpa-db-down` pages, urgent), CPU (amber at the module's 80%, red at its urgent 95%), memory (red at 90%), disk used (amber at 75%, red at `tpa-db-disk`'s 85%). Its disk space in bytes against its size, connections and disk I/O are on Databases (the link by the title). Its backups and point-in-time logs are the two tiles under it. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 8,
@@ -10582,12 +12351,12 @@
           "targetBlank": false
         }
       ],
-      "id": 20
+      "id": 22
     },
     {
       "type": "stat",
       "title": "crm-db",
-      "description": "Cloud SQL's own signals for crm-db, now: up (its `crm-db-down` pages, urgent), CPU (amber at the module's 80%, red at its urgent 95%), memory (red at 90%), disk used (amber at 75%, red at `crm-db-disk`'s 85%). Its disk space in bytes against its size, connections and disk I/O are on Databases (the link by the title). Its backups and point-in-time logs are the two tiles under it. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+      "description": "Cloud SQL's own signals for crm-db, now: up (its `crm-db-down` pages, urgent), CPU (amber at the module's 80%, red at its urgent 95%), memory (red at 90%), disk used (amber at 75%, red at `crm-db-disk`'s 85%). Its disk space in bytes against its size, connections and disk I/O are on Databases (the link by the title). Its backups and point-in-time logs are the two tiles under it. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
       "gridPos": {
         "h": 5,
         "w": 8,
@@ -10950,12 +12719,12 @@
           "targetBlank": false
         }
       ],
-      "id": 21
+      "id": 23
     },
     {
       "type": "stat",
       "title": "auth-db backups (30 h)",
-      "description": "auth-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `auth-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while auth-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`auth-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "auth-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `auth-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: two have landed up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while auth-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`auth-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 8,
@@ -11817,12 +13586,12 @@
           }
         }
       ],
-      "id": 22
+      "id": 24
     },
     {
       "type": "stat",
       "title": "tpa-db backups (30 h)",
-      "description": "tpa-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `tpa-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while tpa-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`tpa-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "tpa-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `tpa-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: two have landed up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while tpa-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`tpa-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 8,
@@ -12684,12 +14453,12 @@
           }
         }
       ],
-      "id": 23
+      "id": 25
     },
     {
       "type": "stat",
       "title": "crm-db backups (30 h)",
-      "description": "crm-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `crm-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while crm-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`crm-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "crm-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `crm-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: two have landed up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while crm-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`crm-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 8,
@@ -13551,12 +15320,12 @@
           }
         }
       ],
-      "id": 24
+      "id": 26
     },
     {
       "type": "stat",
       "title": "auth-db logs shipped",
-      "description": "Cloud SQL's point-in-time recovery logs for auth-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while auth-db reported for 20 of the 30 minutes or more, as the urgent `auth-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `auth-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "Cloud SQL's point-in-time recovery logs for auth-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while auth-db reported for 20 of the 30 minutes or more, as the urgent `auth-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `auth-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 8,
@@ -14162,12 +15931,12 @@
           }
         }
       ],
-      "id": 25
+      "id": 27
     },
     {
       "type": "stat",
       "title": "tpa-db logs shipped",
-      "description": "Cloud SQL's point-in-time recovery logs for tpa-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while tpa-db reported for 20 of the 30 minutes or more, as the urgent `tpa-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `tpa-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "Cloud SQL's point-in-time recovery logs for tpa-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while tpa-db reported for 20 of the 30 minutes or more, as the urgent `tpa-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `tpa-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 8,
@@ -14773,12 +16542,12 @@
           }
         }
       ],
-      "id": 26
+      "id": 28
     },
     {
       "type": "stat",
       "title": "crm-db logs shipped",
-      "description": "Cloud SQL's point-in-time recovery logs for crm-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while crm-db reported for 20 of the 30 minutes or more, as the urgent `crm-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `crm-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "Cloud SQL's point-in-time recovery logs for crm-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while crm-db reported for 20 of the 30 minutes or more, as the urgent `crm-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `crm-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 8,
@@ -15384,7 +17153,7 @@
           }
         }
       ],
-      "id": 27
+      "id": 29
     },
     {
       "type": "row",
@@ -15886,6 +17655,39 @@
                   "AND",
                   "resource.label.service_name",
                   "=",
+                  "tpa-jobs-drains"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "tpa-jobs-drains instances"
+            },
+            {
+              "refId": "P",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
                   "auth"
                 ],
                 "groupBys": [
@@ -15900,7 +17702,7 @@
               "aliasBy": "auth instances"
             },
             {
-              "refId": "P",
+              "refId": "Q",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -15933,7 +17735,40 @@
               "aliasBy": "tpa-api instances"
             },
             {
-              "refId": "Q",
+              "refId": "R",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "web"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "web instances"
+            },
+            {
+              "refId": "S",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -15964,7 +17799,7 @@
               "aliasBy": "✕ backup failed · auth-db"
             },
             {
-              "refId": "R",
+              "refId": "T",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -15995,7 +17830,7 @@
               "aliasBy": "✕ point-in-time log archive failed · auth-db"
             },
             {
-              "refId": "S",
+              "refId": "U",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16028,7 +17863,7 @@
               "aliasBy": "auth-db up"
             },
             {
-              "refId": "T",
+              "refId": "V",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16059,7 +17894,7 @@
               "aliasBy": "auth-db points"
             },
             {
-              "refId": "U",
+              "refId": "W",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16430,6 +18265,98 @@
               "id": "calculateField",
               "options": {
                 "mode": "reduceRow",
+                "alias": "tpa-jobs-drains instances or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "tpa-jobs-drains instances"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "tpa-jobs-drains ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-jobs-drains instances or none"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "tpa-jobs-drains ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-jobs-drains instances or none"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-jobs-drains ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "tpa-jobs-drains ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "tpa-jobs-drains ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "✕ no instance · tpa-jobs-drains (minutes)",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tpa-jobs-drains ran"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
                 "alias": "auth instances or none",
                 "replaceFields": false,
                 "reduce": {
@@ -16605,6 +18532,98 @@
                     "matcher": {
                       "id": "byName",
                       "options": "tpa-api ran"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
+                "alias": "web instances or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "web instances"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "web ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "web instances or none"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "web ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "web instances or none"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "web ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "web ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "web ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "✕ no instance · web (minutes)",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "web ran"
                     }
                   }
                 }
@@ -16915,6 +18934,11 @@
                   "auth-outbox-publisher ran +1": true,
                   "auth-outbox-publisher ran /": true,
                   "auth-outbox-publisher ran": true,
+                  "tpa-jobs-drains instances": true,
+                  "tpa-jobs-drains instances or none": true,
+                  "tpa-jobs-drains ran +1": true,
+                  "tpa-jobs-drains ran /": true,
+                  "tpa-jobs-drains ran": true,
                   "auth instances": true,
                   "auth instances or none": true,
                   "auth ran +1": true,
@@ -16925,6 +18949,11 @@
                   "tpa-api ran +1": true,
                   "tpa-api ran /": true,
                   "tpa-api ran": true,
+                  "web instances": true,
+                  "web instances or none": true,
+                  "web ran +1": true,
+                  "web ran /": true,
+                  "web ran": true,
                   "inside passing · tpa-api": true,
                   "inside reporting · tpa-api": true,
                   "inside passed · tpa-api +1": true,
@@ -17003,7 +19032,7 @@
               }
             }
           ],
-          "id": 29
+          "id": 31
         },
         {
           "type": "table",
@@ -17240,6 +19269,39 @@
                   "AND",
                   "resource.label.service_name",
                   "=",
+                  "connectors"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "connectors instances"
+            },
+            {
+              "refId": "H",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-phi"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_PHI_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
                   "records"
                 ],
                 "groupBys": [
@@ -17254,7 +19316,7 @@
               "aliasBy": "records instances"
             },
             {
-              "refId": "H",
+              "refId": "I",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-phi"
@@ -17285,7 +19347,7 @@
               "aliasBy": "✕ backup failed · tpa-db"
             },
             {
-              "refId": "I",
+              "refId": "J",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-phi"
@@ -17316,7 +19378,7 @@
               "aliasBy": "✕ point-in-time log archive failed · tpa-db"
             },
             {
-              "refId": "J",
+              "refId": "K",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-phi"
@@ -17349,7 +19411,7 @@
               "aliasBy": "tpa-db up"
             },
             {
-              "refId": "K",
+              "refId": "L",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-phi"
@@ -17380,7 +19442,7 @@
               "aliasBy": "tpa-db points"
             },
             {
-              "refId": "L",
+              "refId": "M",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-phi"
@@ -17663,6 +19725,98 @@
               "id": "calculateField",
               "options": {
                 "mode": "reduceRow",
+                "alias": "connectors instances or none",
+                "replaceFields": false,
+                "reduce": {
+                  "reducer": "sum",
+                  "include": [
+                    "connectors instances"
+                  ]
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "connectors ran +1",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "connectors instances or none"
+                    }
+                  },
+                  "operator": "+",
+                  "right": {
+                    "fixed": "1"
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "connectors ran /",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "connectors instances or none"
+                    }
+                  },
+                  "operator": "/",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "connectors ran +1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "unary",
+                "alias": "connectors ran",
+                "replaceFields": false,
+                "unary": {
+                  "operator": "ceil",
+                  "fieldName": "connectors ran /"
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "alias": "✕ no instance · connectors (minutes)",
+                "replaceFields": false,
+                "binary": {
+                  "left": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "project ran"
+                    }
+                  },
+                  "operator": "-",
+                  "right": {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "connectors ran"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "reduceRow",
                 "alias": "records instances or none",
                 "replaceFields": false,
                 "reduce": {
@@ -17785,6 +19939,11 @@
                   "project ran +1": true,
                   "project ran /": true,
                   "project ran": true,
+                  "connectors instances": true,
+                  "connectors instances or none": true,
+                  "connectors ran +1": true,
+                  "connectors ran /": true,
+                  "connectors ran": true,
                   "records instances": true,
                   "records instances or none": true,
                   "records ran +1": true,
@@ -17852,7 +20011,7 @@
               }
             }
           ],
-          "id": 30
+          "id": 32
         },
         {
           "type": "table",
@@ -17992,7 +20151,7 @@
                   "AND",
                   "resource.label.job_name",
                   "=~",
-                  "migrate-crm|seed-crm"
+                  "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain"
                 ],
                 "groupBys": [
                   "resource.label.job_name"
@@ -18025,7 +20184,7 @@
                   "AND",
                   "resource.label.job_name",
                   "=~",
-                  "migrate-crm|seed-crm",
+                  "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain",
                   "AND",
                   "metric.label.result",
                   "=",
@@ -18485,12 +20644,12 @@
               }
             }
           ],
-          "id": 31
+          "id": 33
         },
         {
           "type": "stat",
           "title": "auth-db backups (30 h)",
-          "description": "auth-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `auth-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while auth-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`auth-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "auth-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `auth-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: two have landed up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while auth-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`auth-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 8,
@@ -19352,12 +21511,12 @@
               }
             }
           ],
-          "id": 32
+          "id": 34
         },
         {
           "type": "stat",
           "title": "tpa-db backups (30 h)",
-          "description": "tpa-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `tpa-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while tpa-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`tpa-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "tpa-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `tpa-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: two have landed up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while tpa-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`tpa-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 8,
@@ -20219,12 +22378,12 @@
               }
             }
           ],
-          "id": 33
+          "id": 35
         },
         {
           "type": "stat",
           "title": "crm-db backups (30 h)",
-          "description": "crm-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `crm-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: on beta two land up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while crm-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`crm-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "crm-db's successful automated backups in the last 30 hours (`sql_automated_backups`, windowStatus STATUS_SUCCEEDED) and its failed ones (`sql_backup_failures`). The alert, `crm-db-backup-missing` (urgent), judges today's backup, from 14:00 UTC: the window from 09:00 UTC closed an hour before with no successful backup while the instance was up all day. This tile shows a successful backup in the last 30 hours, so a missed night turns it red about two hours after the page (30 hours after the night before's backup). One backup a night, starting in a four-hour window from 09:00 UTC: two have landed up to 26.1 hours apart, so a healthy instance always has one in 30 hours. ✕ none in 30 h, red: none while crm-db reported for 29 of the 30 hours or more; an instance started since reads \"no backup yet\". ✕ a backup failed, red: its newest failure (`crm-db-backup-failed`) is later than its newest success, each by the hour, so a failed attempt that a later attempt made good reads ✓ backed up, and a night that failed reads ✕ at once. The failed count, red from one, counts every failed entry in the 30 hours: one bad night writes several failed attempts and a final failure, so it is entries, not nights. ✓ backed up. Point-in-time recovery replays its seven days of logs from a backup taken before the minute chosen. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 8,
@@ -21086,12 +23245,12 @@
               }
             }
           ],
-          "id": 34
+          "id": 36
         },
         {
           "type": "stat",
           "title": "auth-db logs shipped",
-          "description": "Cloud SQL's point-in-time recovery logs for auth-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while auth-db reported for 20 of the 30 minutes or more, as the urgent `auth-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `auth-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "Cloud SQL's point-in-time recovery logs for auth-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while auth-db reported for 20 of the 30 minutes or more, as the urgent `auth-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `auth-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 8,
@@ -21697,12 +23856,12 @@
               }
             }
           ],
-          "id": 35
+          "id": 37
         },
         {
           "type": "stat",
           "title": "tpa-db logs shipped",
-          "description": "Cloud SQL's point-in-time recovery logs for tpa-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while tpa-db reported for 20 of the 30 minutes or more, as the urgent `tpa-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `tpa-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "Cloud SQL's point-in-time recovery logs for tpa-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while tpa-db reported for 20 of the 30 minutes or more, as the urgent `tpa-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `tpa-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 8,
@@ -22308,12 +24467,12 @@
               }
             }
           ],
-          "id": 36
+          "id": 38
         },
         {
           "type": "stat",
           "title": "crm-db logs shipped",
-          "description": "Cloud SQL's point-in-time recovery logs for crm-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while crm-db reported for 20 of the 30 minutes or more, as the urgent `crm-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `crm-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "Cloud SQL's point-in-time recovery logs for crm-db: write-ahead log archives shipped in the last 30 minutes (`database/replication/log_archive_success_count`; about one every five minutes, idle or not) and archives that failed in the last 15 minutes (`log_archive_failure_count`). ✕ stalled, red: none shipped while crm-db reported for 20 of the 30 minutes or more, as the urgent `crm-db-pitr-logs-stalled` opens (ten-minute sums below one held twenty minutes, or nothing reported for thirty): restoring to the minute stops at the last log shipped. ✕ archive failed, red, and the failed count red: `crm-db-pitr-log-archive-failed`. ✓ shipping. Point-in-time recovery keeps seven days of logs. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 8,
@@ -22919,7 +25078,7 @@
               }
             }
           ],
-          "id": 37
+          "id": 39
         }
       ],
       "gridPos": {
@@ -22928,7 +25087,7 @@
         "x": 0,
         "y": 29
       },
-      "id": 28
+      "id": 30
     },
     {
       "type": "row",
@@ -22938,7 +25097,7 @@
         {
           "type": "stat",
           "title": "Uptime by host (24 h)",
-          "description": "Share of uptime checks that passed in the last 24 h, by host. @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@Beta's hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
+          "description": "Share of uptime checks that passed in the last 24 h, by host. @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@These hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
           "gridPos": {
             "h": 6,
             "w": 12,
@@ -23028,12 +25187,12 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 39
+          "id": 41
         },
         {
           "type": "stat",
           "title": "Uptime by host (15 m)",
-          "description": "Share of uptime checks that passed in the last 15 minutes, by host. @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@Beta's hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
+          "description": "Share of uptime checks that passed in the last 15 minutes, by host. @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@These hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
           "gridPos": {
             "h": 6,
             "w": 12,
@@ -23119,7 +25278,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 40
+          "id": 42
         }
       ],
       "gridPos": {
@@ -23128,7 +25287,7 @@
         "x": 0,
         "y": 30
       },
-      "id": 38
+      "id": 40
     },
     {
       "type": "row",
@@ -23230,7 +25389,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 42
+          "id": 44
         },
         {
           "type": "stat",
@@ -23327,7 +25486,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 43
+          "id": 45
         },
         {
           "type": "stat",
@@ -23424,12 +25583,12 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 44
+          "id": 46
         },
         {
           "type": "stat",
           "title": "feed-ingest",
-          "description": "Successful executions of `feed-ingest-everon-sync` in the last 723 minutes: its missed-run deadline (720 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. The administrator-feed importer's Everon sync runs at 06:00, 14:00 and 22:00 Chicago time, never retried, and alerts on one failure (`feed-ingest-failed`); its `missed run` policy exists only while its schedule is unpaused. Beta's alone: production-full builds none of it. Reads \"not deployed\", in no colour, while `feed-ingest-everon-sync` is not built (beta's switch off; the service's TPA_NOT_DEPLOYED_JOBS), whatever else holds. Reads \"paused\" or \"database stopped\", in no colour, while `feed-ingest-everon-sync` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "Successful executions of `feed-ingest-everon-sync` in the last 723 minutes: its missed-run deadline (720 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. The administrator-feed importer's Everon sync runs at 06:00, 14:00 and 22:00 Chicago time, never retried, and alerts on one failure (`feed-ingest-failed`); its `missed run` policy exists only while its schedule is unpaused. production-full builds none of it. Reads \"not deployed\", in no colour, while `feed-ingest-everon-sync` is not built (its switch off; the service's TPA_NOT_DEPLOYED_JOBS), whatever else holds. Reads \"paused\" or \"database stopped\", in no colour, while `feed-ingest-everon-sync` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 4,
             "w": 4,
@@ -23521,7 +25680,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 45
+          "id": 47
         },
         {
           "type": "stat",
@@ -23618,7 +25777,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 46
+          "id": 48
         },
         {
           "type": "stat",
@@ -23715,7 +25874,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 47
+          "id": 49
         },
         {
           "type": "stat",
@@ -23812,7 +25971,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 48
+          "id": 50
         },
         {
           "type": "stat",
@@ -23909,7 +26068,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 49
+          "id": 51
         },
         {
           "type": "stat",
@@ -24006,7 +26165,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 50
+          "id": 52
         },
         {
           "type": "stat",
@@ -24103,7 +26262,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 51
+          "id": 53
         },
         {
           "type": "stat",
@@ -24200,7 +26359,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 52
+          "id": 54
         },
         {
           "type": "stat",
@@ -24297,7 +26456,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 53
+          "id": 55
         }
       ],
       "gridPos": {
@@ -24306,7 +26465,7 @@
         "x": 0,
         "y": 31
       },
-      "id": 41
+      "id": 43
     },
     {
       "type": "row",
@@ -24401,7 +26560,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 55
+          "id": 57
         },
         {
           "type": "stat",
@@ -24504,7 +26663,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 56
+          "id": 58
         },
         {
           "type": "stat",
@@ -24598,7 +26757,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 57
+          "id": 59
         },
         {
           "type": "stat",
@@ -24734,7 +26893,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 58
+          "id": 60
         },
         {
           "type": "stat",
@@ -24760,6 +26919,11 @@
             {
               "title": "model-gateway: CPU, memory, instances, concurrency, start-up",
               "url": "/d/tw-cloud-service-model-gateway?${__url_time_range}",
+              "targetBlank": false
+            },
+            {
+              "title": "tpa-jobs-drains: CPU, memory, instances, concurrency, start-up",
+              "url": "/d/tw-cloud-service-tpa-jobs-drains?${__url_time_range}",
               "targetBlank": false
             }
           ],
@@ -24841,12 +27005,12 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 59
+          "id": 61
         },
         {
           "type": "stat",
           "title": "App jobs (24 h)",
-          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`: in the app and CRM projects on the second in a row, R380; in the PHI and call-centre projects on one), and schedules that could not start their job (`scheduler-failed`). The administrator-feed importer (`feed-ingest-everon-sync`, beta) opens `feed-ingest-failed` on one failed run, never retried. A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "Last 24 h: executions that failed after their retries (`jobs-failed`: in the app and CRM projects on the second in a row, R380; in the PHI and call-centre projects on one), and schedules that could not start their job (`scheduler-failed`). The administrator-feed importer (`feed-ingest-everon-sync`) opens `feed-ingest-failed` on one failed run, never retried. A missed run is the Scheduled runs row above. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` or `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 5,
             "w": 4,
@@ -24969,7 +27133,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 60
+          "id": 62
         }
       ],
       "gridPos": {
@@ -24978,7 +27142,7 @@
         "x": 0,
         "y": 32
       },
-      "id": 54
+      "id": 56
     },
     {
       "type": "row",
@@ -25073,7 +27237,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 62
+          "id": 64
         },
         {
           "type": "stat",
@@ -25176,7 +27340,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 63
+          "id": 65
         },
         {
           "type": "stat",
@@ -25274,7 +27438,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 64
+          "id": 66
         },
         {
           "type": "stat",
@@ -25408,12 +27572,12 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 65
+          "id": 67
         },
         {
           "type": "stat",
           "title": "auth-db",
-          "description": "Cloud SQL's own signals for auth-db: `database/up` (the urgent `auth-db-down` pages below 1 for five minutes) and disk used (`auth-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+          "description": "Cloud SQL's own signals for auth-db: `database/up` (the urgent `auth-db-down` pages below 1 for five minutes) and disk used (`auth-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
           "gridPos": {
             "h": 5,
             "w": 4,
@@ -25624,7 +27788,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 66
+          "id": 68
         },
         {
           "type": "stat",
@@ -25752,7 +27916,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 67
+          "id": 69
         }
       ],
       "gridPos": {
@@ -25761,7 +27925,7 @@
         "x": 0,
         "y": 33
       },
-      "id": 61
+      "id": 63
     },
     {
       "type": "row",
@@ -25856,7 +28020,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 69
+          "id": 71
         },
         {
           "type": "stat",
@@ -25959,7 +28123,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 70
+          "id": 72
         },
         {
           "type": "stat",
@@ -26057,7 +28221,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 71
+          "id": 73
         },
         {
           "type": "stat",
@@ -26195,12 +28359,12 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 72
+          "id": 74
         },
         {
           "type": "stat",
           "title": "tpa-db",
-          "description": "Cloud SQL's own signals for tpa-db: `database/up` (the urgent `tpa-db-down` pages below 1 for five minutes) and disk used (`tpa-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+          "description": "Cloud SQL's own signals for tpa-db: `database/up` (the urgent `tpa-db-down` pages below 1 for five minutes) and disk used (`tpa-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
           "gridPos": {
             "h": 5,
             "w": 4,
@@ -26411,7 +28575,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 73
+          "id": 75
         },
         {
           "type": "stat",
@@ -26539,7 +28703,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 74
+          "id": 76
         }
       ],
       "gridPos": {
@@ -26548,7 +28712,7 @@
         "x": 0,
         "y": 34
       },
-      "id": 68
+      "id": 70
     },
     {
       "type": "row",
@@ -26643,7 +28807,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 76
+          "id": 78
         },
         {
           "type": "stat",
@@ -26746,7 +28910,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 77
+          "id": 79
         },
         {
           "type": "stat",
@@ -26871,12 +29035,12 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 78
+          "id": 80
         },
         {
           "type": "stat",
           "title": "Error groups (24 h)",
-          "description": "Error groups of `crm_errors (beta) or errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+          "description": "Error groups of `crm_errors or errors` seen in the last 24 h: one per Cloud Run service or job and the counter's labels, the same group the new-group and spike policies read. The Errors page lists them. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
           "gridPos": {
             "h": 5,
             "w": 4,
@@ -27005,12 +29169,12 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 79
+          "id": 81
         },
         {
           "type": "stat",
           "title": "crm-db",
-          "description": "Cloud SQL's own signals for crm-db: `database/up` (the urgent `crm-db-down` pages below 1 for five minutes) and disk used (`crm-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose between test sessions (beta's database_activation_policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
+          "description": "Cloud SQL's own signals for crm-db: `database/up` (the urgent `crm-db-down` pages below 1 for five minutes) and disk used (`crm-db-disk` at 85% for ten minutes). \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
           "gridPos": {
             "h": 5,
             "w": 4,
@@ -27221,7 +29385,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 80
+          "id": 82
         },
         {
           "type": "stat",
@@ -27258,7 +29422,7 @@
                   "AND",
                   "resource.label.job_name",
                   "=~",
-                  "migrate-crm|seed-crm",
+                  "migrate-crm|seed-crm|crm-lane-send|crm-lane-comp|crm-reset-drain",
                   "AND",
                   "metric.label.result",
                   "=",
@@ -27318,7 +29482,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 81
+          "id": 83
         }
       ],
       "gridPos": {
@@ -27327,7 +29491,7 @@
         "x": 0,
         "y": 35
       },
-      "id": 75
+      "id": 77
     }
   ]
 }

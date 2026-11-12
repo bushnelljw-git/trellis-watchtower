@@ -751,8 +751,26 @@ class ResourcesTest(unittest.TestCase):
     def test_each_service_pages_cloud_run_p95(self):
         for env in RENDERED:
             for _page, service in service_pages(env):
+                if service in gen.NO_WEB_REQUESTS:
+                    continue
                 self.assertEqual(check_cloud_run_p95(f"service-{service}", RENDERED[env][f"service-{service}"],
                                                      service, env), [], (env, service))
+
+    def test_a_service_that_takes_no_web_requests_charts_what_it_does_instead(self):
+        # auth-outbox-publisher, tpa-jobs-drains and connectors run loops: Cloud Run counted no request for any of
+        # them in the week to 2026-11-12, so their pages chart their own counters, never Cloud Run's requests.
+        self.assertEqual(set(gen.NO_WEB_REQUESTS), {"auth-outbox-publisher", "tpa-jobs-drains", "connectors"})
+        requests_ = {"run.googleapis.com/request_count", "run.googleapis.com/request_latencies"}
+        for env in RENDERED:
+            for _page, service in service_pages(env):
+                own = RENDERED[env][f"service-{service}"]
+                top = next(ps for title, ps in sections(own).items() if not title.startswith("Resources"))
+                read = {metric(t) for p in top for t in p.get("targets") or []}
+                if service in gen.NO_WEB_REQUESTS:
+                    self.assertFalse(read & requests_, (env, service))
+                    self.assertTrue(all(m.startswith(LOG) for m in read) and read, (env, service))
+                else:
+                    self.assertLessEqual(requests_, read, (env, service))
 
     def test_every_page_says_a_service_has_no_disk(self):
         for env in RENDERED:

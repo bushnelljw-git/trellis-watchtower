@@ -433,6 +433,35 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     - Paging words: PAGERDUTY.md, the PHI project's policies page "TPA beta · Member records", so the enrollment
       engine's pages land there unless tpa-platform gives it its own service.
 
+- [x] ND (2026-11-12, the owner, of the engine page's tiles: "investigate why some of these i dont see data") no
+  "No data" where the truth is zero, idle or not running (cloud/README.md, "What an empty panel says"):
+  - [x] Every panel that queries says what its empty answer means, by family: bad events "None in this range" (a stat
+    "0", neutral); requests "No requests in this range"; runs "No runs in this range"; a service's instances "scales to
+    zero when idle" or "kept warm, so it is down or not reporting" per environment; heartbeats, uptime checks and a
+    database's own charts "Missing: ..." / "Not reporting: ..." (never zero); the importer's row and the backlog chart
+    "paused" while paused. tests/cloud/test_empty_panels.py.
+  - [x] The worker pages (auth-outbox-publisher, tpa-jobs-drains, connectors: no web request in the week) chart their
+    own counters instead of Cloud Run's empty requests rows.
+  - [x] The backlog chart's query fixed (`ALIGN_MEAN` on a distribution, refused 400; now `ALIGN_DELTA` +
+    `REDUCE_MEAN`), and test_catalogue no longer allows `ALIGN_MEAN` on a distribution.
+  - [x] `CRM_JOBS` reads crm-lane-send, crm-lane-comp and crm-reset-drain too (they ran that week; crm-lane-send failed
+    5 times in the 24 h before the change, on no page). crm-reset-drain is ahead of the vendored catalogue
+    (`AHEAD_OF_THE_CATALOGUE`).
+  - [x] `RUNS["beta"]` gains connectors and tpa-jobs-drains (both kept warm by Terraform), `DEPLOYMENT_WARM["beta"]`
+    gains web (live minimum 1 and an enabled `web has no instance`); their `NOT_RUN` reasons gone.
+  - [x] No page says "beta" to a reader (the owner: "We are NOT in beta").
+  - [ ] Follow-up: re-vendor the catalogue at tpa-platform's current origin/master. It builds ops-web and
+    auth-event-publisher (both run, minimum 1, each with a `has no instance` policy) and keeps watchtower warm (D-334):
+    then ops-web (app, its own area or Portal & API) and auth-event-publisher (Sign-in) join `SERVICES`, `RUNS`,
+    `LIMITS`, `TERRAFORM_WARM`, `NAMES` and test_resources' `AREAS`; watchtower joins `TERRAFORM_WARM`. Not a table
+    entry today: the tests pin `LIMITS` and the warm lists to Terraform at the pinned commit (06f73b72), which builds
+    neither.
+  - [ ] Follow-up: file-reader (runs, minimum 0, max 10) gets a page and tile only with a test change:
+    `test_production_runs_what_its_root_builds` would make production's overview tile it (production-full builds it
+    behind file_reader_enabled, off by default).
+  - [ ] Follow-up: the CRM lane jobs' deadline tiles (crm.tf's crm_lane_send_missed_runs, crm_lane_comp_missed_runs,
+    crm_reset_drain's) and their schedules' failures, once the catalogue is re-vendored with their schedule names.
+
 ## Review
 
 ### 2026-10-11 (cloud dashboards)

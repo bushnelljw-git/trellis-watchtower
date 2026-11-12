@@ -214,6 +214,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "align": "auto",
             "cellOptions": {
@@ -375,6 +376,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -520,6 +522,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "align": "auto",
             "cellOptions": {
@@ -679,6 +682,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -828,6 +832,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "align": "auto",
             "cellOptions": {
@@ -991,6 +996,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -1132,6 +1138,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "align": "auto",
             "cellOptions": {
@@ -1287,6 +1294,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -1338,7 +1346,7 @@
     {
       "type": "table",
       "title": "Error groups in the time range (crm_errors or errors)",
-      "description": "The CRM's error groups: the service and the exception class. Beta counts them as `crm_errors`.",
+      "description": "The CRM's error groups: the service and the exception class. Counted as `crm_errors` where the CRM shares the app project.",
       "gridPos": {
         "h": 9,
         "w": 16,
@@ -1432,6 +1440,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "align": "auto",
             "cellOptions": {
@@ -1589,6 +1598,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -1807,6 +1817,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -2012,6 +2023,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -2217,6 +2229,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
@@ -2422,6 +2435,7 @@
             ]
           },
           "mappings": [],
+          "noValue": "None in this range",
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
