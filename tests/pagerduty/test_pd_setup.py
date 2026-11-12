@@ -25,8 +25,12 @@ import pdlib  # noqa: E402
 SUMMARY_STEADY_DRY = r"^summary: 0 to create, 0 to update, \d+ ok, 0 kept, 0 refused, 3 by hand$"
 
 
-def run(server, script, *args, token=fakes.TOKEN, path_prefix=None):
-    env = {k: v for k, v in os.environ.items() if k not in ("PAGERDUTY_TOKEN",)}
+def run(server, script, *args, token=fakes.TOKEN, path_prefix=None, aiops=True):
+    """`aiops`: the design with PagerDuty's AIOps add-on (pdlib.AIOPS), which most of these tests cover; False is the
+    design as it runs live since 2026-11-12."""
+    env = {k: v for k, v in os.environ.items() if k not in ("PAGERDUTY_TOKEN", "TW_PAGERDUTY_AIOPS")}
+    if aiops:
+        env["TW_PAGERDUTY_AIOPS"] = "1"
     env.update({
         "PAGERDUTY_API_URL": server.url("pd"),
         "PAGERDUTY_EVENTS_URL": server.url("events"),
@@ -110,7 +114,7 @@ class DryRunAndIdempotency(Base):
         self.assertIn("summary: 26 to create", with_rules.stdout)
         self.assertEqual(self.state.writes(), [])
         self.assertIn('by hand     Slack: "TPA beta · Call centre"  [not connected: a person connects it to '
-                      '#tpa-beta-alerts', result.stdout)
+                      '#pd-incidents', result.stdout)
 
     def test_apply_then_rerun_changes_nothing(self):
         first = self.apply()
@@ -399,7 +403,7 @@ class SlackReport(Base):
     def connection(self, name, **config):
         full = {"events": ["incident.triggered", "incident.acknowledged", "incident.escalated", "incident.resolved",
                            "incident.reassigned"], "urgency": None, "priorities": ["*"]}
-        return {"source_id": self.ids[name], "channel_name": "tpa-beta-alerts", "config": {**full, **config}}
+        return {"source_id": self.ids[name], "channel_name": "pd-incidents", "config": {**full, **config}}
 
     def test_connections_are_reported_never_made(self):
         self.state.slack_connections = [
@@ -408,8 +412,8 @@ class SlackReport(Base):
                             urgency="high", priorities=["PRI1"]),
         ]
         result = self.pd()
-        self.assertIn('ok          Slack: "TPA beta · Portal & API" connected to #tpa-beta-alerts', result.stdout)
-        self.assertIn('by hand     Slack: "TPA beta · Member records" connected to #tpa-beta-alerts  [in PagerDuty, '
+        self.assertIn('ok          Slack: "TPA beta · Portal & API" connected to #pd-incidents', result.stdout)
+        self.assertIn('by hand     Slack: "TPA beta · Member records" connected to #pd-incidents  [in PagerDuty, '
                       'set events: add acknowledged, escalated, reassigned; urgency: both high and low (it is high '
                       'only); priorities: all]', result.stdout)
         self.assertIn('by hand     Slack: "TPA beta · Call centre"  [not connected', result.stdout)
@@ -476,3 +480,43 @@ class Redirects(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WithoutAiops(Base):
+    """The design as it runs live (pdlib.AIOPS off: the owner, 2026-11-12, "We are not using AIops"): the severity
+    rules alone, no titles, and no alert grouping setting read or written. The fake account has neither feature."""
+    state_options = {"advanced_orchestration": False, "grouping_error": (403, "Access Denied")}
+
+    def test_severity_alone_no_grouping_nothing_refused_and_steady(self):
+        dry = self.pd(aiops=False)
+        self.assertNotIn("alert grouping", dry.stdout)
+        self.assertNotIn("title", dry.stdout)
+        first = self.pd("--apply", "--add-rules", aiops=False)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertIn(", refused 0,", self.summary(first))
+        self.assertEqual(self.state.grouping, {})
+        self.assertEqual([r for r in self.state.requests if "alert_grouping" in r["path"]], [])
+        for path in self.state.orchestrations.values():
+            self.assertEqual([s["id"] for s in path["sets"]], ["start"])
+            self.assertEqual([(r["actions"]["severity"], r["actions"].get("route_to")) for r in path["sets"][0]["rules"]],
+                             [("critical", None), ("error", None), ("warning", None)])
+        again = self.pd(aiops=False)
+        self.assertRegex(self.summary(again), SUMMARY_STEADY_DRY)
+
+    def test_an_orchestration_with_titles_is_taken_back_to_severity_alone(self):
+        self.state.advanced_orchestration, self.state.grouping_error = True, None
+        self.apply()  # the add-on's design: start and titles
+        result = self.pd("--apply", aiops=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('updated     event orchestration on "TPA beta · Portal & API"', result.stdout)
+        for path in self.state.orchestrations.values():
+            self.assertEqual([s["id"] for s in path["sets"]], ["start"])
+
+    def test_the_test_event_expects_monitorings_own_summary(self):
+        self.pd("--apply", "--add-rules", aiops=False)
+        result = run(self.server, "pd_test_event.py", "--role", "app", "--severity", "warning", "--send", "--wait",
+                     "5", aiops=False)
+        self.outputs += [result.stdout, result.stderr]
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("urgency low, alert severity warning, priority P3", result.stdout)
+        self.assertIn("\nas designed\n", result.stdout)

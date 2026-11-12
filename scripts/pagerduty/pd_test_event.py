@@ -60,10 +60,17 @@ def subject(severity: str, service_name: str, monitoring_subject: bool) -> str:
 
 def expected_title(severity: str, service_name: str, monitoring_subject: bool) -> str:
     """The incident title the design gives (pdlib.py, "The incident's title"): the subject without its tag, or else
-    "policy · condition"."""
+    "policy · condition". Without the AIOps add-on (pdlib.AIOPS) nothing retitles it: Monitoring's own summary."""
+    if not d.AIOPS:
+        return description(severity, service_name)
     if monitoring_subject:
         return f"{SUMMARY}{d.TITLE_SEPARATOR}{CONDITION}"
     return f"{TITLE} ({severity}, {service_name})"
+
+
+def description(severity: str, service_name: str) -> str:
+    """Monitoring's long generated summary, which is the incident's title unless the orchestration retitles it."""
+    return f"{SUMMARY}: Monitoring's own summary of a {severity} test on {service_name} | Policy: {SUMMARY}"
 
 
 def monitoring_event(key: str, incident_key: str, severity: str, service_name: str,
@@ -71,12 +78,12 @@ def monitoring_event(key: str, incident_key: str, severity: str, service_name: s
     """An Events API v1 trigger as a Monitoring pagerduty channel sends it (Monitoring's payload, version 1.2). Its
     description, Monitoring's long summary, is the title only until the orchestration retitles it."""
     now = int(time.time())
-    description = f"{SUMMARY}: Monitoring's own summary of a {severity} test on {service_name} | Policy: {SUMMARY}"
+    summary = description(severity, service_name)
     return {
         "service_key": key,
         "event_type": "trigger",
         "incident_key": incident_key,
-        "description": description,
+        "description": summary,
         "client": "trellis-watchtower pd_test_event.py",
         "details": {
             "version": "1.2",
@@ -88,7 +95,7 @@ def monitoring_event(key: str, incident_key: str, severity: str, service_name: s
                 "started_at": now,
                 "ended_at": None,
                 "state": "open",
-                "summary": description,
+                "summary": summary,
                 "apigee_url": "",
                 "observed_value": "1",
                 "resource": {"type": "global", "labels": {}},

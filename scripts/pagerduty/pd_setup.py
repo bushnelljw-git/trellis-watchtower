@@ -7,9 +7,10 @@ What it makes (each found by its exact name, created when absent and corrected w
   - escalation policy "TPA Platform": the schedule, then the second person after 15 minutes; repeats twice;
   - one service per Google Cloud project ("TPA beta · Portal & API", "· Member records", "· Call centre"), each with
     urgency from severity, a 30-minute acknowledgement timeout, no auto-resolve, the Google Cloud Monitoring
-    integration, an alert grouping setting (intelligent, or time-based where the account refuses it) and a service
-    event orchestration that turns Monitoring's severity, in any letter case, into the alert's severity and the
-    incident's priority, then titles the incident with the alert policy's own subject (else "policy · condition");
+    integration and a service event orchestration that turns Monitoring's severity, in any letter case, into the
+    alert's severity and the incident's priority. With PagerDuty's AIOps add-on (pdlib.AIOPS, off since 2026-11-12)
+    also an alert grouping setting (intelligent, or time-based where the account refuses it) and the incident's
+    title: the alert policy's own subject (else "policy · condition");
   - business service "Trellis TPA (beta)", supported by the three services;
   - with --add-rules only, each person's designed notification rules that are missing (never adding or changing a
     contact method).
@@ -537,7 +538,8 @@ def ensure_services(pd: PagerDuty, plan: Plan, policy_id: str, priorities: dict[
             plan.change("create", iwhat, "the key Monitoring's pagerduty channel uses (tf_with_keys.py)",
                         lambda sid=sid, body=body: pd.write("POST", f"/services/{sid}/integrations", body))
 
-        grouping.ensure(name, sid, new)
+        if d.AIOPS:
+            grouping.ensure(name, sid, new)
         ensure_orchestration(pd, plan, name, sid, new, priorities)
     return ids
 
@@ -545,10 +547,12 @@ def ensure_services(pd: PagerDuty, plan: Plan, policy_id: str, priorities: dict[
 def ensure_orchestration(pd: PagerDuty, plan: Plan, name: str, sid: str, new: bool, priorities: dict[str, str]):
     what = f'  event orchestration on "{name}"'
     detail = "; ".join(f"{r['monitoring']} -> {r['severity']} {r['priority']}" for r in d.SEVERITY_RULES)
-    detail += " (any letter case); anything else keeps the default (critical); "
-    detail += f"title: the policy's subject, else policy{d.TITLE_SEPARATOR}condition"
+    detail += " (any letter case); anything else keeps the default (critical)"
+    if d.AIOPS:
+        detail += f"; title: the policy's subject, else policy{d.TITLE_SEPARATOR}condition"
     url = f"/event_orchestrations/services/{sid}"
-    want = desired_orchestration(sid, priorities)
+    # Without the AIOps add-on (pdlib.AIOPS) the design is the severity rules alone: no titles.
+    want = desired_orchestration(sid, priorities) if d.AIOPS else severity_only(sid, priorities)
     path = None if new else pd.get(url)["orchestration_path"]
 
     def put():
@@ -585,7 +589,7 @@ def ensure_orchestration(pd: PagerDuty, plan: Plan, name: str, sid: str, new: bo
         plan.change("update", what, detail, put)
         for line in orchestration_changes(path, want):
             out(f"{'':14}{line}")
-        if not plan.apply:
+        if d.AIOPS and not plan.apply:
             plan.note_once("the titles need Advanced Event Orchestration, which no PagerDuty API shows before an "
                            "update; --apply reads each update's warnings and, if there are any, puts the previous "
                            "orchestration back and refuses")

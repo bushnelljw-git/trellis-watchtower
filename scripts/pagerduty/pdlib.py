@@ -57,6 +57,14 @@ SECOND_LEVEL = "Rafeale Hill"
 POLICY_LOOPS = 2
 
 ACK_TIMEOUT_SECONDS = 30 * 60
+
+# PagerDuty's AIOps add-on. The owner, 2026-11-12, of the account made after PagerDuty deleted the first one: "We are
+# not using AIops". Off, the design leaves out the two things only the add-on runs: the incident titles (a second rule
+# set, variables and extractions: Advanced Event Orchestration) and alert grouping. pd_setup.py then makes each
+# service's orchestration the severity rules alone and never reads or writes a grouping setting, and pd_test_event.py
+# expects Monitoring's own summary as the title. The variable is for the tests, which keep the add-on's design
+# covered; if the account buys the add-on, set this to True here.
+AIOPS = os.environ.get("TW_PAGERDUTY_AIOPS", "").strip() == "1"
 TIME_GROUPING_MINUTES = 10
 
 VENDOR_ID = "PUCLE3C"  # PagerDuty's "Google Cloud Monitoring" vendor (generic_service_type "api": the Events API v1)
@@ -93,9 +101,10 @@ SERVICES = [
     },
 ]
 
-# Slack is reached through PagerDuty: a person connects each service to this channel (docs/PAGERDUTY.md, "Slack").
+# Slack is reached through PagerDuty: each service is connected to this channel (docs/PAGERDUTY.md, "Slack"), the one
+# PagerDuty made in the workspace for the new account (2026-11-12; the first account's was #tpa-beta-alerts).
 # pd_setup.py only reads the connections and reports them; it never makes one.
-SLACK_CHANNEL = "tpa-beta-alerts"
+SLACK_CHANNEL = "pd-incidents"
 SLACK_EVENTS = ["incident.triggered", "incident.acknowledged", "incident.escalated", "incident.resolved",
                 "incident.reassigned"]
 
