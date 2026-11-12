@@ -1110,21 +1110,27 @@ ROBOT_ROUTES = ["portal_shell", "portal_release", "portal_bundle", "login", "mfa
 
 
 class WallClock:
-    """The wall clock a pause moves on, shared by the runner's Tools and the fake auth (a broker's code)."""
+    """The wall clock and the steady clock a pause moves on, shared by the runner's Tools (its deadline too)
+    and the fake auth (a broker's code)."""
 
     def __init__(self, at: float) -> None:
         self.at = at
+        self.steady = 0.0
         self.slept: list[float] = []
 
     def now(self) -> float:
         return self.at
 
+    def monotonic(self) -> float:
+        return self.steady
+
     def sleep(self, seconds: float) -> None:
         self.slept.append(seconds)
         self.at += seconds
+        self.steady += seconds
 
     def tools(self) -> Tools:
-        return Tools(now=self.now, sleep=self.sleep)
+        return Tools(now=self.now, sleep=self.sleep, monotonic=self.monotonic)
 
 
 def member_credentials(directory: str, origin: str, **changes: object) -> str:
@@ -1254,7 +1260,7 @@ class MemberSignIn(RobotCase):
         self.assert_failed(line, code, step="login", code="denied", status_class="4xx")
 
     def test_a_widened_robot_trips_the_wire_stops_and_signs_out(self):
-        for behaviour in ("two_tenants", "extra_role", "other_role", "crm_tenant", "sso"):
+        for behaviour in ("two_tenants", "extra_role", "other_role", "crm_tenant", "sso", "long_session"):
             with self.subTest(behaviour=behaviour), fakes.Fake(iap=False, fail={"me": behaviour},
                                                                clock=lambda: FIXED_NOW) as fake:
                 line, code = self.run_member(fake)
@@ -1263,7 +1269,8 @@ class MemberSignIn(RobotCase):
                 self.assert_signed_out(fake, fakes.ROBOT_SESSIONS["member"])
 
     def test_a_me_that_is_not_the_robots_session_is_shape(self):
-        for behaviour in ("aal1", "must_replace", "other_hat", "other_pin", "no_tenants", "staff", "deep_json"):
+        for behaviour in ("aal1", "other_amr", "must_replace", "other_hat", "other_pin", "no_tenants", "no_absolute",
+                          "staff", "deep_json"):
             with self.subTest(behaviour=behaviour), fakes.Fake(iap=False, fail={"me": behaviour},
                                                                clock=lambda: FIXED_NOW) as fake:
                 line, code = self.run_member(fake)
@@ -1349,6 +1356,29 @@ class MemberSignIn(RobotCase):
         self.assert_error(line, code, step="mfa_verify", code="passkey")
         self.assertNotIn("mfa_verify", fake.routes())
 
+    def test_two_runs_back_to_back_with_the_counter_at_zero(self):
+        # auth admits zero against zero for ever; the fake stores each verified count, as auth does.
+        with fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
+            first, _ = self.run_member(fake)
+            second, _ = self.run_member(fake)
+        self.assertEqual((first["outcome"], second["outcome"]), ("pass", "pass"))
+        self.assertEqual((len(fake.assertions_received), fake.member_key["sign_count"]), (2, 0))
+
+    def test_a_counter_that_never_rose_is_refused_the_second_time(self):
+        # Why the count is zero and never anything else: a robot cannot remember a count between runs, and auth
+        # reads a repeated non-zero count as a cloned key (it revokes the credential; the fake refuses it).
+        original = journeys.passkey.SIGN_COUNT
+        journeys.passkey.SIGN_COUNT = 1
+        try:
+            with fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
+                first, _ = self.run_member(fake)
+                second, code = self.run_member(fake)
+        finally:
+            journeys.passkey.SIGN_COUNT = original
+        self.assertEqual(first["outcome"], "pass")
+        self.assert_failed(second, code, step="mfa_verify", code="credentials", status_class="4xx")
+        self.assertEqual(fake.refusals, ["counter"])
+
     def test_logout_refused_is_csrf(self):
         with fakes.Fake(iap=False, fail={"logout": 403}, clock=lambda: FIXED_NOW) as fake:
             line, code = self.run_member(fake)
@@ -1429,14 +1459,45 @@ class BrokerSignIn(RobotCase):
         self.assert_failed(second, code, step="mfa_verify", code="credentials", status_class="4xx")
         self.assertEqual(fake.refusals, ["replayed"])
 
-    def test_no_time_for_the_wait_sends_no_code(self):
-        clock = WallClock(self.START)  # a 29.2 s wait, and a 1 s deadline
+    def test_the_wait_comes_out_of_the_deadline(self):
+        clock = WallClock(self.START)
         with fakes.Fake(iap=False, clock=clock.now) as fake:
-            line, code = self.run_broker(fake, clock, SYNTHETICS_DEADLINE_S="1")
-        self.assert_failed(line, code, step="mfa_verify", code="timeout", status_class="none")
+            line, code = self.run_broker(fake, clock, SYNTHETICS_DEADLINE_S="60")
+        self.assertEqual((line["outcome"], code), ("pass", 0))
+        self.assertGreater(clock.steady, 25, "the wait was the deadline's time")
+
+    def test_no_room_for_the_wait_sends_no_password(self):
+        # 40 s left before login: less than the longest wait and a send either side (30.2 + 2 x 10), so not even
+        # the password goes, and nothing is waited for.
+        clock = WallClock(self.START)
+        with fakes.Fake(iap=False, clock=clock.now) as fake:
+            line, code = self.run_broker(fake, clock, SYNTHETICS_DEADLINE_S="40")
+        self.assert_failed(line, code, step="login", code="timeout", status_class="none")
+        self.assertNotIn("login", fake.routes())
         self.assertEqual(fake.codes_received, [])
+        self.assertTrue(all(pause <= 1.0 for pause in clock.slept), "only the warm-up's pauses")
+        # 50.2 s is room enough.
+        clock = WallClock(self.START)
+        with fakes.Fake(iap=False, clock=clock.now) as fake:
+            line, code = self.run_broker(fake, clock, SYNTHETICS_DEADLINE_S="50.3")
+        self.assertEqual((line["outcome"], code), ("pass", 0))
+
+    def test_no_room_after_login_sends_no_code(self):
+        # The wait must leave a send's time after it: a code sent with no time to read its answer spends the
+        # step and may open a session the runner never holds a cookie for.
+        original = journeys.totp.wait_for_fresh
+        journeys.totp.wait_for_fresh = lambda _at: 55.0  # with a 60 s deadline, 50 s is the most it may wait
+        try:
+            clock = WallClock(self.START)
+            with fakes.Fake(iap=False, clock=clock.now) as fake:
+                line, code = self.run_broker(fake, clock, SYNTHETICS_DEADLINE_S="60")
+        finally:
+            journeys.totp.wait_for_fresh = original
+        self.assert_failed(line, code, step="mfa_verify", code="timeout", status_class="none")
+        self.assertEqual(fake.routes().count("login"), 1)
         self.assertNotIn("mfa_verify", fake.routes())
-        self.assertEqual(clock.slept.count(29.2), 0, "and no wait")
+        self.assertEqual(fake.codes_received, [])
+        self.assertNotIn(55.0, clock.slept)
 
     def test_more_than_one_task_at_once_refuses_to_run(self):
         for value, outcome in [("2", "error"), ("10", "error"), ("1", "pass"), (None, "pass")]:
@@ -1501,6 +1562,21 @@ class RobotConfiguration(RobotCase):
             with self.subTest(origin=origin), self.assertRaises(journeys.StepFailure) as refused:
                 journeys.load_portal_config(dict(base, SYNTHETICS_PORTAL_ORIGIN=origin), robot=robot, local=False)
             self.assertEqual(refused.exception.code, "config")
+
+    def test_the_cloud_trusts_the_images_store_alone(self):
+        robot = journeys.ROBOTS["member-sign-in"]
+        base = {"SYNTHETICS_CREDENTIALS_FILE": "/secrets/credentials.json",
+                "SYNTHETICS_PORTAL_ORIGIN": journeys.PRODUCTION_PORTAL_ORIGIN}
+        ca = os.path.join(self.tmp.name, "ca.pem")
+        with open(ca, "w", encoding="utf-8") as handle:
+            handle.write("not a CA")
+        for name, value in [("SYNTHETICS_CA_FILE", ca), ("SSL_CERT_FILE", ca), ("SSL_CERT_DIR", self.tmp.name)]:
+            with self.subTest(name=name), self.assertRaises(journeys.StepFailure) as refused:
+                journeys.load_portal_config(dict(base, **{name: value}), robot=robot, local=False)
+            self.assertEqual(refused.exception.code, "config")
+        local = dict(base, SYNTHETICS_PORTAL_ORIGIN="https://localhost:4310", SYNTHETICS_CA_FILE=ca,
+                     SSL_CERT_FILE=ca)
+        self.assertEqual(journeys.load_portal_config(local, robot=robot, local=True).ca_file, ca)
 
     def test_the_local_mode_takes_a_loopback_origin_alone(self):
         robot = journeys.ROBOTS["broker-sign-in"]

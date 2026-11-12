@@ -129,6 +129,14 @@ JAVASCRIPT = ("text/javascript", "application/javascript")
 ASSURANCE = ("aal2", "aal3")
 #: Cloud Run's task count: a broker run in more than one task at once would spend one code twice.
 TASK_COUNT = "CLOUD_RUN_TASK_COUNT"
+#: OpenSSL reads these even under `python -I`: a trust store other than the image's. Refused in the cloud.
+TRUST_OVERRIDES = ("SSL_CERT_FILE", "SSL_CERT_DIR")
+#: A robot session's absolute life (SR-OR-1's tightening, "120-second robot sessions"): `/auth/me`'s
+#: `absolute_seconds` above it means the robot's session outlives what was ruled.
+ROBOT_SESSION_S = 120
+#: What the broker keeps for each request after its TOTP wait, at most (the smaller of this and the step
+#: timeout): `login` before the wait, and its code after it.
+ROBOT_SEND_S = 10.0
 
 
 class Skip(Exception):
@@ -729,7 +737,10 @@ def load_portal_config(env: Mapping[str, str], *, robot: Robot, local: bool) -> 
         raise StepFailure("config")
     credentials_file = _required(env, "SYNTHETICS_CREDENTIALS_FILE")
     ca_file = env.get("SYNTHETICS_CA_FILE", "").strip()
-    if ca_file and not os.path.isfile(ca_file):
+    if ca_file and (not local or not os.path.isfile(ca_file)):
+        # One CA alone is the local stack's mkcert root; in the cloud the image's own store, and nothing else.
+        raise StepFailure("config")
+    if not local and any(env.get(name, "").strip() for name in TRUST_OVERRIDES):
         raise StepFailure("config")
     return PortalConfig(
         origin=origin,
@@ -838,8 +849,16 @@ def _sign_in_answer(run: Run, response: Response) -> dict[str, Any]:
 
 
 def _robot_sign_in(run: Run, portal: Session, robot: Robot, credentials: RobotCredentials, tools: Tools,
-                   deadline: client.Deadline) -> None:
-    """The password with the robot's hat, then its one second factor: a session and its CSRF cookie."""
+                   deadline: client.Deadline, send: float) -> None:
+    """The password with the robot's hat, then its one second factor: a session and its CSRF cookie.
+
+    The broker sends its password only when the run's deadline still holds the longest TOTP wait and a send on
+    either side of it (ROBOT_SEND_S, or the step timeout if smaller); otherwise it is `timeout` at `login`, with
+    nothing sent. After `login`, the wait is taken only if a send is still left after it.
+    """
+    if robot.method == "totp" and deadline.left() < totp.MOST_FRESH_WAIT_S + 2 * send:
+        with run.timed("login"):
+            raise StepFailure("timeout")
     with run.timed("login"):
         answer = _sign_in_answer(run, portal.post(AUTH_LOGIN, payload={
             "email": credentials.email, "password": credentials.password, "audience": robot.hat}))
@@ -861,8 +880,10 @@ def _robot_sign_in(run: Run, portal: Session, robot: Robot, credentials: RobotCr
     at_most = None
     if robot.method == "totp":
         try:
-            # Never a step an earlier run spent (SR-16; totp.fresh), and only if the run's time holds the wait.
-            code = totp.fresh(credentials.totp_secret, now=tools.now, sleep=tools.sleep, budget=deadline.left())
+            # Never a step an earlier run spent (SR-16; totp.fresh), and only with time left after the wait to
+            # send the code: a code sent with no time to read its answer spends the step for nothing.
+            code = totp.fresh(credentials.totp_secret, now=tools.now, sleep=tools.sleep,
+                              budget=deadline.left() - send)
         except totp.NoTime:
             with run.timed("mfa_verify"):
                 raise StepFailure("timeout") from None
@@ -884,16 +905,18 @@ def _robot_identity(me: dict[str, Any], robot: Robot, status: int | None) -> Non
 
     **A tripwire, not only a parser** (J3's rule, here for the robots). Anything that widens what the robot's
     secret could reach is `widened`, and the run stops there and signs out: a second tenant, a role beside or
-    instead of the hat's, a tenant of another kind, or TPA sign-in for the CRM (`sso`). Anything else that is not
-    the robot's session as made (no tenant, another hat, a weaker sign-in, a confined session, a `staff`
-    object, the pin elsewhere) is `shape`. A session wearing a hat shows that hat's role alone (auth-notary
+    instead of the hat's, a tenant of another kind, TPA sign-in for the CRM (`sso`), or a session that outlives
+    the robots' 120 seconds (`absolute_seconds`). Anything else that is not the robot's session as made (no
+    tenant, another hat, a weaker sign-in or another factor in `amr` than its own, a confined session, a
+    `staff` object, the pin elsewhere) is `shape`. A session wearing a hat shows that hat's role alone (auth-notary
     CONTRACT, `GET /auth/me`), so the robot's login holding another role is held by the database (SR-OR-1), not
     seen here.
     """
     tenants = me.get("tenants")
-    if not isinstance(tenants, list) or not tenants:
+    left = me.get("absolute_seconds")
+    if not isinstance(tenants, list) or not tenants or isinstance(left, bool) or not isinstance(left, int):
         raise StepFailure("shape", status)
-    if len(tenants) > 1 or "sso" in me:
+    if len(tenants) > 1 or "sso" in me or left > ROBOT_SESSION_S:
         raise StepFailure("widened", status)
     only = tenants[0]
     roles = only.get("roles") if isinstance(only, dict) else None
@@ -902,8 +925,8 @@ def _robot_identity(me: dict[str, Any], robot: Robot, status: int | None) -> Non
     if set(roles) - {robot.role} or only.get("tkind") != "tpa":
         raise StepFailure("widened", status)
     if (roles != [robot.role] or me.get("audience") != robot.hat or me.get("acr") not in ASSURANCE
-            or me.get("must_replace") is True or "staff" in me or me.get("current_tid") != only.get("tid")
-            or not only.get("tid")):
+            or me.get("amr") != ["pwd", robot.method] or me.get("must_replace") is True or "staff" in me
+            or me.get("current_tid") != only.get("tid") or not only.get("tid")):
         raise StepFailure("shape", status)
 
 
@@ -921,8 +944,9 @@ def _robot(run: Run, env: Mapping[str, str], robot: Robot, *, local: bool, tools
     script = _portal_shell(run, portal)
     _portal_release(run, portal)
     _portal_bundle(run, portal, script)
+    send = min(config.step_timeout, ROBOT_SEND_S)
     with _auth_session(run, portal, _sign_out_budget(config),
-                       lambda: _robot_sign_in(run, portal, robot, credentials, tools, deadline)):
+                       lambda: _robot_sign_in(run, portal, robot, credentials, tools, deadline, send)):
         with run.timed("me"):
             _robot_identity(run.check(portal.get(AUTH_ME)).json_object(), robot, portal.last_status)
 

@@ -49,14 +49,16 @@ longer says whether it has a book).
   auth does (one step either side, and never a step at or below the last it
   accepted for that account, `totp_last_step`); then sets a session of the
   robot's own and answers its `audience`;
-- `/auth/me` for that session answers a hatted session's thirteen keys.
+- `/auth/me` for that session answers a hatted session's thirteen keys; a robot's
+  session reaches `/auth/me` and `/auth/logout` alone (phase 1), as auth confines it.
 
 Their behaviours: "checks_off" and "checks_off_code" (auth's switch-off refusal,
 as `decision.reason` or as the code), "audience_not_held" (403 at either),
 "wrong_rp", "no_options", "bad_challenge", "check_email", "no_factor",
 "no_audience" (verify's 200 without it); at me "two_tenants", "extra_role",
-"other_role", "crm_tenant", "sso", "staff", "aal1", "must_replace",
-"other_hat", "other_pin", "no_tenants"; at the portal "no_main_script",
+"other_role", "crm_tenant", "sso", "long_session", "staff", "aal1",
+"other_amr", "must_replace", "other_hat", "other_pin", "no_tenants",
+"no_absolute"; at the portal "no_main_script",
 "two_main_scripts", "bad_release", "no_release", "not_js", "empty".
 """
 
@@ -202,7 +204,8 @@ def verify_assertion(assertion: object, *, challenge: bytes, origin: str, rp_id:
                      user_handle: bytes) -> str:
     """auth-notary's checks of a passkey assertion (py_webauthn's verify_authentication_response with
     require_user_verification, then flags_agree and counter_is_fresh), written apart from the runner:
-    "" when it verifies, else the reason."""
+    "" when it verifies, else the reason. A verified assertion's count is stored, as auth stores it, so a
+    count that does not rise is refused the next time (auth would revoke the credential)."""
     try:
         if set(assertion) != {"id", "rawId", "type", "response", "authenticatorAttachment",
                               "clientExtensionResults"}:
@@ -237,6 +240,7 @@ def verify_assertion(assertion: object, *, challenge: bytes, origin: str, rp_id:
                                     data + hashlib.sha256(client_json).digest(), ec.ECDSA(hashes.SHA256()))
     except (InvalidSignature, ValueError, KeyError, TypeError, AttributeError):
         return "malformed or unsigned"
+    stored["sign_count"] = count
     return ""
 
 
@@ -648,14 +652,16 @@ class Fake:
         self.json(h, 200, {"session": SESSION, "csrf": CSRF, "tenants": [], "current_tid": "sentinel-tid"},
                   cookies=cookies)
 
-    def _signed_in(self, h) -> bool:
-        if self.cookies(h).get("__Host-tpa-session") not in (SESSION, *ROBOT_SESSIONS.values()):
+    def _signed_in(self, h, *, robot: bool = False) -> bool:
+        """The staff session; and, where `robot`, a robot's (phase 1: `/auth/me` and `/auth/logout` alone)."""
+        allowed = (SESSION, *ROBOT_SESSIONS.values()) if robot else (SESSION,)
+        if self.cookies(h).get("__Host-tpa-session") not in allowed:
             self.json(h, 401, {"error": {"code": "token_invalid"}})
             return False
         return True
 
     def _me(self, h, record, body, behaviour) -> None:
-        if not self._signed_in(h):
+        if not self._signed_in(h, robot=True):
             return
         session = self.cookies(h).get("__Host-tpa-session")
         robot = next((hat for hat, value in ROBOT_SESSIONS.items() if value == session), None)
@@ -691,6 +697,12 @@ class Fake:
             me["current_tid"] = "ten_sentinel_other"
         elif behaviour == "no_tenants":
             me["tenants"] = []
+        elif behaviour == "long_session":
+            me["absolute_seconds"] = 43200
+        elif behaviour == "no_absolute":
+            del me["absolute_seconds"]
+        elif behaviour == "other_amr":
+            me["amr"] = ["pwd", "recovery"]
         self.json(h, 200, me)
 
     def _desk_version(self, h, record, body, behaviour) -> None:
@@ -704,7 +716,7 @@ class Fake:
             self.json(h, 200, {"calls": [], "server_now": "sentinel"})
 
     def _logout(self, h, record, body, behaviour) -> None:
-        if not self._signed_in(h):
+        if not self._signed_in(h, robot=True):
             return
         expected_origin = f"http://{record['host']}"
         if record["csrf"] != CSRF or record["origin"] != expected_origin or record["sec_fetch_site"] == "cross-site":

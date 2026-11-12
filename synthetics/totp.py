@@ -96,6 +96,8 @@ def mint(
 
 #: How far past a step's start `fresh` waits, so the code is that step's on any clock near this one.
 FRESH_MARGIN_S = 0.2
+#: The longest `fresh` ever waits: a whole step and the margin.
+MOST_FRESH_WAIT_S = STEP_SECONDS + FRESH_MARGIN_S
 
 
 class NoTime(Exception):

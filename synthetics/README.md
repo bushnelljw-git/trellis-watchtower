@@ -96,8 +96,12 @@ they read no data.
   begin (0.2 s into it; up to 30.2 s, inside the run's deadline) and sends that step's code (`totp.fresh`). A run
   that starts after an earlier run sent its code asks later than that code's step began, so it can never send it,
   whether the earlier run was the schedule's, one started by hand or a retry; the code then has at least 59.8 s of
-  accepted life. When the deadline cannot hold the wait, the run fails `timeout` at `mfa_verify` with no wait and
-  no code sent. A broker job with more than one task (`CLOUD_RUN_TASK_COUNT` other than 1) refuses to run
+  accepted life. The wait is the deadline's time, so the broker sends its password only while the deadline still
+  holds the longest wait and a send on either side of it (30.2 s + 2 × the smaller of 10 s and the step timeout:
+  50.2 s with the defaults); otherwise the run fails `timeout` at `login` with nothing sent. After `login` it waits
+  only if a send's time is still left after the wait; otherwise `timeout` at `mfa_verify`, with no wait and no
+  code sent (a code sent with no time to read its answer would spend the step, and could open a session the runner
+  never holds a cookie for). A broker job with more than one task (`CLOUD_RUN_TASK_COUNT` other than 1) refuses to run
   (`config`), since parallel tasks would wait for the same step. Two executions started within one wait can still
   meet: auth refuses the second, which fails `credentials` (one factor failure; SR-16, accepted). The staff
   journeys' rule (`totp.mint`, at least 8 s left) is unchanged.
@@ -114,9 +118,11 @@ they read no data.
   {clientDataJSON, authenticatorData, signature, userHandle}, clientExtensionResults: {}}`, every bytes field
   base64url without padding. `userHandle` is sent because the login offers no credential list.
 - **`/auth/me` is a tripwire, not only a read** (J3's rule). It must name exactly one tenant of kind `tpa`, the
-  robot's one role (`member` or `broker`), `audience` its hat, `acr` `aal2` or `aal3`, `current_tid` that tenant,
-  `must_replace` not true, and no `staff` object. A second tenant, a role beside or instead of the hat's, a tenant of
-  another kind, or `sso` (TPA sign-in for the CRM) is `fail` / `widened`: the run stops there and signs out. Anything
+  robot's one role (`member` or `broker`), `audience` its hat, `acr` `aal2` or `aal3`, `amr` exactly `["pwd",
+  "webauthn"]` (the member) or `["pwd", "totp"]` (the broker), `current_tid` that tenant, `absolute_seconds` a whole
+  number, `must_replace` not true, and no `staff` object. A second tenant, a role beside or instead of the hat's, a
+  tenant of another kind, `sso` (TPA sign-in for the CRM), or `absolute_seconds` above 120 (the robots' 120-second
+  sessions, SR-OR-1) is `fail` / `widened`: the run stops there and signs out. Anything
   else off that shape is `shape`. A session wearing a hat shows that hat's role alone, so another role on the login
   itself is held by auth's database (SR-OR-1), not seen here.
 - **Switched off is no verdict.** While Sign-in checks is off, auth answers the robot's `login` (or `mfa_verify`,
@@ -220,8 +226,10 @@ included), an empty password or a TOTP secret that is not base32 is `error` / `c
 |---|---|
 | `SYNTHETICS_PORTAL_ORIGIN` | exactly `https://portal.trellistpa.com` (any other value refuses to run) |
 | `SYNTHETICS_CREDENTIALS_FILE` | the path the robot's secret is mounted at, pinned by version, never `latest` |
-| `SYNTHETICS_EGRESS_WAIT_S`, `SYNTHETICS_STEP_TIMEOUT_S`, `SYNTHETICS_DEADLINE_S`, `SYNTHETICS_PAUSED` | as for J1 to J3 (the defaults are 120, 15 and 90 s) |
+| `SYNTHETICS_EGRESS_WAIT_S`, `SYNTHETICS_STEP_TIMEOUT_S`, `SYNTHETICS_DEADLINE_S`, `SYNTHETICS_PAUSED` | as for J1 to J3 (the defaults are 120, 15 and 90 s). The broker needs its deadline to hold the portal's three steps and then 50.2 s (above): 60 s is enough |
 | `SYNTHETICS_EMAIL` | **never set** (the address is the secret's alone; a robot job that sets it refuses to run) |
+| `SYNTHETICS_CA_FILE`, `SSL_CERT_FILE`, `SSL_CERT_DIR` | **never set** in the cloud (each would replace the image's trust store; a robot job that sets one refuses to run). `SYNTHETICS_CA_FILE` is the local mode's mkcert root alone |
+| `CLOUD_RUN_TASK_COUNT` | Cloud Run's own; the broker refuses to run unless it is 1 (or unset) |
 | `SYNTHETICS_IAP_AUDIENCE`, `SYNTHETICS_METADATA_HOST`, `SYNTHETICS_BASE_URL`, `SYNTHETICS_PORTAL_BASE_URL` | not read |
 
 Their secrets, `signin-robot-member-credentials` and `signin-robot-broker-credentials`, written by auth's attended job
@@ -236,16 +244,21 @@ member: {"email": "<address>", "password": "<password>",
                      "rp_id": "portal.trellistpa.com", "user_handle": "<base64url>"}}
 ```
 
-The member's `passkey` is exactly what auth's `_enrol_a_passkey` writes today (`Values.payload()`, keys sorted,
-compact), registered on the public origin's relying party: its `origin` must equal `SYNTHETICS_PORTAL_ORIGIN` and its
-`rp_id` that origin's host; the JWK's public point must be the private scalar's. The email is a plain address (one
+The member's inner `passkey` object is exactly what auth's `_enrol_a_passkey` writes today, and the outer object is
+auth's `Values.payload()` (keys sorted, compact) **with `email` added beside the password**, which auth's job must
+add for the robots (SR-01: the address lives in the secret alone). The passkey is registered on the public origin's
+relying party: its `origin` must equal `SYNTHETICS_PORTAL_ORIGIN` and its `rp_id` that origin's host; the JWK's
+public point must be the private scalar's. The email is a plain address (one
 `@`, no space, at most 254 characters). Values live in memory for the run; nothing is logged, put in an argument or
 written anywhere. `tests/synthetics/fixtures/member-credentials.json` is a test key in that shape, made as auth's job
 makes one (its `member-registration.json` beside it is the registration auth would store).
 
 The robots' args are `["journey", "member-sign-in"]` and `["journey", "broker-sign-in"]` (no `--no-iap`: that is the
-local mode, loopback only); the rest as below (`task_timeout` 300 s, `max_retries` 0, egress only to the portal's
-load balancer on 443).
+local mode, loopback only); `max_retries` 0 and the scheduler's `retry_count` 0; egress only to the portal's load
+balancer on 443. Their `task_timeout` must hold the warm-up's budget, the deadline and the sign-out's 10 s, with some
+20 s over for what no budget bounds: with the warm-up's 120 s and a 60 s deadline that is 190 s inside a 240 s task;
+raise either setting only with the task's timeout (at their maxima, 170 + 100 + 10 s, it would need 300 s), or a run
+is cut off with no result line, which reads as the robot gone silent.
 
 **The job:** args `["journey", "<name>"]`; `task_timeout` 300 s, which holds the warm-up's budget, the deadline and
 the sign-out's budget together (220 s with the defaults, 280 s at most, leaving 20 s for what no budget bounds: one
