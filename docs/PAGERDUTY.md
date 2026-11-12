@@ -20,6 +20,26 @@ alert policy (severity CRITICAL or WARNING)
   -> each person's notification rules (phone, SMS, app, email, Slack)
 ```
 
+## The new account (2026-11-12)
+
+PagerDuty deleted the TPA's first account. The owner made a new one and the same day `pd_setup.py --apply
+--add-rules` rebuilt everything below in it under the same names. What differs from the first account:
+
+- **No AIOps add-on** (the owner: *"We are not using AIops"*). `pdlib.AIOPS` is off, so the design leaves out the two
+  things only the add-on runs: the incident titles ("Incident titles" below) and the alert grouping settings. Each
+  service's orchestration is the three severity rules alone, the incident's title is Monitoring's own summary, and
+  `pd_setup.py` neither reads nor writes a grouping setting. Severity, urgency and priority are unchanged. If the
+  account buys the add-on, set `AIOPS = True` in `pdlib.py` and re-run. The sections on titles and grouping below
+  describe the design with the add-on.
+- **Slack channel: #pd-incidents**, the channel PagerDuty made in the workspace (the first account's
+  #tpa-beta-alerts is gone). The three connections were made through PagerDuty's Slack integration API
+  (`POST app.pagerduty.com/integration-slack/workspaces/<team>/connections`, `notification_type: responder`).
+- **New integration keys.** Each project's `pagerduty` channel in Google Cloud needs the "Rotation" apply below
+  (`-replace`, through `tf_with_keys.py`) before any alert reaches the new account.
+- Rafeale Hill was invited again (admin) and is level 2. Neither person has a phone or the app on the account yet.
+- Live checks: test events on all three services gave warning = low urgency, P3 and critical = high urgency, P1; a
+  dry run prints "0 to create, 0 to update, 30 ok, 0 kept, 0 refused, 0 by hand".
+
 The scripts here are run by a person. The repo holds no key, no Terraform and no
 deploy identity. The PagerDuty key stays in the owner's login keychain.
 
@@ -210,14 +230,15 @@ level 2 reaches nobody. He should then do steps 1 to 3 for himself.
 PagerDuty is already linked to the Sentient Forge Slack workspace, and Jonathan's PagerDuty user is linked to his
 Slack user. Steps for a person:
 
-1. In Sentient Forge, create the channel **#tpa-beta-alerts** and invite **@PagerDuty** to it.
+1. The channel is **#pd-incidents** (2026-11-12). A different channel needs **@PagerDuty** invited to it and
+   `SLACK_CHANNEL` in `pdlib.py` changed.
 2. Connect each of the three "TPA beta ·" services to that channel. Either run `/pd connect` in the channel, or go
    to PagerDuty → Integrations → Slack. Choose:
    - urgency: **all** (high and low);
    - priorities: **all**. An empty priority filter is reported as a gap;
    - events: **triggered, acknowledged, escalated, resolved, reassigned**.
 3. Re-run `python3 scripts/pagerduty/pd_setup.py`. Each service's "Slack:" line turns from "by hand … not
-   connected" to "ok … connected to #tpa-beta-alerts". If a setting is missing, the line names it.
+   connected" to "ok … connected to #pd-incidents". If a setting is missing, the line names it.
 
 Slack is reached **through PagerDuty**, not through Google's own Slack channel. You get one message per incident, with
 Acknowledge and Resolve buttons and every update in its thread. tpa-platform's `alert_slack_channel_ids` stays empty,
