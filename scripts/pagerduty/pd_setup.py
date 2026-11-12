@@ -603,17 +603,20 @@ def ensure_orchestration(pd: PagerDuty, plan: Plan, name: str, sid: str, new: bo
 # ---- Slack (read only) -----------------------------------------------------------------------------------------------
 
 
-def slack_gaps(config: dict, priority_ids: list[str]) -> list[str]:
+def slack_gaps(config: dict, priority_ids: list[str], kind: str | None = None) -> list[str]:
     """What a service's Slack connection lacks against the design, in words."""
     gaps = []
+    if kind in d.SLACK_SILENT_KINDS:
+        gaps.append(f'kind: "{kind}" posts nothing in the channel; remake it as PagerDuty\'s Slack screen does')
     events = config.get("events") or []
     missing = [e.removeprefix("incident.") for e in d.SLACK_EVENTS if e not in events]
     if missing:
         gaps.append("events: add " + ", ".join(missing))
     if config.get("urgency") not in (None, ""):
         gaps.append(f"urgency: both high and low (it is {config['urgency']} only)")
-    chosen = config.get("priorities") or []
-    if "*" not in chosen and not (chosen and set(priority_ids) <= set(chosen)):
+    chosen = config.get("priorities")
+    # No filter at all (null, what PagerDuty's screen writes) is every priority; an empty list is a filter of none.
+    if chosen is not None and "*" not in chosen and not (chosen and set(priority_ids) <= set(chosen)):
         gaps.append("priorities: all")
     return gaps
 
@@ -633,7 +636,7 @@ def report_slack(pd: PagerDuty, plan: Plan, service_ids: list[str | None], prior
             plan.person(what, f'not connected: a person connects it to #{d.SLACK_CHANNEL} (docs/PAGERDUTY.md "Slack")')
         for c in mine:
             where = f"{what} connected to #{c.get('channel_name') or c.get('channel_id')}"
-            gaps = slack_gaps(c.get("config") or {}, priority_ids)
+            gaps = slack_gaps(c.get("config") or {}, priority_ids, c.get("notification_type"))
             if gaps:
                 plan.person(where, "in PagerDuty, set " + "; ".join(gaps))
             else:

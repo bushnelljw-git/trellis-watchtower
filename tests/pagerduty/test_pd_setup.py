@@ -401,21 +401,23 @@ class SlackReport(Base):
         self.ids = {v["name"]: k for k, v in self.state.services.items()}
 
     def connection(self, name, **config):
-        full = {"events": ["incident.triggered", "incident.acknowledged", "incident.escalated", "incident.resolved",
-                           "incident.reassigned"], "urgency": None, "priorities": ["*"]}
-        return {"source_id": self.ids[name], "channel_name": "pd-incidents", "config": {**full, **config}}
+        full = {"events": ["incident.triggered", "incident.resolved", "incident.status_update_published"],
+                "urgency": None, "priorities": None}
+        kind = config.pop("kind", "stakeholder")
+        return {"source_id": self.ids[name], "channel_name": "pd-incidents", "notification_type": kind,
+                "config": {**full, **config}}
 
     def test_connections_are_reported_never_made(self):
         self.state.slack_connections = [
             self.connection("TPA beta · Portal & API"),
-            self.connection("TPA beta · Member records", events=["incident.triggered", "incident.resolved"],
+            self.connection("TPA beta · Member records", events=["incident.triggered"],
                             urgency="high", priorities=["PRI1"]),
         ]
         result = self.pd()
         self.assertIn('ok          Slack: "TPA beta · Portal & API" connected to #pd-incidents', result.stdout)
         self.assertIn('by hand     Slack: "TPA beta · Member records" connected to #pd-incidents  [in PagerDuty, '
-                      'set events: add acknowledged, escalated, reassigned; urgency: both high and low (it is high '
-                      'only); priorities: all]', result.stdout)
+                      'set events: add resolved; urgency: both high and low (it is high only); priorities: all]',
+                      result.stdout)
         self.assertIn('by hand     Slack: "TPA beta · Call centre"  [not connected', result.stdout)
         self.assertEqual([r for r in self.state.requests if r["path"].startswith("/slack") and r["method"] != "GET"],
                          [])
@@ -423,8 +425,23 @@ class SlackReport(Base):
     def test_an_empty_priority_filter_is_a_gap(self):
         self.state.slack_connections = [self.connection("TPA beta · Portal & API", priorities=[])]
         self.assertIn("priorities: all]", self.pd().stdout)
-        self.assertEqual(pd_setup.slack_gaps({"events": [], "priorities": None}, ["PRI1"])[-1], "priorities: all")
+        self.assertEqual(pd_setup.slack_gaps({"events": [], "priorities": []}, ["PRI1"])[-1], "priorities: all")
+        self.assertNotIn("priorities: all", pd_setup.slack_gaps({"events": [], "priorities": None}, ["PRI1"]))
         self.assertNotIn("priorities: all", pd_setup.slack_gaps({"priorities": ["PRI1", "PRI2"]}, ["PRI1", "PRI2"]))
+
+
+class SlackKind(SlackReport):
+    def test_a_responder_connection_is_a_gap_however_complete_it_looks(self):
+        # 2026-11-12: made through the API with every event and priorities ["*"], listed as healthy, posted nothing.
+        self.state.slack_connections = [
+            self.connection("TPA beta · Portal & API", kind="responder", priorities=["*"],
+                            events=["incident.triggered", "incident.acknowledged", "incident.resolved"]),
+            self.connection("TPA beta · Member records"),
+        ]
+        out = self.pd().stdout
+        self.assertIn('by hand     Slack: "TPA beta · Portal & API" connected to #pd-incidents  [in PagerDuty, set '
+                      'kind: "responder" posts nothing in the channel', out)
+        self.assertIn('ok          Slack: "TPA beta · Member records" connected to #pd-incidents', out)
 
 
 class Secrets(Base):

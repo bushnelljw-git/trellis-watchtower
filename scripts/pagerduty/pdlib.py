@@ -104,9 +104,12 @@ SERVICES = [
 # Slack is reached through PagerDuty: each service is connected to this channel (docs/PAGERDUTY.md, "Slack"), the one
 # PagerDuty made in the workspace for the new account (2026-11-12; the first account's was #tpa-beta-alerts).
 # pd_setup.py only reads the connections and reports them; it never makes one.
+# The events are what a connection must carry to post an incident and close it in the channel: the shape PagerDuty's
+# own Slack screen makes (kind "stakeholder", no priority filter). 2026-11-12: three connections made through the API
+# as kind "responder" with every event were accepted, listed as healthy and posted nothing, so that kind is a gap.
 SLACK_CHANNEL = "pd-incidents"
-SLACK_EVENTS = ["incident.triggered", "incident.acknowledged", "incident.escalated", "incident.resolved",
-                "incident.reassigned"]
+SLACK_EVENTS = ["incident.triggered", "incident.resolved"]
+SLACK_SILENT_KINDS = ("responder",)
 
 BUSINESS_SERVICE = "Trellis TPA (beta)"
 BUSINESS_DESCRIPTION = (

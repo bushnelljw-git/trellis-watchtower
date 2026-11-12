@@ -33,7 +33,12 @@ PagerDuty deleted the TPA's first account. The owner made a new one and the same
   describe the design with the add-on.
 - **Slack channel: #pd-incidents**, the channel PagerDuty made in the workspace (the first account's
   #tpa-beta-alerts is gone). The three connections were made through PagerDuty's Slack integration API
-  (`POST app.pagerduty.com/integration-slack/workspaces/<team>/connections`, `notification_type: responder`).
+  (`POST app.pagerduty.com/integration-slack/workspaces/<team>/connections`). Made as `notification_type: responder`
+  with every event and priorities `["*"]`, they were accepted, listed as healthy and **posted nothing**: the owner
+  saw PagerDuty's direct message and an empty channel. Remade the same day (`PUT` on each) in the shape PagerDuty's
+  own Slack screen writes, which does post: `notification_type: stakeholder`, events `incident.triggered`,
+  `incident.resolved`, `incident.status_update_published`, `priorities: null`, `urgency: null`. `pd_setup.py` now
+  reports a "responder" connection as a gap. Which of the three differences was the fault is not known.
 - **New integration keys.** Each project's `pagerduty` channel in Google Cloud needs the "Rotation" apply below
   (`-replace`, through `tf_with_keys.py`) before any alert reaches the new account.
 - Rafeale Hill was invited again (admin) and is level 2. Neither person has a phone or the app on the account yet.
@@ -235,8 +240,10 @@ Slack user. Steps for a person:
 2. Connect each of the three "TPA beta ·" services to that channel. Either run `/pd connect` in the channel, or go
    to PagerDuty → Integrations → Slack. Choose:
    - urgency: **all** (high and low);
-   - priorities: **all**. An empty priority filter is reported as a gap;
-   - events: **triggered, acknowledged, escalated, resolved, reassigned**.
+   - priorities: **all** (no filter). An empty priority filter is reported as a gap;
+   - events: at least **triggered** and **resolved**.
+   Made through the API, a connection takes the screen's shape (`notification_type: stakeholder`, `priorities: null`):
+   a "responder" one posts nothing ("The new account", above).
 3. Re-run `python3 scripts/pagerduty/pd_setup.py`. Each service's "Slack:" line turns from "by hand … not
    connected" to "ok … connected to #pd-incidents". If a setting is missing, the line names it.
 
@@ -457,6 +464,9 @@ value-free line, never its run, tenant or counts.
   `after` cursor, one setting per service here.
 - The Slack integration API: the workspace list answers on `api.pagerduty.com`, and the connections only on
   `app.pagerduty.com`.
+- A Slack connection that the API accepts and lists is not proof that it posts (2026-11-12, kind "responder"), and
+  an incident's log records only the direct message to a person, never the channel post. Prove a connection with a
+  labelled incident and a person's look at the channel.
 - Not yet seen live, from PagerDuty's documentation (the Terraform provider's `pagerduty_event_orchestration_service`
   and the PCL reference): an orchestration update answers `{"orchestration_path": …, "warnings": [{"feature",
   "feature_type", "message", "rule_id", "warning_type"}]}`, with `warning_type` `forbidden_feature` for a feature
