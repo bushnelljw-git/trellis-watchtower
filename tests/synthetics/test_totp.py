@@ -86,5 +86,67 @@ class Minting(unittest.TestCase):
         self.assertEqual(slept, [])
 
 
+class Clock:
+    """A wall clock that a pause moves on."""
+
+    def __init__(self, at: float) -> None:
+        self.at = at
+        self.slept: list[float] = []
+
+    def now(self) -> float:
+        return self.at
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.at += seconds
+
+
+class Fresh(unittest.TestCase):
+    """The broker robot's code (SR-16): always the step after the one current when asked."""
+
+    def test_always_the_next_step_even_with_the_whole_step_left(self):
+        for at, wait in [(60.0, 30.2), (61.0, 29.2), (89.9, 0.3), (75.0, 15.2)]:
+            with self.subTest(at=at):
+                clock = Clock(at)
+                code = totp.fresh(SEED_SHA1_BASE32, now=clock.now, sleep=clock.sleep, budget=90)
+                self.assertEqual(code, totp.code_at(SEED_SHA1, 3), "step 3 starts at 90 s")
+                self.assertEqual(len(clock.slept), 1)
+                self.assertAlmostEqual(clock.slept[0], wait, places=6)
+                self.assertAlmostEqual(totp.wait_for_fresh(at), wait, places=6)
+                self.assertEqual(totp.step_at(clock.at), 3, "the wait ends inside the step the code is for")
+
+    def test_a_run_after_another_never_sends_its_step(self):
+        # One run's code is sent as its step begins; any run that asks after that waits for a later step.
+        clock = Clock(1000.0)
+        first = totp.fresh(SEED_SHA1_BASE32, now=clock.now, sleep=clock.sleep, budget=90)
+        sent_at = clock.at
+        for later in (0.0, 0.1, 5.0, 29.0):
+            with self.subTest(later=later):
+                again = Clock(sent_at + later)
+                code = totp.fresh(SEED_SHA1_BASE32, now=again.now, sleep=again.sleep, budget=90)
+                self.assertNotEqual(code, first)
+                self.assertGreater(totp.step_at(again.at), totp.step_at(sent_at))
+
+    def test_the_code_then_has_its_step_and_one_more(self):
+        clock = Clock(61.0)
+        totp.fresh(SEED_SHA1_BASE32, now=clock.now, sleep=clock.sleep, budget=90)
+        self.assertAlmostEqual(totp.accepted_for(clock.now()), 59.8, places=6)
+
+    def test_no_time_for_the_wait_is_no_wait_and_no_code(self):
+        clock = Clock(61.0)  # a 29.2 s wait
+        for budget in (29.2, 10.0, 0.0, -1.0):
+            with self.subTest(budget=budget), self.assertRaises(totp.NoTime):
+                totp.fresh(SEED_SHA1_BASE32, now=clock.now, sleep=clock.sleep, budget=budget)
+        self.assertEqual(clock.slept, [])
+        totp.fresh(SEED_SHA1_BASE32, now=clock.now, sleep=clock.sleep, budget=29.3)
+        self.assertEqual(len(clock.slept), 1)
+
+    def test_a_bad_secret_fails_before_any_wait(self):
+        clock = Clock(61.0)
+        with self.assertRaises(totp.SecretUnusable):
+            totp.fresh("!!", now=clock.now, sleep=clock.sleep, budget=90)
+        self.assertEqual(clock.slept, [])
+
+
 if __name__ == "__main__":
     unittest.main()

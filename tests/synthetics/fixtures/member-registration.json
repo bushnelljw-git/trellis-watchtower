@@ -1,0 +1,19 @@
+{
+  "about": "auth-notary's software_registration for the member robot's passkey in member-credentials.json (tests only; never a real key): what its job posts to /auth/mfa/confirm, and so what auth stores",
+  "challenge": "egYu3TYd6ftsb41qNuHueQxtKJglVJ8zEQe-wel3Kl4",
+  "user_handle": "INvfTeIK6lraqnzmylto4g",
+  "registration": {
+    "id": "4sDxydCHXY9HS6nGig2BTz9e51i6Urux9rZSaV2rdDM",
+    "rawId": "4sDxydCHXY9HS6nGig2BTz9e51i6Urux9rZSaV2rdDM",
+    "type": "public-key",
+    "authenticatorAttachment": "platform",
+    "response": {
+      "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiZWdZdTNUWWQ2ZnRzYjQxcU51SHVlUXh0S0pnbFZKOHpFUWUtd2VsM0tsNCIsIm9yaWdpbiI6Imh0dHBzOi8vcG9ydGFsLnRyZWxsaXN0cGEuY29tIiwiY3Jvc3NPcmlnaW4iOmZhbHNlfQ",
+      "attestationObject": "o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YVikXbcdzNCN-RNFQ1DkdPmeKzCHhnAqk4MN7CpDHvZPfh5dAAAAAAAAAAAAAAAAAAAAAAAAAAAAIOLA8cnQh12PR0upxooNgU8_XudYulK7sfa2Umldq3QzpQECAyYgASFYIOOjv-58D2c5Odou4jukjePRf3ls33vSQzTaOzljgL0bIlggQDUaMP7356rAMBM7GJN_Xu3c1pbcmSfTDjiqrWHbheY",
+      "transports": [
+        "internal"
+      ]
+    },
+    "clientExtensionResults": {}
+  }
+}

@@ -17,7 +17,8 @@
 #   make stub-test     negative test of the database body-match probes
 #   make pagerduty-test  the PagerDuty scripts against local fakes (also run by check)
 #   make pagerduty-plan  pd_setup.py dry run against the live PagerDuty account (reads only)
-#   make synthetics-test the synthetic journeys against local fakes (also run by check)
+#   make synthetics-test the synthetic journeys against local fakes (also run by check), in a
+#                      virtualenv of synthetics/requirements.lock (made once per lock, under ~/.cache)
 #   make synthetics-image-check build synthetics/'s image under a throwaway tag, check it as
 #                      tpa-platform's builder does, run it offline, remove it
 #
@@ -49,7 +50,7 @@ img = $$($(CHECK_ENV) $(COMPOSE) -f compose.yml --profile db --profile test conf
 .PHONY: help up down check lint probe-check scrub-check stub-test disk-guard build-guard pagerduty-test pagerduty-plan cloud-dashboards cloud-catalogue cloud-image-check synthetics-test synthetics-image-check
 
 help:
-	@sed -n '3,23p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,24p' Makefile | sed 's/^# \{0,1\}//'
 
 disk-guard:
 	@free=$$(docker run --rm $(call img,stub) df -Pm / | awk 'NR==2{print $$4}'); \
@@ -125,9 +126,21 @@ pagerduty-test:
 pagerduty-plan:
 	@python3 scripts/pagerduty/pd_setup.py
 
+# The runner's one package (cryptography, for the member robot's passkey) and the two it requires, from
+# synthetics/requirements.lock alone: hashes required, wheels only, no dependency resolved past the lock, then pip
+# check, as the image's build stage installs them. Outside every workspace folder (an IDE watches those), named by
+# the lock's sha256, so a moved lock is a new virtualenv; SYNTHETICS_VENV puts it elsewhere.
+SYNTHETICS_LOCK_SHA := $(shell shasum -a 256 synthetics/requirements.lock 2>/dev/null | cut -c1-12)
+SYNTHETICS_VENV ?= $(HOME)/.cache/trellis-watchtower/synthetics-venv-$(SYNTHETICS_LOCK_SHA)
+
 synthetics-test:
 	@echo "== synthetics (local fakes only)"
-	@python3 -m unittest discover -s tests/synthetics -q
+	@test -x "$(SYNTHETICS_VENV)/bin/python" && "$(SYNTHETICS_VENV)/bin/python" -m pip check -q >/dev/null 2>&1 \
+	  || { python3 -m venv --clear "$(SYNTHETICS_VENV)" \
+	       && "$(SYNTHETICS_VENV)/bin/python" -m pip install --quiet --disable-pip-version-check --no-input \
+	            --require-hashes --only-binary :all: --no-deps -r synthetics/requirements.lock \
+	       && "$(SYNTHETICS_VENV)/bin/python" -m pip check; }
+	@"$(SYNTHETICS_VENV)/bin/python" -m unittest discover -s tests/synthetics -q
 
 synthetics-image-check: disk-guard
 	@./scripts/synthetics_image_check.sh

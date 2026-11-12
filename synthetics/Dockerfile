@@ -13,20 +13,33 @@
 # - The base pinned by digest: python:3.12-slim's multi-platform index, the same digest tpa-platform's Python images
 #   use, so the strip script's package list fits it. To move it, resolve the new digest read-only
 #   (`docker buildx imagetools inspect python:3.12-slim`) and check scripts/image_strip.py's PURGE against it.
-# - No third-party package: standard library only, so no pip install and no lock. The modules are copied straight into
-#   site-packages, root's and read-only to the job's user; `python -I -c "import synthetics"` is the start check's
-#   import.
+# - One third-party package, cryptography, which the member robot signs its passkey assertion with (synthetics/passkey.py;
+#   bodyfirst tasks/signin-robots SECURITY-REVIEW.md SR-13, never hand-written signing), and the two it requires, cffi
+#   and pycparser. synthetics/requirements.lock pins the three byte for byte as auth-notary's lock does, every one an
+#   exact `==` with its sha256s. The build stage `deps` installs them with --require-hashes --only-binary :all:
+#   --no-deps (only those wheels: no sdist, no build backend fetched without a hash, nothing the lock does not name)
+#   into a folder of their own, which the image copies into site-packages; `pip check` then holds the three together,
+#   before the strip removes pip. The modules are copied straight into site-packages beside them, root's and
+#   read-only to the job's user; `python -I -c "import synthetics"` is the start check's import.
 # - 10001:10001, a numeric uid:gid with its own passwd row and no home.
 # - No shell, package manager, network tool, perl, Python installer or setuid program: scripts/image_strip.py, byte for
 #   byte tpa-platform's (tests/synthetics/test_image_policy.py pins its sha256), as the last build step, in exec form.
 #   Everything after it is exec form too. `id` (coreutils) stays, which the start check runs.
+FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f AS deps
+COPY synthetics/requirements.lock /tmp/requirements.lock
+RUN ["python", "-I", "-m", "pip", "install", "--no-cache-dir", "--disable-pip-version-check", "--no-input", \
+     "--require-hashes", "--only-binary", ":all:", "--no-deps", "--target", "/deps", "-r", "/tmp/requirements.lock"]
+
 FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
 
+COPY --from=deps /deps/ /usr/local/lib/python3.12/site-packages/
 COPY synthetics/__init__.py synthetics/__main__.py synthetics/client.py synthetics/iap.py synthetics/journeys.py \
-     synthetics/result.py synthetics/totp.py /usr/local/lib/python3.12/site-packages/synthetics/
+     synthetics/passkey.py synthetics/result.py synthetics/totp.py /usr/local/lib/python3.12/site-packages/synthetics/
 
 RUN groupadd --gid 10001 app \
  && useradd --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
+
+RUN ["python", "-I", "-m", "pip", "check"]
 
 RUN --mount=type=bind,source=scripts/image_strip.py,target=/tmp/image_strip.py \
     ["python", "-I", "-B", "/tmp/image_strip.py"]

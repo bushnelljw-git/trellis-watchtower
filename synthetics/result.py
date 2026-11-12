@@ -13,7 +13,9 @@ when the runner itself broke: its configuration or mounted credentials are
 unusable (`config`), its own network path to the edge never came up inside
 the warm-up's budget (`egress`: Cloud NAT's cold start, not the site), the
 metadata server would not mint its IAP token (`iap_token`: the job's own
-environment, not the site), or it hit a bug (`runner`). An `error` run exits
+environment, not the site), the member robot could not sign its passkey
+assertion (`passkey`), or it hit a bug (`runner`). A sign-in robot that auth
+refuses because Sign-in checks is switched off is `skipped` / `disabled`. An `error` run exits
 non-zero,
 so the job's own `jobs-failed` means "the job is broken", never "the site
 failed a check" (the orchestrator's ruling, 2026-10-11, following design §3).
@@ -30,13 +32,18 @@ from collections.abc import Mapping
 
 MESSAGE = "synthetic_result"
 
-JOBS = ("staff-sign-in", "ops-desk", "crm")
+#: The staff journeys J1 to J3, then the two sign-in robots on the public portal (ruling SR-OR-1).
+JOBS = ("staff-sign-in", "ops-desk", "crm", "member-sign-in", "broker-sign-in")
 
 OUTCOMES = ("pass", "fail", "skipped", "error")
 
-#: Why a run ended as it did. `ok` is the only pass; `paused` and
-#: `not_configured` the only skips; `config`, `egress`, `iap_token` and `runner`
-#: the only errors; the rest are failures, the site's answer to a check.
+#: Why a run ended as it did. `ok` is the only pass; `paused`, `not_configured`
+#: and `disabled` the only skips; `config`, `egress`, `iap_token`, `runner` and
+#: `passkey` the only errors; the rest are failures, the site's answer to a check.
+#: The sign-in robots add `disabled` (auth refused them because Sign-in checks
+#: is switched off: no verdict), `passkey` (the runner could not sign its
+#: assertion), `denied` (a 403 refusal of any other reason at sign-in) and
+#: `widened` (`/auth/me` names more than the robot's one hat role).
 CODES = (
     "ok",
     "paused",
@@ -56,10 +63,14 @@ CODES = (
     "rate_limited",
     "csrf",
     "shape",
+    "disabled",
+    "passkey",
+    "denied",
+    "widened",
 )
 PASS_CODES = ("ok",)
-SKIP_CODES = ("paused", "not_configured")
-ERROR_CODES = ("config", "egress", "iap_token", "runner")
+SKIP_CODES = ("paused", "not_configured", "disabled")
+ERROR_CODES = ("config", "egress", "iap_token", "runner", "passkey")
 #: The outcome each code belongs to.
 OUTCOME_OF = {
     code: ("pass" if code in PASS_CODES else "skipped" if code in SKIP_CODES else
@@ -67,8 +78,9 @@ OUTCOME_OF = {
     for code in CODES
 }
 
-#: The steps, in the order the journeys take them. `none` is a pass or a skip,
-#: or an error before any step began.
+#: The steps, in the order the journeys take them (the sign-in robots start
+#: with the last three: the portal's shell, its release and its main script).
+#: `none` is a pass or a skip, or an error before any step began.
 STEPS = (
     "none",
     "config",
@@ -87,6 +99,8 @@ STEPS = (
     "desk_version_employers",
     "logout",
     "portal_shell",
+    "portal_release",
+    "portal_bundle",
 )
 
 STATUS_CLASSES = ("2xx", "3xx", "4xx", "5xx", "none")

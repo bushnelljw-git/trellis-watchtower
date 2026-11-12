@@ -12,7 +12,9 @@
   journey has one, rides in `Authorization`.
 - **Browser-shaped writes.** Every request carries `Sec-Fetch-Site: same-origin`;
   every write carries `Origin` and, when the session has one, auth's CSRF value
-  (`__Host-tpa-csrf` into `X-CSRF-Token`, auth's double submit).
+  (`__Host-tpa-csrf` into `X-CSRF-Token`, auth's double submit). Once a journey
+  has read the portal's release (the sign-in robots), every request names it in
+  `X-Client-Release`, as the portal's own requests do.
 - **Timeouts.** Each request has the smaller of its step timeout and what is
   left of the run's deadline (a sign-out has its own budget instead: see
   journeys.py). The connection takes what it needs of that (`dial`, below),
@@ -413,6 +415,9 @@ class Session:
         self._deadline = deadline
         self.cookies = CookieJar()
         self.last_status: int | None = None
+        #: The portal release every later request names in `X-Client-Release`, as the portal's own interceptor
+        #: stamps it (the sign-in robots set it from `/tpa/release.json`, already checked to be a plain token).
+        self.release: str | None = None
 
     def _timeout(self) -> float:
         return min(self._step_timeout, self._deadline.left())
@@ -447,6 +452,8 @@ class Session:
             headers["Authorization"] = f"Bearer {bearer}"
         if tenant:
             headers["X-Tenant-Id"] = tenant
+        if self.release:
+            headers["X-Client-Release"] = self.release
         cookie_path = urllib.parse.urlsplit(path).path
         cookie = self.cookies.header_for(cookie_path)
         if cookie:

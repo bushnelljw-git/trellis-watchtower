@@ -44,6 +44,38 @@ GOLDEN_SKIP = (
     '"code":"not_configured","step":"none","status_class":"none","elapsed_ms":0,"steps_ms":{}}'
 )
 
+# The sign-in robots (ruling SR-OR-1): a member's pass, a broker switched off (no verdict), a member whose
+# /auth/me named more than its hat (a failure), and a passkey the runner could not sign (its error).
+GOLDEN_MEMBER_PASS = (
+    '{"severity":"INFO","level":"INFO","message":"synthetic_result","job":"member-sign-in","outcome":"pass",'
+    '"code":"ok","step":"none","status_class":"2xx","elapsed_ms":2310,"steps_ms":{"config":0,"egress":1008,'
+    '"secrets":3,"portal_shell":58,"portal_release":21,"portal_bundle":44,"login":402,"mfa_verify":231,"me":38,'
+    '"logout":30}}'
+)
+GOLDEN_BROKER_DISABLED = (
+    '{"severity":"INFO","level":"INFO","message":"synthetic_result","job":"broker-sign-in","outcome":"skipped",'
+    '"code":"disabled","step":"none","status_class":"none","elapsed_ms":1561,"steps_ms":{"config":0,"egress":1007,'
+    '"secrets":0,"portal_shell":61,"portal_release":20,"portal_bundle":40,"login":398}}'
+)
+GOLDEN_WIDENED = (
+    '{"severity":"ERROR","level":"ERROR","message":"synthetic_result","job":"member-sign-in","outcome":"fail",'
+    '"code":"widened","step":"me","status_class":"2xx","elapsed_ms":2287,"steps_ms":{"config":0,"egress":1010,'
+    '"secrets":3,"portal_shell":57,"portal_release":22,"portal_bundle":43,"login":405,"mfa_verify":229,"me":36}}'
+)
+GOLDEN_PASSKEY = (
+    '{"severity":"ERROR","level":"ERROR","message":"synthetic_result","job":"member-sign-in","outcome":"error",'
+    '"code":"passkey","step":"mfa_verify","status_class":"none","elapsed_ms":1989,"steps_ms":{"config":0,'
+    '"egress":1009,"secrets":3,"portal_shell":59,"portal_release":21,"portal_bundle":42,"login":401,'
+    '"mfa_verify":1}}'
+)
+ROBOT_STEPS = ("config", "egress", "secrets", "portal_shell", "portal_release", "portal_bundle", "login",
+               "mfa_verify", "me", "logout")
+
+
+def robot_timings(*ms: int) -> dict[str, int]:
+    """A sign-in robot's steps_ms: the steps it ran, in order, with these times."""
+    return dict(zip(ROBOT_STEPS[: len(ms)], ms, strict=True))
+
 PASS_FIELDS = dict(
     job="staff-sign-in", outcome="pass", code="ok", step="none", status_class="2xx", elapsed_ms=5222,
     steps_ms={"config": 0, "egress": 1012, "secrets": 0, "iap_token": 38, "ops_shell": 61, "ops_release": 22,
@@ -79,9 +111,25 @@ class Golden(unittest.TestCase):
         self.assertEqual(result.render(job="crm", outcome="skipped", code="not_configured", step="none",
                                        status_class="none", elapsed_ms=0, steps_ms={}), GOLDEN_SKIP)
 
+    def test_the_sign_in_robots(self):
+        self.assertEqual(result.render(
+            job="member-sign-in", outcome="pass", code="ok", step="none", status_class="2xx", elapsed_ms=2310,
+            steps_ms=robot_timings(0, 1008, 3, 58, 21, 44, 402, 231, 38, 30)), GOLDEN_MEMBER_PASS)
+        self.assertEqual(result.render(
+            job="broker-sign-in", outcome="skipped", code="disabled", step="none", status_class="none",
+            elapsed_ms=1561, steps_ms=robot_timings(0, 1007, 0, 61, 20, 40, 398)), GOLDEN_BROKER_DISABLED)
+        self.assertEqual(result.render(
+            job="member-sign-in", outcome="fail", code="widened", step="me", status_class="2xx", elapsed_ms=2287,
+            steps_ms=robot_timings(0, 1010, 3, 57, 22, 43, 405, 229, 36)), GOLDEN_WIDENED)
+        self.assertEqual(result.render(
+            job="member-sign-in", outcome="error", code="passkey", step="mfa_verify", status_class="none",
+            elapsed_ms=1989, steps_ms=robot_timings(0, 1009, 3, 59, 21, 42, 401, 1)), GOLDEN_PASSKEY)
+        self.assertEqual(result.OUTCOME_OF["denied"], "fail")
+
     def test_readme_carries_the_same_lines(self):
         readme = (ROOT / "synthetics" / "README.md").read_text(encoding="utf-8")
-        for golden in (GOLDEN_PASS, GOLDEN_FAIL, GOLDEN_ERROR, GOLDEN_EGRESS, GOLDEN_SKIP):
+        for golden in (GOLDEN_PASS, GOLDEN_FAIL, GOLDEN_ERROR, GOLDEN_EGRESS, GOLDEN_SKIP, GOLDEN_MEMBER_PASS,
+                       GOLDEN_BROKER_DISABLED, GOLDEN_WIDENED, GOLDEN_PASSKEY):
             self.assertIn(golden, readme)
         for values in (result.JOBS, result.OUTCOMES, result.CODES, result.STEPS, result.STATUS_CLASSES):
             for value in values:
@@ -174,6 +222,10 @@ class Refusals(unittest.TestCase):
         self.refuse(outcome="fail", code="paused", step="login")
         # A broken runner is never a check's verdict, and a check's verdict never the runner's error.
         self.refuse(outcome="fail", code="config", step="config")
+        # Switched off is no verdict (never a failure), and a passkey the runner could not sign is its own error.
+        self.refuse(outcome="fail", code="disabled", step="login")
+        self.refuse(outcome="fail", code="passkey", step="mfa_verify")
+        self.refuse(outcome="skipped", code="widened")
         self.refuse(outcome="fail", code="runner", step="login")
         self.refuse(outcome="fail", code="egress", step="egress")
         self.refuse(outcome="error", code="status", step="login")
@@ -182,9 +234,10 @@ class Refusals(unittest.TestCase):
     def test_every_code_has_one_outcome(self):
         self.assertEqual(set(result.OUTCOME_OF), set(result.CODES))
         self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "error"},
-                         {"config", "egress", "iap_token", "runner"})
+                         {"config", "egress", "iap_token", "runner", "passkey"})
         self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "pass"}, {"ok"})
-        self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "skipped"}, {"paused", "not_configured"})
+        self.assertEqual({c for c, o in result.OUTCOME_OF.items() if o == "skipped"},
+                         {"paused", "not_configured", "disabled"})
 
     def test_steps(self):
         # A failure names its step; a pass or a skip names none; an error names where it broke, if anywhere.

@@ -26,8 +26,10 @@ sys.path.insert(0, str(HERE))
 
 import synthetic_fakes as fakes  # noqa: E402
 
+from cryptography.hazmat.primitives.asymmetric import ec  # noqa: E402
+
 from synthetics import __main__ as cli  # noqa: E402
-from synthetics import client, journeys, result  # noqa: E402
+from synthetics import client, journeys, result, totp  # noqa: E402
 from synthetics.journeys import Tools  # noqa: E402
 
 #: The start of a TOTP step, so a code minted at it never waits.
@@ -1097,6 +1099,530 @@ class EntryPoint(Case):
         done = subprocess.run([sys.executable, "-c", "import synthetics, synthetics.journeys, synthetics.__main__"],
                               env=env, capture_output=True, text=True, timeout=30, cwd=self.tmp.name)
         self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
+
+
+
+# --- the sign-in robots -------------------------------------------------------------
+
+ROBOT_STEPS = ["config", "egress", "secrets", "portal_shell", "portal_release", "portal_bundle", "login",
+               "mfa_verify", "me", "logout"]
+ROBOT_ROUTES = ["portal_shell", "portal_release", "portal_bundle", "login", "mfa_verify", "me", "logout"]
+
+
+class WallClock:
+    """The wall clock a pause moves on, shared by the runner's Tools and the fake auth (a broker's code)."""
+
+    def __init__(self, at: float) -> None:
+        self.at = at
+        self.slept: list[float] = []
+
+    def now(self) -> float:
+        return self.at
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.at += seconds
+
+    def tools(self) -> Tools:
+        return Tools(now=self.now, sleep=self.sleep)
+
+
+def member_credentials(directory: str, origin: str, **changes: object) -> str:
+    """The fixture's member secret, on this fake's origin (its rp the fake's host), with `changes` over it."""
+    value = json.loads(json.dumps(fakes.MEMBER_CREDENTIALS))
+    value["passkey"]["origin"] = origin
+    value["passkey"]["rp_id"] = "127.0.0.1"
+    for name, changed in changes.items():
+        if name.startswith("passkey_"):
+            value["passkey"][name[len("passkey_"):]] = changed
+        elif changed is None:
+            del value[name]
+        else:
+            value[name] = changed
+    path = os.path.join(directory, "member.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(value, handle)
+    return path
+
+
+def broker_credentials(directory: str, **changes: object) -> str:
+    value = {"email": fakes.BROKER_EMAIL, "password": fakes.BROKER_PASSWORD, "totp_secret": fakes.BROKER_TOTP_SECRET}
+    for name, changed in changes.items():
+        if changed is None:
+            del value[name]
+        else:
+            value[name] = changed
+    path = os.path.join(directory, "broker.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(value, handle)
+    return path
+
+
+class RobotCase(Case):
+    def robot_env(self, fake: fakes.Fake, job: str, **extra: str) -> dict[str, str]:
+        env = {"SYNTHETICS_PORTAL_ORIGIN": fake.base}
+        if "SYNTHETICS_CREDENTIALS_FILE" not in extra:
+            env["SYNTHETICS_CREDENTIALS_FILE"] = (member_credentials(self.tmp.name, fake.base)
+                                                  if job == "member-sign-in" else broker_credentials(self.tmp.name))
+        env.update(extra)
+        return {k: v for k, v in env.items() if v is not None}
+
+    def run_robot(self, job: str, env: dict[str, str], *, tools: Tools | None = None) -> tuple[dict, int]:
+        # Local mode (--no-iap): the fakes are loopback, and the cloud mode takes production's portal alone.
+        return self.run_journey(job, env, use_iap=False, tools=tools)
+
+    def assert_skipped(self, line: dict, exit_code: int, code: str) -> None:
+        self.assertEqual((line["outcome"], line["code"], line["step"], line["status_class"], line["severity"]),
+                         ("skipped", code, "none", "none", "INFO"))
+        self.assertEqual(exit_code, 0)
+
+    def assert_signed_out(self, fake: fakes.Fake, session: str) -> None:
+        logout = fake.requests[-1]
+        self.assertEqual(logout["route"], "logout")
+        self.assertEqual(fake.routes().count("logout"), 1)
+        self.assertIn(f"__Host-tpa-session={session}", logout["cookie"])
+        self.assertEqual((logout["csrf"], logout["origin"]), (fakes.CSRF, fake.base))
+
+
+class MemberSignIn(RobotCase):
+    JOB = "member-sign-in"
+
+    def run_member(self, fake: fakes.Fake, **extra: str) -> tuple[dict, int]:
+        return self.run_robot(self.JOB, self.robot_env(fake, self.JOB, **extra))
+
+    def test_pass(self):
+        with fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
+            line, code = self.run_member(fake)
+            self.assert_silent(fake, 2)
+        self.assertEqual((line["job"], line["outcome"], line["code"], line["step"], line["status_class"], code),
+                         (self.JOB, "pass", "ok", "none", "2xx", 0))
+        self.assertEqual(list(line["steps_ms"]), ROBOT_STEPS)
+        self.assertEqual(fake.routes(), ROBOT_ROUTES)
+        self.assertEqual(fake.refusals, [])
+        for request in fake.requests:
+            self.assertIsNone(request["proxy_authorization"], "no IAP, ever")
+            self.assertIsNone(request["authorization"])
+            self.assertEqual(request["sec_fetch_site"], "same-origin")
+            self.assertEqual(request["host"], f"127.0.0.1:{fake.port}")
+        # X-Client-Release from release.json on every request after it, as the portal's interceptor stamps it.
+        self.assertEqual([r["release"] for r in fake.requests],
+                         [None, None] + [fakes.RELEASE_ID] * (len(ROBOT_ROUTES) - 2))
+        login, verify = fake.requests[3], fake.requests[4]
+        self.assertEqual(login["payload"], {"email": fakes.MEMBER_EMAIL, "password": fakes.MEMBER_PASSWORD,
+                                            "audience": "member"})
+        self.assertEqual((login["origin"], login["content_type"]), (fake.base, "application/json"))
+        self.assertEqual(set(verify["payload"]), {"challenge_id", "assertion"})
+        self.assertEqual(verify["payload"]["challenge_id"], "chl_sentinel_member")
+        self.assertEqual(len(fake.assertions_received), 1)
+        self.assertEqual(fake.codes_received, [])
+        self.assert_signed_out(fake, fakes.ROBOT_SESSIONS["member"])
+
+    def test_each_step_failing(self):
+        for route in ROBOT_ROUTES:
+            with self.subTest(step=route), fakes.Fake(iap=False, fail={route: 503}, clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_member(fake)
+                self.assert_failed(line, code, step=route, code="status", status_class="5xx")
+                routes = fake.routes()
+                self.assertEqual(routes[: routes.index(route) + 1], ROBOT_ROUTES[: ROBOT_ROUTES.index(route) + 1])
+                self.assertLessEqual(routes.count("login"), 1)
+                self.assertLessEqual(routes.count("mfa_verify"), 1)
+                if route == "me":
+                    self.assert_signed_out(fake, fakes.ROBOT_SESSIONS["member"])
+                elif route != "logout":
+                    self.assertNotIn("logout", routes)
+
+    def test_switched_off_is_disabled_never_a_failure(self):
+        for route, behaviour in [("login", "checks_off"), ("login", "checks_off_code"), ("mfa_verify", "checks_off")]:
+            with self.subTest(route=route, behaviour=behaviour), fakes.Fake(
+                    iap=False, fail={route: behaviour}, clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_member(fake)
+                self.assert_skipped(line, code, "disabled")
+                self.assertEqual(fake.refusals, ["sign_in_checks_off"])
+                self.assertEqual(fake.routes()[-1], route, "it stops there")
+                self.assertNotIn("logout", fake.routes(), "no session was born")
+                self.assertIn(route, line["steps_ms"])
+
+    def test_any_other_refusal_is_denied(self):
+        for route in ("login", "mfa_verify"):
+            with self.subTest(route=route), fakes.Fake(iap=False, fail={route: "audience_not_held"},
+                                                       clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_member(fake)
+                self.assert_failed(line, code, step=route, code="denied", status_class="4xx")
+                self.assertNotIn("logout", fake.routes())
+        with fakes.Fake(iap=False, fail={"login": 403}, clock=lambda: FIXED_NOW) as fake:
+            line, code = self.run_member(fake)
+        self.assert_failed(line, code, step="login", code="denied", status_class="4xx")
+
+    def test_a_widened_robot_trips_the_wire_stops_and_signs_out(self):
+        for behaviour in ("two_tenants", "extra_role", "other_role", "crm_tenant", "sso"):
+            with self.subTest(behaviour=behaviour), fakes.Fake(iap=False, fail={"me": behaviour},
+                                                               clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_member(fake)
+                self.assert_failed(line, code, step="me", code="widened", status_class="2xx")
+                self.assertEqual(fake.routes(), ROBOT_ROUTES)
+                self.assert_signed_out(fake, fakes.ROBOT_SESSIONS["member"])
+
+    def test_a_me_that_is_not_the_robots_session_is_shape(self):
+        for behaviour in ("aal1", "must_replace", "other_hat", "other_pin", "no_tenants", "staff", "deep_json"):
+            with self.subTest(behaviour=behaviour), fakes.Fake(iap=False, fail={"me": behaviour},
+                                                               clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_member(fake)
+                self.assert_failed(line, code, step="me", code="shape", status_class="2xx")
+                self.assert_signed_out(fake, fakes.ROBOT_SESSIONS["member"])
+
+    def test_a_login_the_passkey_cannot_answer_is_shape(self):
+        for behaviour in ("wrong_rp", "no_options", "bad_challenge", "check_email", "no_factor", "deep_json"):
+            with self.subTest(behaviour=behaviour), fakes.Fake(iap=False, fail={"login": behaviour},
+                                                               clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_member(fake)
+                self.assert_failed(line, code, step="login", code="shape", status_class="2xx")
+                self.assertNotIn("mfa_verify", fake.routes())
+                self.assertEqual(fake.assertions_received, [])
+
+    def test_a_verify_answer_that_is_not_the_hats_session(self):
+        with fakes.Fake(iap=False, fail={"mfa_verify": "no_cookies"}, clock=lambda: FIXED_NOW) as fake:
+            line, code = self.run_member(fake)
+        self.assert_failed(line, code, step="mfa_verify", code="shape", status_class="2xx")
+        self.assertNotIn("logout", fake.routes())
+        for behaviour in ("no_audience", "deep_json"):
+            with self.subTest(behaviour=behaviour), fakes.Fake(iap=False, fail={"mfa_verify": behaviour},
+                                                               clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_member(fake)
+                self.assert_failed(line, code, step="mfa_verify", code="shape", status_class="2xx")
+                self.assert_signed_out(fake, fakes.ROBOT_SESSIONS["member"])
+
+    def test_the_portal_steps(self):
+        for route, behaviour in [("portal_shell", "no_main_script"), ("portal_shell", "two_main_scripts"),
+                                 ("portal_shell", "no_base_href"), ("portal_release", "bad_release"),
+                                 ("portal_release", "no_release"), ("portal_release", "not_json"),
+                                 ("portal_bundle", "not_js"), ("portal_bundle", "empty")]:
+            with self.subTest(route=route, behaviour=behaviour), fakes.Fake(
+                    iap=False, fail={route: behaviour}, clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_member(fake)
+                self.assert_failed(line, code, step=route, code="shape", status_class="2xx")
+                self.assertNotIn("login", fake.routes(), "no password is sent past a broken portal")
+                self.assertNotIn("X-Injected", json.dumps(fake.requests))
+
+    def test_sign_in_refusals(self):
+        for route, status, expected in [("login", 401, "credentials"), ("login", 423, "locked"),
+                                        ("login", 429, "rate_limited"), ("mfa_verify", 401, "credentials"),
+                                        ("mfa_verify", 410, "status")]:
+            with self.subTest(route=route, status=status), fakes.Fake(iap=False, fail={route: status},
+                                                                      clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_member(fake)
+                self.assert_failed(line, code, step=route, code=expected, status_class="4xx")
+                self.assertEqual(fake.routes().count("login"), 1, "one password per run, never retried")
+                self.assertLessEqual(fake.routes().count("mfa_verify"), 1)
+                self.assertNotIn("logout", fake.routes())
+
+    def test_a_key_auth_does_not_hold_is_credentials(self):
+        other = ec.generate_private_key(ec.SECP256R1()).private_numbers()
+        jwk = {"kty": "EC", "crv": "P-256", "x": fakes.b64url(other.public_numbers.x.to_bytes(32, "big")),
+               "y": fakes.b64url(other.public_numbers.y.to_bytes(32, "big")),
+               "d": fakes.b64url(other.private_value.to_bytes(32, "big"))}
+        with fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
+            env = self.robot_env(fake, self.JOB)
+            env["SYNTHETICS_CREDENTIALS_FILE"] = member_credentials(self.tmp.name, fake.base, passkey_private_jwk=jwk)
+            line, code = self.run_robot(self.JOB, env)
+        self.assert_failed(line, code, step="mfa_verify", code="credentials", status_class="4xx")
+        self.assertEqual(fake.refusals, ["malformed or unsigned"])
+
+    def test_the_wrong_password_is_credentials(self):
+        with fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
+            env = self.robot_env(fake, self.JOB)
+            env["SYNTHETICS_CREDENTIALS_FILE"] = member_credentials(self.tmp.name, fake.base, password="not-it")
+            line, code = self.run_robot(self.JOB, env)
+        self.assert_failed(line, code, step="login", code="credentials", status_class="4xx")
+
+    def test_a_signature_that_cannot_be_made_is_the_runners_error(self):
+        original = journeys.passkey.assertion
+
+        def unsigned(*_args):
+            raise journeys.passkey.Unsigned("sentinel")
+
+        journeys.passkey.assertion = unsigned
+        try:
+            with fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_member(fake)
+        finally:
+            journeys.passkey.assertion = original
+        self.assert_error(line, code, step="mfa_verify", code="passkey")
+        self.assertNotIn("mfa_verify", fake.routes())
+
+    def test_logout_refused_is_csrf(self):
+        with fakes.Fake(iap=False, fail={"logout": 403}, clock=lambda: FIXED_NOW) as fake:
+            line, code = self.run_member(fake)
+        self.assert_failed(line, code, step="logout", code="csrf", status_class="4xx")
+        self.assertEqual(fake.routes().count("logout"), 1)
+
+    def test_iap_never_asked(self):
+        def no_token(*_args, **_kwargs):
+            raise AssertionError("the robots never ask the metadata server")
+
+        original = journeys.iap.fetch_id_token
+        journeys.iap.fetch_id_token = no_token
+        try:
+            with fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_member(fake, SYNTHETICS_IAP_AUDIENCE=fakes.AUDIENCE,
+                                             SYNTHETICS_METADATA_HOST=fake.metadata_host)
+        finally:
+            journeys.iap.fetch_id_token = original
+        self.assertEqual((line["outcome"], code), ("pass", 0))
+        self.assertNotIn("metadata", fake.routes())
+
+
+class BrokerSignIn(RobotCase):
+    JOB = "broker-sign-in"
+    #: Just after a step began: a run that minted at once would have most of the step left.
+    START = FIXED_NOW
+
+    def run_broker(self, fake: fakes.Fake, clock: WallClock, **extra: str) -> tuple[dict, int]:
+        return self.run_robot(self.JOB, self.robot_env(fake, self.JOB, **extra), tools=clock.tools())
+
+    def test_pass_with_the_next_steps_code(self):
+        clock = WallClock(self.START)
+        with fakes.Fake(iap=False, clock=clock.now) as fake:
+            line, code = self.run_broker(fake, clock)
+        self.assertEqual((line["job"], line["outcome"], line["code"], code), (self.JOB, "pass", "ok", 0))
+        self.assertEqual(list(line["steps_ms"]), ROBOT_STEPS)
+        self.assertEqual(fake.routes(), ROBOT_ROUTES)
+        self.assertEqual(fake.requests[3]["payload"], {"email": fakes.BROKER_EMAIL, "password": fakes.BROKER_PASSWORD,
+                                                       "audience": "broker"})
+        self.assertEqual(set(fake.requests[4]["payload"]), {"challenge_id", "code"})
+        started = int(self.START // 30)
+        # It waited for the step after the one it asked in, and sent that step's code.
+        self.assertEqual(fake.codes_received, [fakes.totp_code(fakes.BROKER_TOTP_SECRET, started + 1)])
+        self.assertEqual(fake.last_step, {"broker": started + 1})
+        # The last pause is that wait (the warm-up's pauses before it moved the clock too).
+        self.assertAlmostEqual(clock.slept[-1], totp.wait_for_fresh(self.START + sum(clock.slept[:-1])), places=6)
+        self.assertGreater(clock.slept[-1], 25)
+        self.assert_no_received_code_printed(fake, line)
+        self.assert_signed_out(fake, fakes.ROBOT_SESSIONS["broker"])
+
+    def test_two_runs_back_to_back_never_send_one_code_twice(self):
+        # The second starts the moment the first ends (a hand-started run after the schedule's, say): auth
+        # refuses a step at or below the last it accepted, and the second never sends one.
+        clock = WallClock(self.START)
+        with fakes.Fake(iap=False, clock=clock.now) as fake:
+            first, _ = self.run_broker(fake, clock)
+            second, _ = self.run_broker(fake, clock)
+        self.assertEqual((first["outcome"], second["outcome"]), ("pass", "pass"))
+        self.assertEqual(len(set(fake.codes_received)), 2)
+        self.assertEqual(fake.refusals, [])
+
+    def test_the_wait_is_what_keeps_a_code_from_being_sent_twice(self):
+        # The fake refuses a replayed step as auth does: minting at once, the second run would fail.
+        original = journeys.totp.fresh
+
+        def at_once(secret, *, now, sleep, budget):
+            return totp.code_at(totp.decode_base32(secret), totp.step_at(now()))
+
+        journeys.totp.fresh = at_once
+        try:
+            clock = WallClock(self.START)
+            with fakes.Fake(iap=False, clock=clock.now) as fake:
+                first, _ = self.run_broker(fake, clock)
+                second, code = self.run_broker(fake, clock)
+        finally:
+            journeys.totp.fresh = original
+        self.assertEqual(first["outcome"], "pass")
+        self.assert_failed(second, code, step="mfa_verify", code="credentials", status_class="4xx")
+        self.assertEqual(fake.refusals, ["replayed"])
+
+    def test_no_time_for_the_wait_sends_no_code(self):
+        clock = WallClock(self.START)  # a 29.2 s wait, and a 1 s deadline
+        with fakes.Fake(iap=False, clock=clock.now) as fake:
+            line, code = self.run_broker(fake, clock, SYNTHETICS_DEADLINE_S="1")
+        self.assert_failed(line, code, step="mfa_verify", code="timeout", status_class="none")
+        self.assertEqual(fake.codes_received, [])
+        self.assertNotIn("mfa_verify", fake.routes())
+        self.assertEqual(clock.slept.count(29.2), 0, "and no wait")
+
+    def test_more_than_one_task_at_once_refuses_to_run(self):
+        for value, outcome in [("2", "error"), ("10", "error"), ("1", "pass"), (None, "pass")]:
+            clock = WallClock(self.START)
+            with self.subTest(count=value), fakes.Fake(iap=False, clock=clock.now) as fake:
+                line, code = self.run_broker(fake, clock, CLOUD_RUN_TASK_COUNT=value)
+                self.assertEqual(line["outcome"], outcome)
+                if outcome == "error":
+                    self.assert_error(line, code, step="config", code="config")
+                    self.assertEqual((fake.requests, fake.connections), ([], []))
+
+    def test_a_login_that_offers_no_authenticator_code_is_shape(self):
+        clock = WallClock(self.START)
+        with fakes.Fake(iap=False, fail={"login": "no_factor"}, clock=clock.now) as fake:
+            line, code = self.run_broker(fake, clock)
+        self.assert_failed(line, code, step="login", code="shape", status_class="2xx")
+        self.assertEqual(fake.codes_received, [])
+
+    def test_switched_off_is_disabled(self):
+        for route in ("login", "mfa_verify"):
+            clock = WallClock(self.START)
+            with self.subTest(route=route), fakes.Fake(iap=False, fail={route: "checks_off"}, clock=clock.now) as fake:
+                line, code = self.run_broker(fake, clock)
+                self.assert_skipped(line, code, "disabled")
+                self.assertNotIn("logout", fake.routes())
+
+    def test_a_wrong_seed_is_credentials(self):
+        clock = WallClock(self.START)
+        with fakes.Fake(iap=False, clock=clock.now) as fake:
+            env = self.robot_env(fake, self.JOB)
+            env["SYNTHETICS_CREDENTIALS_FILE"] = broker_credentials(self.tmp.name, totp_secret="JBSWY3DPEHPK3PXP")
+            line, code = self.run_robot(self.JOB, env, tools=clock.tools())
+        self.assert_failed(line, code, step="mfa_verify", code="credentials", status_class="4xx")
+        self.assertEqual(fake.refusals, ["code"])
+
+    def test_widened_and_signed_out(self):
+        clock = WallClock(self.START)
+        with fakes.Fake(iap=False, fail={"me": "extra_role"}, clock=clock.now) as fake:
+            line, code = self.run_broker(fake, clock)
+        self.assert_failed(line, code, step="me", code="widened", status_class="2xx")
+        self.assert_signed_out(fake, fakes.ROBOT_SESSIONS["broker"])
+
+
+class RobotConfiguration(RobotCase):
+    """The portal origin is production's alone in the cloud and a loopback one locally (SR-11), the address is
+    the secret's alone (SR-01), and each robot reads exactly its own kind of secret."""
+
+    def test_the_cloud_takes_productions_portal_and_nothing_else(self):
+        robot = journeys.ROBOTS["member-sign-in"]
+        base = {"SYNTHETICS_CREDENTIALS_FILE": "/secrets/credentials.json"}
+        config = journeys.load_portal_config(
+            dict(base, SYNTHETICS_PORTAL_ORIGIN="https://portal.trellistpa.com"), robot=robot, local=False)
+        self.assertEqual(config.origin, journeys.PRODUCTION_PORTAL_ORIGIN)
+        self.assertEqual(journeys.load_portal_config(
+            dict(base, SYNTHETICS_PORTAL_ORIGIN="https://portal.trellistpa.com/"), robot=robot, local=False).origin,
+            "https://portal.trellistpa.com")
+        for origin in ("https://portal.trellistpa.com.evil.example", "https://evil.example",
+                       "https://ops.trellistpa.com", "http://portal.trellistpa.com",
+                       "https://portal.trellistpa.com:8443", "https://PORTAL.trellistpa.com",
+                       "https://portal.trellistpa.com/tpa/", "https://user@portal.trellistpa.com",
+                       "https://localhost:4310", "http://127.0.0.1:8080", ""):
+            with self.subTest(origin=origin), self.assertRaises(journeys.StepFailure) as refused:
+                journeys.load_portal_config(dict(base, SYNTHETICS_PORTAL_ORIGIN=origin), robot=robot, local=False)
+            self.assertEqual(refused.exception.code, "config")
+
+    def test_the_local_mode_takes_a_loopback_origin_alone(self):
+        robot = journeys.ROBOTS["broker-sign-in"]
+        base = {"SYNTHETICS_CREDENTIALS_FILE": "/secrets/credentials.json"}
+        for origin in ("https://localhost:4310", "http://127.0.0.1:8080", "https://[::1]:4310"):
+            with self.subTest(origin=origin):
+                journeys.load_portal_config(dict(base, SYNTHETICS_PORTAL_ORIGIN=origin), robot=robot, local=True)
+        for origin in ("https://portal.trellistpa.com", "https://localhost.evil.example"):
+            with self.subTest(origin=origin), self.assertRaises(journeys.StepFailure):
+                journeys.load_portal_config(dict(base, SYNTHETICS_PORTAL_ORIGIN=origin), robot=robot, local=True)
+
+    def test_a_loopback_origin_in_the_cloud_mode_sends_nothing(self):
+        for job in journeys.ROBOTS:
+            with self.subTest(job=job), fakes.Fake(iap=False) as fake:
+                line, code = self.run_journey(job, self.robot_env(fake, job), use_iap=True)
+                self.assert_error(line, code, step="config", code="config")
+                self.assertEqual((fake.requests, fake.connections), ([], []))
+
+    def test_settings(self):
+        for job in journeys.ROBOTS:
+            for name, value in [("SYNTHETICS_PORTAL_ORIGIN", None), ("SYNTHETICS_CREDENTIALS_FILE", None),
+                                ("SYNTHETICS_EMAIL", fakes.MEMBER_EMAIL), ("SYNTHETICS_STEP_TIMEOUT_S", "0"),
+                                ("SYNTHETICS_DEADLINE_S", "101"), ("SYNTHETICS_EGRESS_WAIT_S", "171"),
+                                ("SYNTHETICS_CA_FILE", "/nonexistent/ca.pem")]:
+                with self.subTest(job=job, name=name), fakes.Fake(iap=False) as fake:
+                    env = self.robot_env(fake, job)
+                    env.pop(name, None)
+                    if value is not None:
+                        env[name] = value
+                    line, code = self.run_robot(job, env)
+                    self.assert_error(line, code, step="config", code="config")
+                    self.assertEqual((fake.requests, fake.connections), ([], []))
+
+    def test_each_robot_reads_exactly_its_own_secret(self):
+        with fakes.Fake(iap=False) as fake:
+            member, broker = member_credentials(self.tmp.name, fake.base), broker_credentials(self.tmp.name)
+            staff = credentials_file(self.tmp.name)
+            for job, path in [("member-sign-in", broker), ("member-sign-in", staff), ("broker-sign-in", member),
+                              ("broker-sign-in", staff)]:
+                with self.subTest(job=job, path=os.path.basename(path)):
+                    env = self.robot_env(fake, job, SYNTHETICS_CREDENTIALS_FILE=path)
+                    line, code = self.run_robot(job, env)
+                    self.assert_error(line, code, step="secrets", code="config")
+            self.assertEqual(fake.requests, [], "nothing is sent on a secret that is not the robot's")
+
+    def test_bad_member_secrets(self):
+        with fakes.Fake(iap=False) as fake:
+            for changes in [{"email": None}, {"password": None}, {"passkey": None}, {"password": ""},
+                            {"email": "no-at-sign"}, {"email": "two@@robots.invalid"}, {"email": "a b@robots.invalid"},
+                            {"email": "@robots.invalid"}, {"email": 7}, {"totp_secret": fakes.BROKER_TOTP_SECRET},
+                            {"passkey_origin": "https://portal.trellistpa.com"}, {"passkey_rp_id": "localhost"},
+                            {"passkey_private_jwk": {"kty": "EC"}}, {"passkey_credential_id": "!"},
+                            {"passkey_sign_count": 0}]:
+                with self.subTest(changes=changes):
+                    path = member_credentials(self.tmp.name, fake.base, **changes)
+                    line, code = self.run_robot("member-sign-in", self.robot_env(
+                        fake, "member-sign-in", SYNTHETICS_CREDENTIALS_FILE=path))
+                    self.assert_error(line, code, step="secrets", code="config")
+            self.assertEqual(fake.requests, [])
+
+    def test_bad_broker_secrets(self):
+        with fakes.Fake(iap=False) as fake:
+            for changes in [{"email": None}, {"password": None}, {"totp_secret": None}, {"totp_secret": "not b32 !"},
+                            {"totp_secret": 7}, {"password": ""}, {"email": "no-at-sign"}, {"extra": "x"}]:
+                with self.subTest(changes=changes):
+                    path = broker_credentials(self.tmp.name, **changes)
+                    line, code = self.run_robot("broker-sign-in", self.robot_env(
+                        fake, "broker-sign-in", SYNTHETICS_CREDENTIALS_FILE=path))
+                    self.assert_error(line, code, step="secrets", code="config")
+            self.assertEqual(fake.requests, [])
+
+    def test_paused_sends_nothing(self):
+        for job in journeys.ROBOTS:
+            with self.subTest(job=job), fakes.Fake(iap=False) as fake:
+                line, code = self.run_robot(job, self.robot_env(fake, job, SYNTHETICS_PAUSED="true"))
+                self.assert_skipped(line, code, "paused")
+                self.assertEqual(line["steps_ms"], {})
+                self.assertEqual((fake.requests, fake.connections), ([], []))
+
+    def test_the_credentials_never_reach_the_line(self):
+        for job in journeys.ROBOTS:
+            clock = WallClock(FIXED_NOW)
+            with self.subTest(job=job), fakes.Fake(iap=False, fail={"me": 500}, clock=clock.now) as fake:
+                line, _code = self.run_robot(job, self.robot_env(fake, job), tools=clock.tools())
+                text = json.dumps(line)
+                for secret in fakes.SENTINELS:
+                    self.assertNotIn(secret, text)
+                self.assertEqual(line["code"], "status")
+
+
+class RobotEntryPoint(RobotCase):
+    """The member robot as the job runs it: a child process with a real clock (the broker's real wait, up to 30 s,
+    is the in-process tests' to pin)."""
+
+    def spawn(self, env: dict[str, str], *args: str) -> tuple[dict, int]:
+        child = {k: v for k, v in os.environ.items() if not k.startswith(("SYNTHETICS_", "CLOUD_RUN_"))}
+        child.update(env, PYTHONPATH=str(ROOT))
+        done = subprocess.run([sys.executable, "-m", "synthetics", "journey", *args], env=child,
+                              capture_output=True, text=True, timeout=60, cwd=self.tmp.name)
+        return self.parse_clean(done.stdout, done.stderr), done.returncode
+
+    def test_pass(self):
+        with fakes.Fake(iap=False) as fake:
+            line, code = self.spawn(self.robot_env(fake, "member-sign-in"), "member-sign-in", "--no-iap")
+        self.assertEqual((line["job"], line["outcome"], code), ("member-sign-in", "pass", 0))
+        self.assertEqual(list(line["steps_ms"]), ROBOT_STEPS)
+        self.assertEqual(fake.routes(), ROBOT_ROUTES)
+
+    def test_disabled_exits_zero_and_a_bad_secret_one(self):
+        with fakes.Fake(iap=False, fail={"login": "checks_off"}) as fake:
+            line, code = self.spawn(self.robot_env(fake, "member-sign-in"), "member-sign-in", "--no-iap")
+        self.assert_skipped(line, code, "disabled")
+        with fakes.Fake(iap=False) as fake:
+            env = self.robot_env(fake, "broker-sign-in", SYNTHETICS_CREDENTIALS_FILE=credentials_file(self.tmp.name))
+            line, code = self.spawn(env, "broker-sign-in", "--no-iap")
+        self.assert_error(line, code, step="secrets", code="config")
+
+    def test_the_cloud_mode_refuses_a_loopback_portal(self):
+        with fakes.Fake(iap=False) as fake:
+            line, code = self.spawn(self.robot_env(fake, "member-sign-in"), "member-sign-in")
+        self.assert_error(line, code, step="config", code="config")
+        self.assertEqual(fake.requests, [])
 
 
 if __name__ == "__main__":

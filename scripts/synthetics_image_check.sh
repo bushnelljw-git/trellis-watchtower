@@ -2,9 +2,10 @@
 # Build synthetics/ under a throwaway tag, check it as tpa-platform's shared builder's start check checks a Python
 # image (scripts/image_start_check.sh there: the generic path), and remove it. Never pushes anything.
 #
-#  1. The base is pinned by digest, and the image's configured user is exactly 10001:10001.
-#  2. With no network, as its own user: `id -u` and `id -g` say 10001, `python -I -c "import synthetics"` works, and
-#     Python's default CA bundle is there (the edge's certificate is Google-managed).
+#  1. Both stages' base is pinned by digest, and the image's configured user is exactly 10001:10001.
+#  2. With no network, as its own user: `id -u` and `id -g` say 10001, `python -I -c "import synthetics"` works,
+#     Python's default CA bundle is there (the edge's certificate is Google-managed), and the one package,
+#     cryptography, loads after the strip and signs and verifies a P-256 signature (the member robot's passkey).
 #  3. No shell starts through any shell entrypoint (the strip script's last step).
 #  4. The image's own ENTRYPOINT, with no network:
 #     - paused: one `skipped`/`paused` line, exit 0;
@@ -14,8 +15,12 @@
 #       (the job's own network path, not the site);
 #     - the same with the warm-up off: the metadata call fails, one `error`/`iap_token` line, exit 1 (the job's
 #       environment, not the site);
+#     - the sign-in robots: paused, `skipped`/`paused`, exit 0; no configuration, `error`/`config`, exit 1; the member
+#       robot with production's portal and the test passkey (tests/synthetics/fixtures), the warm-up given 2 s:
+#       `error`/`egress`, exit 1; the same with the warm-up off: its secret and passkey read (cryptography, after the
+#       strip), then no network for the portal's shell, `fail`/`connect`, exit 0;
 #     - no arguments: refused by argparse, exit 2, nothing on stdout.
-#     And nothing on stderr on any of the first four.
+#     And nothing on stderr on any of them.
 #
 # Usage: scripts/synthetics_image_check.sh      (make synthetics-image-check)
 set -euo pipefail
@@ -33,8 +38,10 @@ trap cleanup EXIT
 fail() { echo "synthetics_image_check: FAIL - $*" >&2; exit 1; }
 
 dockerfile="$here/synthetics/Dockerfile"
-grep -Eq '^FROM [^ ]+@sha256:[0-9a-f]{64}$' "$dockerfile" || fail "synthetics/Dockerfile's base is not pinned by digest"
-[ "$(grep -c '^FROM ' "$dockerfile")" = 1 ] || fail "synthetics/Dockerfile should have exactly one FROM"
+# Two stages, the build stage `deps` (the lock's wheels) and the image, each on the base pinned by digest.
+[ "$(grep -c '^FROM ' "$dockerfile")" = 2 ] || fail "synthetics/Dockerfile should have exactly two FROMs (deps, the image)"
+! grep '^FROM ' "$dockerfile" | grep -Evq '^FROM [^ ]+@sha256:[0-9a-f]{64}( AS deps)?$' \
+  || fail "a synthetics/Dockerfile base is not pinned by digest"
 
 echo "== build $tag (context: the repository root)"
 docker build --pull -q -t "$tag" -f "$dockerfile" "$here" >"$work/build.log" 2>&1 \
@@ -55,7 +62,14 @@ docker run --rm --network none --entrypoint python "$tag" -I -c "import syntheti
 docker run --rm --network none --entrypoint python "$tag" -I -c \
   "import os, ssl; p = ssl.get_default_verify_paths(); assert p.cafile and os.path.getsize(p.cafile) > 100000, p" \
   || fail "the image has no CA bundle at Python's default verify path"
-echo "   uid 10001, gid 10001; synthetics imports; the CA bundle is there"
+docker run --rm --network none --entrypoint python "$tag" -I -c "
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+import synthetics.passkey
+key = ec.generate_private_key(ec.SECP256R1())
+key.public_key().verify(key.sign(b'check', ec.ECDSA(hashes.SHA256())), b'check', ec.ECDSA(hashes.SHA256()))
+" || fail "cryptography does not load, sign or verify in the image, as its own user, offline"
+echo "   uid 10001, gid 10001; synthetics imports; the CA bundle is there; cryptography signs and verifies"
 
 echo "== 3. no shell"
 for entry in /bin/sh sh /bin/bash bash dash busybox; do
@@ -97,6 +111,15 @@ expect 1 error egress "${configured[@]}" -e SYNTHETICS_EGRESS_WAIT_S=2 "$tag" jo
 grep -q check-only-not-a-secret "$work/out" && fail "the password reached stdout"
 expect 1 error iap_token "${configured[@]}" -e SYNTHETICS_EGRESS_WAIT_S=0 "$tag" journey staff-sign-in
 grep -q check-only-not-a-secret "$work/out" && fail "the password reached stdout"
+expect 0 skipped paused -e SYNTHETICS_PAUSED=1 "$tag" journey member-sign-in
+expect 1 error config "$tag" journey broker-sign-in
+cp "$here/tests/synthetics/fixtures/member-credentials.json" "$work/member.json"
+chmod 0644 "$work/member.json"
+robot=(-v "$work/member.json:/secrets/credentials.json:ro" -e SYNTHETICS_PORTAL_ORIGIN=https://portal.trellistpa.com
+  -e SYNTHETICS_CREDENTIALS_FILE=/secrets/credentials.json -e SYNTHETICS_STEP_TIMEOUT_S=3)
+expect 1 error egress "${robot[@]}" -e SYNTHETICS_EGRESS_WAIT_S=2 "$tag" journey member-sign-in
+expect 0 fail connect "${robot[@]}" -e SYNTHETICS_EGRESS_WAIT_S=0 "$tag" journey member-sign-in
+grep -q sentinel-robot-password "$work/out" && fail "the robot's password reached stdout"
 got=0
 docker run --rm --network none "$tag" >"$work/out" 2>"$work/err" || got=$?
 [ "$got" = 2 ] && [ ! -s "$work/out" ] || fail "no arguments: exit $got (not 2), or something on stdout"

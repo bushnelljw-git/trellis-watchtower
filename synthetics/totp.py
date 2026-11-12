@@ -7,8 +7,10 @@ checked against exactly the function that makes the real codes.
 
 auth accepts each step once per account (`totp_last_step`) and charges a refused
 code to the lockout budget, so a run sends exactly one code and never retries.
-`mint` waits for the next step when fewer than `MIN_SECONDS_LEFT` remain in the
-current one, so the code cannot expire between here and auth.
+`mint` (the staff journeys) waits for the next step when fewer than
+`MIN_SECONDS_LEFT` remain in the current one, so the code cannot expire between
+here and auth. `fresh` (the broker robot) always waits for the next step, so it
+never sends a step an earlier run spent.
 
 Nothing here prints, logs or raises with the secret or a code in its message.
 """
@@ -90,3 +92,38 @@ def mint(
         sleep(left + 0.2)
         at = now()
     return code_at(key, step_at(at))
+
+
+#: How far past a step's start `fresh` waits, so the code is that step's on any clock near this one.
+FRESH_MARGIN_S = 0.2
+
+
+class NoTime(Exception):
+    """The wait for a fresh step would not leave the run any time to send its code."""
+
+
+def wait_for_fresh(epoch_seconds: float) -> float:
+    """Seconds from this time until FRESH_MARGIN_S into the next step: more than 0.2 and at most 30.2."""
+    return (step_at(epoch_seconds) + 1) * STEP_SECONDS + FRESH_MARGIN_S - epoch_seconds
+
+
+def fresh(secret: str, *, now: Callable[[], float], sleep: Callable[[float], None], budget: float) -> str:
+    """The code of the step that begins after now, once it has begun: never the step current when asked.
+
+    The broker robot's rule (bodyfirst tasks/signin-robots SECURITY-REVIEW.md SR-16). auth accepts a step once
+    per account and refuses any step at or below the last it accepted, charging the refusal to the factor
+    lockout. A run that started after an earlier run sent its code asks here later than that code's step began,
+    so the step it waits for begins later still: it never sends a step an earlier run spent, whether that run was
+    the schedule's, a hand-started one or a retry. It costs up to 30.2 s of waiting, and the code then has the
+    rest of its step and one more of accepted life (`accepted_for`, at least 59.8 s). Two runs asking inside the
+    same wait (two executions started together) can still meet: auth refuses the second, which is that run's
+    `credentials` and one factor failure (SR-16, accepted). `NoTime` when the wait is not shorter than `budget`
+    (what the run's deadline has left), with no wait and no code.
+    """
+    key = decode_base32(secret)  # refuse an unusable secret before any wait
+    at = now()
+    wait = wait_for_fresh(at)
+    if wait >= budget:
+        raise NoTime
+    sleep(wait)
+    return code_at(key, step_at(at) + 1)
