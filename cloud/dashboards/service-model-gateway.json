@@ -651,7 +651,7 @@
     {
       "type": "timeseries",
       "title": "Memory (p99, p95, p50)",
-      "description": "model-gateway's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 10 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
+      "description": "model-gateway's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 30 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
       "gridPos": {
         "h": 7,
         "w": 6,
@@ -818,7 +818,7 @@
     {
       "type": "timeseries",
       "title": "Instances (total, active, idle)",
-      "description": "model-gateway's Cloud Run instances: the total, the most in each minute summed over active and idle, as the `ceiling-` policies read it, and active (serving or starting) and idle (kept warm, or waiting to be shut down) apart. max_instances is Cloud Run's default, 100, so the project's regional quota of 85 binds first (`run-instances-near-quota`: the project's instances, on its area's page).",
+      "description": "model-gateway's Cloud Run instances: the total, the most in each minute summed over active and idle, as the `ceiling-` policies read it, and active (serving or starting) and idle (kept warm, or waiting to be shut down) apart. @@E@@max_instances is Cloud Run's default, 100, so the project's regional quota of 85 binds first (`run-instances-near-quota`: the project's instances, on its area's page).@@The red line is `ceiling-model-gateway`'s: the total above 15.5 (80% of max_instances, rounded up, less a half) for ten minutes pages; the grey line is max_instances, 20: at it new requests wait or fail with 429.@@",
       "gridPos": {
         "h": 7,
         "w": 6,
@@ -908,8 +908,16 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "transparent",
                 "value": null
+              },
+              {
+                "color": "@@E@@transparent@@red@@",
+                "value": 15.5
+              },
+              {
+                "color": "@@E@@transparent@@#8c8c8c@@",
+                "value": "@@N@@15.5@@20@@"
               }
             ]
           },
@@ -928,8 +936,9 @@
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "off"
-            }
+              "mode": "@@E@@off@@line@@"
+            },
+            "axisSoftMax": "@@N@@null@@20@@"
           }
         },
         "overrides": []
@@ -954,7 +963,7 @@
     {
       "type": "timeseries",
       "title": "Busiest instance's requests (p99, p50)",
-      "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.",
+      "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. @@E@@The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.@@`run-concurrency-high` opens above 71.5, beyond this service's setting, so it never opens for it. The grey line is the concurrency setting, 2: past it a request waits for a slot or a new instance.@@",
       "gridPos": {
         "h": 7,
         "w": 6,
@@ -1044,12 +1053,12 @@
                 "value": null
               },
               {
-                "color": "red",
-                "value": 71.5
+                "color": "@@E@@red@@#8c8c8c@@",
+                "value": "@@N@@71.5@@2@@"
               },
               {
-                "color": "#8c8c8c",
-                "value": 80
+                "color": "@@E@@#8c8c8c@@transparent@@",
+                "value": "@@N@@80@@2@@"
               }
             ]
           },
@@ -1069,7 +1078,7 @@
             "thresholdsStyle": {
               "mode": "line"
             },
-            "axisSoftMax": 80
+            "axisSoftMax": "@@N@@80@@2@@"
           }
         },
         "overrides": []

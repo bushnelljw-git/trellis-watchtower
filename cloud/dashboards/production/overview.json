@@ -8195,12 +8195,650 @@
     },
     {
       "type": "stat",
+      "title": "auth-event-publisher",
+      "description": "auth-event-publisher (Sign-in). Its status, worst first: ✕ down when it is kept warm and has no instance (or reports none), as `<service> has no instance` decides (urgent); ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 11
+      },
+      "links": [
+        {
+          "title": "auth-event-publisher: CPU, memory, instances, concurrency, start-up",
+          "url": "/d/tw-cloud-service-auth-event-publisher?${__url_time_range}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "auth-event-publisher",
+              "AND",
+              "metric.label.response_code_class",
+              "=",
+              "5xx"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "answered 5xx"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "auth-event-publisher"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "instances"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_crash_exits",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "auth-event-publisher"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "crashed"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "auth-event-publisher"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "15m",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "@@R,auth-db,@@✕ down@@",
+          "displayName": "@@R,auth-db,@@@@"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,auth-db,@@sign-in@@"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "idle",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "✓ up",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "errors",
+                        "index": 2
+                      },
+                      "3": {
+                        "text": "⚠ crashing",
+                        "index": 3
+                      },
+                      "4": {
+                        "text": "✕ down",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#14b8a6@@",
+                      "value": 1
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#fab219@@",
+                      "value": 2
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#fab219@@",
+                      "value": 3
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#d03b3b@@",
+                      "value": 4
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "instances"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,@@text@@text@@",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "answered 5xx"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "@@R,auth-db,@@5xx (15 m)@@"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "@@F,auth-db,@@text@@text@@",
+                      "value": null
+                    },
+                    {
+                      "color": "@@F,auth-db,@@text@@#fab219@@",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "@@F,auth-db,@@value_and_name@@value_and_name@@",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "lastNotNull"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "concatenate",
+          "options": {
+            "frameNameMode": "drop"
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "instances or none",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "running +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances or none"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "running /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "instances or none"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "running",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "running /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "erroring +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "answered 5xx"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "erroring /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "answered 5xx"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "erroring +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "erroring",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "erroring /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "errors ×2",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "erroring"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "exits",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "crashed",
+                "killed for memory"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "exits"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "crashing",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "crashing /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "crashing ×3",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "crashing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "3"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "idle",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "running"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no instance ×4",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "idle"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "4"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "status",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "max",
+              "include": [
+                "running",
+                "errors ×2",
+                "crashing ×3",
+                "inside down ×4",
+                "no instance ×4"
+              ]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "status": true,
+              "instances": true,
+              "answered 5xx": true
+            },
+            "indexByName": {
+              "status": 0,
+              "instances": 1,
+              "answered 5xx": 2
+            }
+          }
+        }
+      ],
+      "id": 15
+    },
+    {
+      "type": "stat",
       "title": "records",
       "description": "records (Member records). Its status, worst first: ⚠ crashing when a container exited or was killed for memory in the last 15 minutes (`run-crash-loop`, `run-oom`); errors when it answered a 5xx in the last 15 minutes (`canary-5xx` pages above 0.1% and five); ✓ up with an instance running; idle with none, as a service Terraform lets scale to zero rests. Then its instances now and its 5xx in 15 minutes. The link by the title opens its own page. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 0,
+        "x": 4,
         "y": 11
       },
       "links": [
@@ -8789,7 +9427,7 @@
           }
         }
       ],
-      "id": 15
+      "id": 16
     },
     {
       "type": "stat",
@@ -8798,7 +9436,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 4,
+        "x": 8,
         "y": 11
       },
       "links": [
@@ -9427,7 +10065,7 @@
           }
         }
       ],
-      "id": 16
+      "id": 17
     },
     {
       "type": "row",
@@ -9440,7 +10078,7 @@
         "x": 0,
         "y": 15
       },
-      "id": 17
+      "id": 18
     },
     {
       "type": "stat",
@@ -9808,7 +10446,7 @@
           "targetBlank": false
         }
       ],
-      "id": 18
+      "id": 19
     },
     {
       "type": "stat",
@@ -10176,7 +10814,7 @@
           "targetBlank": false
         }
       ],
-      "id": 19
+      "id": 20
     },
     {
       "type": "stat",
@@ -10544,7 +11182,7 @@
           "targetBlank": false
         }
       ],
-      "id": 20
+      "id": 21
     },
     {
       "type": "stat",
@@ -11411,7 +12049,7 @@
           }
         }
       ],
-      "id": 21
+      "id": 22
     },
     {
       "type": "stat",
@@ -12278,7 +12916,7 @@
           }
         }
       ],
-      "id": 22
+      "id": 23
     },
     {
       "type": "stat",
@@ -13145,7 +13783,7 @@
           }
         }
       ],
-      "id": 23
+      "id": 24
     },
     {
       "type": "stat",
@@ -13756,7 +14394,7 @@
           }
         }
       ],
-      "id": 24
+      "id": 25
     },
     {
       "type": "stat",
@@ -14367,7 +15005,7 @@
           }
         }
       ],
-      "id": 25
+      "id": 26
     },
     {
       "type": "stat",
@@ -14978,7 +15616,7 @@
           }
         }
       ],
-      "id": 26
+      "id": 27
     },
     {
       "type": "row",
@@ -16727,7 +17365,7 @@
               }
             }
           ],
-          "id": 28
+          "id": 29
         },
         {
           "type": "table",
@@ -17576,7 +18214,7 @@
               }
             }
           ],
-          "id": 29
+          "id": 30
         },
         {
           "type": "table",
@@ -18209,7 +18847,7 @@
               }
             }
           ],
-          "id": 30
+          "id": 31
         },
         {
           "type": "stat",
@@ -19076,7 +19714,7 @@
               }
             }
           ],
-          "id": 31
+          "id": 32
         },
         {
           "type": "stat",
@@ -19943,7 +20581,7 @@
               }
             }
           ],
-          "id": 32
+          "id": 33
         },
         {
           "type": "stat",
@@ -20810,7 +21448,7 @@
               }
             }
           ],
-          "id": 33
+          "id": 34
         },
         {
           "type": "stat",
@@ -21421,7 +22059,7 @@
               }
             }
           ],
-          "id": 34
+          "id": 35
         },
         {
           "type": "stat",
@@ -22032,7 +22670,7 @@
               }
             }
           ],
-          "id": 35
+          "id": 36
         },
         {
           "type": "stat",
@@ -22643,7 +23281,7 @@
               }
             }
           ],
-          "id": 36
+          "id": 37
         }
       ],
       "gridPos": {
@@ -22652,7 +23290,7 @@
         "x": 0,
         "y": 29
       },
-      "id": 27
+      "id": 28
     },
     {
       "type": "row",
@@ -22752,7 +23390,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 38
+          "id": 39
         },
         {
           "type": "stat",
@@ -22843,7 +23481,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 39
+          "id": 40
         }
       ],
       "gridPos": {
@@ -22852,7 +23490,7 @@
         "x": 0,
         "y": 30
       },
-      "id": 37
+      "id": 38
     },
     {
       "type": "row",
@@ -22954,7 +23592,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 41
+          "id": 42
         },
         {
           "type": "stat",
@@ -23051,7 +23689,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 42
+          "id": 43
         },
         {
           "type": "stat",
@@ -23148,7 +23786,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 43
+          "id": 44
         },
         {
           "type": "stat",
@@ -23245,7 +23883,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 44
+          "id": 45
         },
         {
           "type": "stat",
@@ -23342,7 +23980,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 45
+          "id": 46
         },
         {
           "type": "stat",
@@ -23439,7 +24077,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 46
+          "id": 47
         },
         {
           "type": "stat",
@@ -23536,7 +24174,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 47
+          "id": 48
         },
         {
           "type": "stat",
@@ -23633,7 +24271,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 48
+          "id": 49
         },
         {
           "type": "stat",
@@ -23730,7 +24368,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 49
+          "id": 50
         },
         {
           "type": "stat",
@@ -23827,7 +24465,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 50
+          "id": 51
         },
         {
           "type": "stat",
@@ -23924,7 +24562,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 51
+          "id": 52
         }
       ],
       "gridPos": {
@@ -23933,7 +24571,7 @@
         "x": 0,
         "y": 31
       },
-      "id": 40
+      "id": 41
     },
     {
       "type": "row",
@@ -24028,7 +24666,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 53
+          "id": 54
         },
         {
           "type": "stat",
@@ -24131,7 +24769,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 54
+          "id": 55
         },
         {
           "type": "stat",
@@ -24225,7 +24863,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 55
+          "id": 56
         },
         {
           "type": "stat",
@@ -24361,7 +24999,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 56
+          "id": 57
         },
         {
           "type": "stat",
@@ -24473,7 +25111,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 57
+          "id": 58
         },
         {
           "type": "stat",
@@ -24601,7 +25239,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 58
+          "id": 59
         }
       ],
       "gridPos": {
@@ -24610,7 +25248,7 @@
         "x": 0,
         "y": 32
       },
-      "id": 52
+      "id": 53
     },
     {
       "type": "row",
@@ -24705,7 +25343,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 60
+          "id": 61
         },
         {
           "type": "stat",
@@ -24808,7 +25446,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 61
+          "id": 62
         },
         {
           "type": "stat",
@@ -24906,7 +25544,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 62
+          "id": 63
         },
         {
           "type": "stat",
@@ -25040,7 +25678,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 63
+          "id": 64
         },
         {
           "type": "stat",
@@ -25256,7 +25894,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 64
+          "id": 65
         },
         {
           "type": "stat",
@@ -25384,7 +26022,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 65
+          "id": 66
         }
       ],
       "gridPos": {
@@ -25393,7 +26031,7 @@
         "x": 0,
         "y": 33
       },
-      "id": 59
+      "id": 60
     },
     {
       "type": "row",
@@ -25488,7 +26126,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 67
+          "id": 68
         },
         {
           "type": "stat",
@@ -25591,7 +26229,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 68
+          "id": 69
         },
         {
           "type": "stat",
@@ -25689,7 +26327,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 69
+          "id": 70
         },
         {
           "type": "stat",
@@ -25827,7 +26465,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 70
+          "id": 71
         },
         {
           "type": "stat",
@@ -26043,7 +26681,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 71
+          "id": 72
         },
         {
           "type": "stat",
@@ -26171,7 +26809,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 72
+          "id": 73
         }
       ],
       "gridPos": {
@@ -26180,7 +26818,7 @@
         "x": 0,
         "y": 34
       },
-      "id": 66
+      "id": 67
     },
     {
       "type": "row",
@@ -26275,7 +26913,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 74
+          "id": 75
         },
         {
           "type": "stat",
@@ -26378,7 +27016,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 75
+          "id": 76
         },
         {
           "type": "stat",
@@ -26503,7 +27141,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 76
+          "id": 77
         },
         {
           "type": "stat",
@@ -26637,7 +27275,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 77
+          "id": 78
         },
         {
           "type": "stat",
@@ -26853,7 +27491,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 78
+          "id": 79
         },
         {
           "type": "stat",
@@ -26950,7 +27588,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 79
+          "id": 80
         }
       ],
       "gridPos": {
@@ -26959,7 +27597,7 @@
         "x": 0,
         "y": 35
       },
-      "id": 73
+      "id": 74
     }
   ]
 }

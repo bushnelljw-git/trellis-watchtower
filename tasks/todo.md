@@ -450,12 +450,22 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   - [x] `RUNS["beta"]` gains connectors and tpa-jobs-drains (both kept warm by Terraform), `DEPLOYMENT_WARM["beta"]`
     gains web (live minimum 1 and an enabled `web has no instance`); their `NOT_RUN` reasons gone.
   - [x] No page says "beta" to a reader (the owner: "We are NOT in beta").
-  - [ ] Follow-up: re-vendor the catalogue at tpa-platform's current origin/master. It builds ops-web and
-    auth-event-publisher (both run, minimum 1, each with a `has no instance` policy) and keeps watchtower warm (D-334):
-    then ops-web (app, its own area or Portal & API) and auth-event-publisher (Sign-in) join `SERVICES`, `RUNS`,
-    `LIMITS`, `TERRAFORM_WARM`, `NAMES` and test_resources' `AREAS`; watchtower joins `TERRAFORM_WARM`. Not a table
-    entry today: the tests pin `LIMITS` and the warm lists to Terraform at the pinned commit (06f73b72), which builds
-    neither.
+  - [x] Follow-up: re-vendor the catalogue at tpa-platform's current origin/master. Done at 1e15b0e8 (2026-11-12,
+    blob 05c12bd8): ops-web (Portal & API; warm by web's service_min_instances key, which its module reads) and
+    auth-event-publisher (Sign-in; warm by Terraform; a loop, `NO_WEB_REQUESTS`: its oldest unpublished event and its
+    heartbeat) join `SERVICES`, `RUNS` (both environments for the publisher), `LIMITS`, the warm lists, `NAMES` and
+    test_resources' `AREAS`, each with its own page and overview tile; watchtower joins `TERRAFORM_WARM` (D-334) and,
+    with ops-web, beta's `LATENCY_LEFT_OUT`; hooks-relay (built behind its switch, not running) a `NOT_RUN` reason;
+    `LIMITS` moved with Terraform (model-gateway 20 instances, concurrency 2, `ceiling-model-gateway`; svc-voice
+    concurrency 40); the importer's deadline is 79200 s (07:00 and 12:00 Chicago); crm-reset-drain left
+    `AHEAD_OF_THE_CATALOGUE`, and auth-publisher left `NAMES` (the root names it in `jobs-failed` itself now); the
+    catalogue's 73 counters on no page are charted minimally (each project's Admin Activity security changes and Cloud
+    Armor on Errors; auth's sign-in protection, staff laptops, bound sessions, passes and the event publisher on
+    Sign-in; IAP's checked and not-ok assertions on Portal & API; the CRM's own sign-in door; the importer's not-whole
+    runs and volumes on Jobs).
+  - [ ] Follow-up: ops-web and auth-event-publisher are not in the overview's area tiles' service lists (`WEB_API`,
+    `AUTH_SERVICES`): their 5xx, crashes and kept-warm "no instance" count on their own Services tiles, not yet in
+    "Portal & sign-in" or What's wrong now (a change to the Right now row, with the fixture's `WIDENED`).
   - [ ] Follow-up: file-reader (runs, minimum 0, max 10) gets a page and tile only with a test change:
     `test_production_runs_what_its_root_builds` would make production's overview tile it (production-full builds it
     behind file_reader_enabled, off by default).

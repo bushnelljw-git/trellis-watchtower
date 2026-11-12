@@ -337,8 +337,8 @@
     },
     {
       "type": "timeseries",
-      "title": "p95 latency (Cloud Run)",
-      "description": "watchtower's p95 request latency from Cloud Run. The red line is `canary-latency`'s: above 2 s for ten minutes pages.",
+      "title": "p95 latency (Cloud Run, with its streams)",
+      "description": "@@E@@watchtower's p95 request latency from Cloud Run. It holds Grafana's long queries and its live tail open, and Cloud Run's p95 counts a stream's whole life. The red line is `canary-latency`'s: above 2 s for ten minutes pages.@@watchtower's Cloud Run p95 includes its streams. It holds Grafana's long queries and its live tail open, and Cloud Run's p95 counts a stream's whole life. `canary-latency` leaves it out here.@@",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -399,7 +399,7 @@
                 "value": null
               },
               {
-                "color": "red",
+                "color": "@@E@@red@@transparent@@",
                 "value": 2000
               }
             ]
@@ -418,7 +418,7 @@
             },
             "axisSoftMin": 0,
             "thresholdsStyle": {
-              "mode": "line"
+              "mode": "@@E@@line@@off@@"
             }
           }
         },
@@ -611,7 +611,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "@@E@@No instance: watchtower does not run here@@No instance in this range: watchtower scales to zero when idle@@",
+          "noValue": "@@E@@No instance: watchtower does not run here@@No instance reported: watchtower is kept warm, so it is down or not reporting@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -651,7 +651,7 @@
     {
       "type": "timeseries",
       "title": "Memory (p99, p95, p50)",
-      "description": "watchtower's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 10 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
+      "description": "watchtower's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 30 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
       "gridPos": {
         "h": 7,
         "w": 6,
@@ -778,7 +778,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "@@E@@No instance: watchtower does not run here@@No instance in this range: watchtower scales to zero when idle@@",
+          "noValue": "@@E@@No instance: watchtower does not run here@@No instance reported: watchtower is kept warm, so it is down or not reporting@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -919,7 +919,7 @@
           },
           "mappings": [],
           "decimals": 0,
-          "noValue": "@@E@@No instance: watchtower does not run here@@No instance in this range: watchtower scales to zero when idle@@",
+          "noValue": "@@E@@No instance: watchtower does not run here@@No instance reported: watchtower is kept warm, so it is down or not reporting@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1059,7 +1059,7 @@
             ]
           },
           "mappings": [],
-          "noValue": "@@E@@No instance: watchtower does not run here@@No instance in this range: watchtower scales to zero when idle@@",
+          "noValue": "@@E@@No instance: watchtower does not run here@@No instance reported: watchtower is kept warm, so it is down or not reporting@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -1293,7 +1293,7 @@
           },
           "mappings": [],
           "decimals": 1,
-          "noValue": "@@E@@No instance: watchtower does not run here@@No instance in this range: watchtower scales to zero when idle@@",
+          "noValue": "@@E@@No instance: watchtower does not run here@@No instance reported: watchtower is kept warm, so it is down or not reporting@@",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,

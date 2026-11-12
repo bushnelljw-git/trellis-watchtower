@@ -58,9 +58,18 @@ BAD = {LOG + m for m in (
     "monitoring_changes", "log_metric_changes", "tpa_jobs_drain_raised", "model_gateway_calls", "voice_loop_lag",
     "voice_loop_lag_ms", "voice_loop_lag_over_1s", "voice_loop_lag_over_5s", "voice_stack_dumps",
     "voice_keep_warm_failures", "secret_version_changes", "kms_version_changes", "source_sync_alerts",
-    "records_velocity", "records_velocity_settings_changes", "records_reveals", "records_staff_member_reads")}
+    "records_velocity", "records_velocity_settings_changes", "records_reveals", "records_staff_member_reads",
+    # The catalogue at 1e15b0e8: the Admin Activity security changes and Cloud Armor's three (every project's), auth's
+    # guards, IAP's not-ok assertions, the CRM's sign-in refusals and the importer's runs that did not end whole.
+    "iam_policy_changes", "audit_config_changes", "org_policy_changes", "network_control_changes",
+    "logging_config_changes", "service_account_key_changes", "run_public_invokers", "iap_setting_changes",
+    "security_changes_by_robot", "sql_exports_by_hand", "armor_waf_refused", "armor_waf_previewed",
+    "armor_adaptive_alerts", "auth_sign_in_protection", "auth_breach_corpus_unavailable",
+    "auth_sms_codes_estate_ceiling", "auth_sms_codes_registration_ceiling", "iap_not_ok", "crm_login_failures",
+    "crm_sign_in_throttled", "crm_sign_in_protection", "everon_runs_not_whole")}
 # Heartbeats: written every pass or run, so nothing at all is the signal missing, said as missing.
-HEARTBEATS = {LOG + "connectors_passes", LOG + "auth_audit_reconciled"}
+HEARTBEATS = {LOG + "connectors_passes", LOG + "auth_audit_reconciled", LOG + "auth_events_publisher_alive",
+              LOG + "auth_events_outbox_lag"}
 REQUESTS = {"run.googleapis.com/request_count", "run.googleapis.com/request_latencies", LOG + "tpa_api_requests",
             LOG + "tpa_api_latency", LOG + "engine_latency"}
 # The words a reader sees: titles, descriptions, a text panel's content, the no-value words, display names, value
@@ -173,7 +182,7 @@ class EmptyPanelTest(unittest.TestCase):
     def test_a_paused_jobs_charts_say_paused(self):
         jobs = PAGES["estate"]["jobs"]
         row = sections(jobs)[f"The administrator-feed importer ({gen.IMPORTER})"]
-        self.assertEqual([no_value(p) for p in row], ["paused"] * 3)
+        self.assertEqual([no_value(p) for p in row], ["paused"] * 6)
         backlog = next(p for p in lint.panels(jobs) if p["title"] == "Reconciliations left open per tenant")
         self.assertEqual(no_value(backlog), "paused")
         # Running, each says its own words.

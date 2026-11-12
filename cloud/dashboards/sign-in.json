@@ -1184,7 +1184,7 @@
         {
           "type": "timeseries",
           "title": "Memory (p99, p95, p50)",
-          "description": "auth's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 10 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
+          "description": "auth's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 30 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
           "gridPos": {
             "h": 7,
             "w": 6,
@@ -2219,7 +2219,7 @@
         {
           "type": "timeseries",
           "title": "Memory (p99, p95, p50)",
-          "description": "auth-outbox-publisher's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 10 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
+          "description": "auth-outbox-publisher's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 30 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
           "gridPos": {
             "h": 7,
             "w": 6,
@@ -3074,9 +3074,1027 @@
     },
     {
       "type": "row",
-      "title": "auth-db (auth and its jobs; app project): disk space, CPU, memory, connections, disk I/O",
-      "collapsed": false,
-      "panels": [],
+      "title": "Resources · auth-event-publisher: CPU, memory, instances, concurrency, start-up (sign-in events to records)",
+      "collapsed": true,
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "CPU (p99, p95, p50)",
+          "description": "auth-event-publisher's container CPU, the share of its CPU limit in use (`container/cpu/utilizations`): the 99th, 95th and 50th percentile across its instances in each 5-minute window. The red line is `run-cpu-high`'s: the p99 above 90% for 15 minutes pages (instances saturated: requests queue and slow).",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 0,
+            "y": 32
+          },
+          "links": [
+            {
+              "title": "auth-event-publisher: CPU, memory, instances, concurrency, start-up",
+              "url": "/d/tw-cloud-service-auth-event-publisher?${__url_time_range}",
+              "targetBlank": false
+            }
+          ],
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/cpu/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/cpu/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_95",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p95"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/cpu/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              },
+              "mappings": [],
+              "noValue": "No instance reported: auth-event-publisher is kept warm, so it is down or not reporting",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "line"
+                },
+                "axisSoftMax": 1
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 28
+        },
+        {
+          "type": "timeseries",
+          "title": "Memory (p99, p95, p50)",
+          "description": "auth-event-publisher's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 30 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 6,
+            "y": 32
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/memory/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/memory/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_95",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p95"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/memory/utilizations",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              },
+              "mappings": [],
+              "noValue": "No instance reported: auth-event-publisher is kept warm, so it is down or not reporting",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "line"
+                },
+                "axisSoftMax": 1
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 29
+        },
+        {
+          "type": "timeseries",
+          "title": "Instances (total, active, idle)",
+          "description": "auth-event-publisher's Cloud Run instances: the total, the most in each minute summed over active and idle, as the `ceiling-` policies read it, and active (serving or starting) and idle (kept warm, or waiting to be shut down) apart. The grey line is max_instances, 1 (too few for a `ceiling-` policy): at it new requests wait or fail with 429.",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 12,
+            "y": 32
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [
+                  "resource.label.service_name"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "+60s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "total"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/instance_count",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [
+                  "metric.label.state"
+                ],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_MAX",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "{{metric.label.state}}"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "#8c8c8c",
+                    "value": 1
+                  }
+                ]
+              },
+              "mappings": [],
+              "decimals": 0,
+              "noValue": "No instance reported: auth-event-publisher is kept warm, so it is down or not reporting",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "line"
+                },
+                "axisSoftMax": 1
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 30
+        },
+        {
+          "type": "timeseries",
+          "title": "Busiest instance's requests (p99, p50)",
+          "description": "The most requests one instance served at once (`container/max_request_concurrencies`), its 99th and 50th percentile in each 5-minute window. The red line is `run-concurrency-high`'s: the p99 above 71.5 for 15 minutes pages. The grey line is the concurrency setting, 80: past it a request waits for a slot or a new instance.",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 18,
+            "y": 32
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/max_request_concurrencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/max_request_concurrencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "+300s",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 71.5
+                  },
+                  {
+                    "color": "#8c8c8c",
+                    "value": 80
+                  }
+                ]
+              },
+              "mappings": [],
+              "noValue": "No instance reported: auth-event-publisher is kept warm, so it is down or not reporting",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "line"
+                },
+                "axisSoftMax": 80
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 31
+        },
+        {
+          "type": "timeseries",
+          "title": "Start-up time (p99, p50)",
+          "description": "How long a new instance took to start, until it was ready to serve (`container/startup_latencies`): a dot for each interval in which one started. Nothing drawn: no instance started. No policy reads it; a start-up that failed is the last panel.",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 39
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/startup_latencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p99"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/startup_latencies",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_MAX",
+                "perSeriesAligner": "ALIGN_PERCENTILE_50",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "p50"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "noValue": "No instance started in this range",
+              "custom": {
+                "drawStyle": "points",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "always",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "pointSize": 6
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 32
+        },
+        {
+          "type": "timeseries",
+          "title": "Instances billed",
+          "description": "Billable instance time per second (`container/billable_instance_time`): how many instances were billed on average. An instance kept warm with CPU always on bills all the time; one that scales to zero, only while it serves.",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 39
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "run.googleapis.com/container/billable_instance_time",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_RATE",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "billed"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "decimals": 1,
+              "noValue": "No instance reported: auth-event-publisher is kept warm, so it is down or not reporting",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 33
+        },
+        {
+          "type": "timeseries",
+          "title": "Killed for memory, crashed, failed to start",
+          "description": "From Cloud Run's own system log: a container killed for exceeding its memory limit (`run_oom_kills`; `run-oom` pages on one), a container that exited with an error or a signal (`run_crash_exits`; `run-crash-loop` at three in fifteen minutes), and a failed start-up or liveness probe (`run_system_errors`; `canary-startup`).",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 39
+          },
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/run_oom_kills",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "killed for memory"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/run_crash_exits",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "crashed"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "stackdriver",
+                "uid": "cloud-app"
+              },
+              "queryType": "timeSeriesList",
+              "timeSeriesList": {
+                "projectName": "__TPA_APP_PROJECT_ID__",
+                "filters": [
+                  "metric.type",
+                  "=",
+                  "logging.googleapis.com/user/run_system_errors",
+                  "AND",
+                  "resource.type",
+                  "=",
+                  "cloud_run_revision",
+                  "AND",
+                  "resource.label.service_name",
+                  "=",
+                  "auth-event-publisher"
+                ],
+                "groupBys": [],
+                "crossSeriesReducer": "REDUCE_SUM",
+                "perSeriesAligner": "ALIGN_DELTA",
+                "alignmentPeriod": "grafana-auto",
+                "view": "FULL",
+                "preprocessor": "none"
+              },
+              "aliasBy": "failed probe or exit"
+            }
+          ],
+          "interval": "1m",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "noValue": "None in this range",
+              "custom": {
+                "drawStyle": "bars",
+                "lineWidth": 1,
+                "fillOpacity": 60,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 34
+        }
+      ],
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -3086,6 +4104,19 @@
       "id": 27
     },
     {
+      "type": "row",
+      "title": "auth-db (auth and its jobs; app project): disk space, CPU, memory, connections, disk I/O",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 35
+    },
+    {
       "type": "timeseries",
       "title": "Disk space used (%)",
       "description": "How full auth-db's disk is (`database/disk/utilization`), the mean of each 5 minutes. The red line is `auth-db-disk`'s: above 85% for 10 minutes pages. Automatic storage increase grows the disk before it fills, up to the instance's disk_autoresize_limit; at that limit a full disk stops the database taking writes. \"database stopped\": stopped on purpose (its activation policy NEVER; the service's TPA_STOPPED_DATABASES). \"not reporting\": no value, and not listed as stopped: not built (cc-db exists with the staffed desk only), or reporting nothing.",
@@ -3093,7 +4124,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 32
+        "y": 33
       },
       "datasource": {
         "type": "stackdriver",
@@ -3190,7 +4221,7 @@
           "sort": "desc"
         }
       },
-      "id": 28
+      "id": 36
     },
     {
       "type": "timeseries",
@@ -3200,7 +4231,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 32
+        "y": 33
       },
       "datasource": {
         "type": "stackdriver",
@@ -3384,7 +4415,7 @@
           }
         }
       ],
-      "id": 29
+      "id": 37
     },
     {
       "type": "state-timeline",
@@ -3394,7 +4425,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 38
+        "y": 39
       },
       "datasource": {
         "type": "stackdriver",
@@ -3494,7 +4525,7 @@
           "sort": "none"
         }
       },
-      "id": 30
+      "id": 38
     },
     {
       "type": "timeseries",
@@ -3504,7 +4535,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 38
+        "y": 39
       },
       "datasource": {
         "type": "stackdriver",
@@ -3605,7 +4636,7 @@
           "sort": "desc"
         }
       },
-      "id": 31
+      "id": 39
     },
     {
       "type": "timeseries",
@@ -3615,7 +4646,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 38
+        "y": 39
       },
       "datasource": {
         "type": "stackdriver",
@@ -3712,7 +4743,7 @@
           "sort": "desc"
         }
       },
-      "id": 32
+      "id": 40
     },
     {
       "type": "timeseries",
@@ -3722,7 +4753,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 44
+        "y": 45
       },
       "datasource": {
         "type": "stackdriver",
@@ -3828,7 +4859,7 @@
           "sort": "desc"
         }
       },
-      "id": 33
+      "id": 41
     },
     {
       "type": "timeseries",
@@ -3838,7 +4869,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 44
+        "y": 45
       },
       "datasource": {
         "type": "stackdriver",
@@ -3959,7 +4990,7 @@
           "sort": "desc"
         }
       },
-      "id": 34
+      "id": 42
     },
     {
       "type": "timeseries",
@@ -3969,7 +5000,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 44
+        "y": 45
       },
       "datasource": {
         "type": "stackdriver",
@@ -4090,7 +5121,7 @@
           "sort": "desc"
         }
       },
-      "id": 35
+      "id": 43
     },
     {
       "type": "timeseries",
@@ -4100,7 +5131,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 44
+        "y": 45
       },
       "datasource": {
         "type": "stackdriver",
@@ -4190,7 +5221,7 @@
           "sort": "desc"
         }
       },
-      "id": 36
+      "id": 44
     },
     {
       "type": "row",
@@ -4201,9 +5232,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 50
+        "y": 51
       },
-      "id": 37
+      "id": 45
     },
     {
       "type": "stat",
@@ -4213,7 +5244,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 51
+        "y": 52
       },
       "datasource": {
         "type": "stackdriver",
@@ -5063,7 +6094,7 @@
           }
         }
       ],
-      "id": 38
+      "id": 46
     },
     {
       "type": "stat",
@@ -5073,7 +6104,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 51
+        "y": 52
       },
       "datasource": {
         "type": "stackdriver",
@@ -5667,7 +6698,7 @@
           }
         }
       ],
-      "id": 39
+      "id": 47
     },
     {
       "type": "timeseries",
@@ -5677,7 +6708,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 51
+        "y": 52
       },
       "datasource": {
         "type": "stackdriver",
@@ -5768,7 +6799,7 @@
           "sort": "desc"
         }
       },
-      "id": 40
+      "id": 48
     },
     {
       "type": "timeseries",
@@ -5778,7 +6809,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 56
+        "y": 57
       },
       "datasource": {
         "type": "stackdriver",
@@ -5869,7 +6900,7 @@
           "sort": "desc"
         }
       },
-      "id": 41
+      "id": 49
     },
     {
       "type": "timeseries",
@@ -5879,7 +6910,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 56
+        "y": 57
       },
       "datasource": {
         "type": "stackdriver",
@@ -6001,7 +7032,7 @@
           "sort": "desc"
         }
       },
-      "id": 42
+      "id": 50
     },
     {
       "type": "row",
@@ -6012,9 +7043,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 62
+        "y": 63
       },
-      "id": 43
+      "id": 51
     },
     {
       "type": "timeseries",
@@ -6024,7 +7055,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 63
+        "y": 64
       },
       "datasource": {
         "type": "stackdriver",
@@ -6114,7 +7145,7 @@
           "sort": "desc"
         }
       },
-      "id": 44
+      "id": 52
     },
     {
       "type": "timeseries",
@@ -6124,7 +7155,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 63
+        "y": 64
       },
       "datasource": {
         "type": "stackdriver",
@@ -6213,7 +7244,7 @@
           "sort": "desc"
         }
       },
-      "id": 45
+      "id": 53
     },
     {
       "type": "timeseries",
@@ -6223,7 +7254,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 71
+        "y": 72
       },
       "datasource": {
         "type": "stackdriver",
@@ -6315,7 +7346,7 @@
           "sort": "desc"
         }
       },
-      "id": 46
+      "id": 54
     },
     {
       "type": "row",
@@ -6326,9 +7357,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 79
+        "y": 80
       },
-      "id": 47
+      "id": 55
     },
     {
       "type": "timeseries",
@@ -6338,7 +7369,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 80
+        "y": 81
       },
       "datasource": {
         "type": "stackdriver",
@@ -6426,7 +7457,7 @@
           "sort": "desc"
         }
       },
-      "id": 48
+      "id": 56
     },
     {
       "type": "timeseries",
@@ -6436,7 +7467,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 80
+        "y": 81
       },
       "datasource": {
         "type": "stackdriver",
@@ -6522,7 +7553,7 @@
           "sort": "desc"
         }
       },
-      "id": 49
+      "id": 57
     },
     {
       "type": "timeseries",
@@ -6532,7 +7563,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 88
+        "y": 89
       },
       "datasource": {
         "type": "stackdriver",
@@ -6617,7 +7648,7 @@
           "sort": "desc"
         }
       },
-      "id": 50
+      "id": 58
     },
     {
       "type": "timeseries",
@@ -6627,7 +7658,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 88
+        "y": 89
       },
       "datasource": {
         "type": "stackdriver",
@@ -6742,7 +7773,7 @@
           "sort": "desc"
         }
       },
-      "id": 51
+      "id": 59
     },
     {
       "type": "timeseries",
@@ -6752,7 +7783,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 96
+        "y": 97
       },
       "datasource": {
         "type": "stackdriver",
@@ -6869,7 +7900,7 @@
           "sort": "desc"
         }
       },
-      "id": 52
+      "id": 60
     },
     {
       "type": "timeseries",
@@ -6879,7 +7910,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 96
+        "y": 97
       },
       "datasource": {
         "type": "stackdriver",
@@ -6967,7 +7998,953 @@
           "sort": "desc"
         }
       },
-      "id": 53
+      "id": 61
+    },
+    {
+      "type": "row",
+      "title": "Sign-in events (auth-event-publisher, to records)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 105
+      },
+      "id": 62
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest unpublished sign-in event (p99, seconds)",
+      "description": "How long the oldest event auth has not yet published to records has waited, as auth's event publisher reads it after each batch (`auth_events_outbox_lag`): a person's first sign-in waits for its principal.joined, refused `mirror_stale` meanwhile. `auth-events-lag` opens above 30 s for 2 minutes; `auth-events-stalled` (urgent) above 300 s for 10. The publisher writes it only while its batches complete: none at all is the heartbeat beside it missing.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 106
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_events_outbox_lag",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_99",
+            "alignmentPeriod": "+60s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "p99"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 30.0
+              },
+              {
+                "color": "red",
+                "value": 300.0
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "Missing: no batch completed in this range, so publishing has stopped or is not reporting",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 63
+    },
+    {
+      "type": "timeseries",
+      "title": "Event publisher heartbeat (batches completed)",
+      "description": "One `publisher_alive` line a minute while auth's event publisher completes its batches, none while it does not (`auth_events_publisher_alive`): none for five minutes opens `auth-events-lag`, for fifteen `auth-events-stalled` (urgent; first sign-ins refused).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 106
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_events_publisher_alive",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "alive"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "Missing: no publisher_alive line in this range, so publishing has stopped or auth-event-publisher is not reporting",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 64
+    },
+    {
+      "type": "timeseries",
+      "title": "Event publisher instances",
+      "description": "auth-event-publisher's instances. With none, no sign-in event reaches records: a first sign-in waits (`mirror_stale`), and `auth-events-lag` opens.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 106
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=~",
+              "auth-event-publisher"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.service_name}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No instance reported: auth-event-publisher is kept warm, so it is down or not reporting",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 65
+    },
+    {
+      "type": "row",
+      "title": "Sign-in protection, staff laptops and one-time passes",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 113
+      },
+      "id": 66
+    },
+    {
+      "type": "timeseries",
+      "title": "Sign-ins paused after wrong attempts",
+      "description": "One per account whose sign-in auth paused after wrong attempts, by the pause (`code`: account, factor, factor_ceiling, factor_repeated) and whose account (`class`: staff or outside), from auth's messenger (`auth_sign_in_protection`; `auth-sign-in-repeated`, `auth-sign-in-ceiling`, `auth-sign-in-code-surge` and the staff policies read it). Never the account, an address or a code.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 114
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_sign_in_protection",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code",
+              "metric.label.class"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}} {{metric.label.class}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 67
+    },
+    {
+      "type": "timeseries",
+      "title": "Breached-password lookups with no answer",
+      "description": "A breached-password lookup that gave auth no answer, so a sign-in or a password set was refused (`auth_breach_corpus_unavailable`; `auth-breach-corpus-unavailable`), by when (`code`: set or login) and why (`class`: timeout or read).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 114
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_breach_corpus_unavailable",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code",
+              "metric.label.class"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}} {{metric.label.class}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 68
+    },
+    {
+      "type": "timeseries",
+      "title": "Texted codes refused at a day's ceiling",
+      "description": "Members' texted codes auth refused because the estate's day is spent, by where (`code`: offer or send) and which ceiling (`class`: soft, past the setting; hard, past twice it) (`auth_sms_codes_estate_ceiling`; `auth-texted-codes-ceiling`), and applicants' set-up codes refused at theirs (`auth_sms_codes_registration_ceiling`; `auth-registration-codes-ceiling`).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 114
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_sms_codes_estate_ceiling",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code",
+              "metric.label.class"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "members: {{metric.label.code}} {{metric.label.class}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_sms_codes_registration_ceiling",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "set-up: {{metric.label.code}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 69
+    },
+    {
+      "type": "timeseries",
+      "title": "Staff laptops: waiting, approved, mismatched, copied",
+      "description": "auth's staff laptop lines (`auth_staff_devices`), from auth and its jobs: a laptop waiting for approval (`device_pending`), one approved (`device_approved`, `outcome` operator or admin), an approval or binding auth did not write (`device_tag_mismatch`) and a copied device cookie a second browser used (`device_cookie_superseded`); `auth-device-*` read them. Never the person or the laptop.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 121
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_staff_devices"
+            ],
+            "groupBys": [
+              "metric.label.code",
+              "metric.label.outcome"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}} {{metric.label.outcome}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No staff laptop event in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 70
+    },
+    {
+      "type": "timeseries",
+      "title": "Device-bound staff sessions",
+      "description": "auth's device-bound staff sessions (`auth_bound_sessions`): bound, refreshed, a binding Chrome declined, a refused proof (at `register` or `refresh`), a session ended after five wrong proofs (`binding_guessed`; `auth-binding-guessed`) and a binding auth did not write. Never the person or the session.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 121
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_bound_sessions",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code",
+              "metric.label.operation"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}} {{metric.label.operation}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No bound-session event in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 71
+    },
+    {
+      "type": "timeseries",
+      "title": "One-time sign-in passes issued and used",
+      "description": "A one-time sign-in a TPA administrator issued for a member of staff, or that member of staff signed in with (`auth_sign_in_passes`; `auth-sign-in-pass-issued`, `auth-sign-in-pass-used`). Who, for whom and why are in auth's audit chain.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 121
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_sign_in_passes",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No sign-in pass issued or used in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 72
     },
     {
       "type": "row",
@@ -6978,9 +8955,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 104
+        "y": 128
       },
-      "id": 54
+      "id": 73
     },
     {
       "type": "timeseries",
@@ -6990,7 +8967,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 105
+        "y": 129
       },
       "datasource": {
         "type": "stackdriver",
@@ -7083,7 +9060,7 @@
           "sort": "desc"
         }
       },
-      "id": 55
+      "id": 74
     },
     {
       "type": "timeseries",
@@ -7093,7 +9070,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 105
+        "y": 129
       },
       "datasource": {
         "type": "stackdriver",
@@ -7186,7 +9163,7 @@
           "sort": "desc"
         }
       },
-      "id": 56
+      "id": 75
     }
   ]
 }

@@ -64,8 +64,8 @@ GREY = "#8c8c8c"
 DEFAULT_MAX_INSTANCES = 100
 # Which page holds which services' Resources rows, written out here rather than read from the generator, and held
 # to the catalogue test's list of every project's Cloud Run services.
-AREAS = {"portal-api": ("app", {"web", "tpa-api", "model-gateway", "tpa-jobs-drains", "watchtower"}),
-         "sign-in": ("app", {"auth", "auth-outbox-publisher"}),
+AREAS = {"portal-api": ("app", {"web", "ops-web", "tpa-api", "model-gateway", "tpa-jobs-drains", "watchtower"}),
+         "sign-in": ("app", {"auth", "auth-outbox-publisher", "auth-event-publisher"}),
          "records": ("phi", {"records", "connectors"}),
          "callcentre": ("cc", {"svc-voice", "svc-ops", "svc-twilio-rest"}),
          "crm": ("crm", {"crm-web", "engine"})}
@@ -282,6 +282,17 @@ class Infra:
             set_ = re.search(r"^  min_instances\s*=\s*(.+?)\s*$", body, re.M)
             out[name] = self.value(env, set_.group(1)) if set_ else default
         return out
+
+    def min_key(self, env: str, service: str) -> str | None:
+        """The service_min_instances key a service's module reads its minimum from (ops-web reads web's), or None."""
+        for m in re.finditer(r'^module "[^"]+" \{\n(.*?)^\}', self.root_text(env), re.M | re.S):
+            body = m.group(1)
+            name = re.search(r'^  name\s*=\s*"([a-z0-9-]+)"', body, re.M)
+            if name and name.group(1) == service and re.search(r'^\s*source\s*=\s*"[./]*modules/run-service"', body,
+                                                                 re.M):
+                key = re.search(r"^  min_instances\s*=\s*.*?var\.service_min_instances\.([a-z_]+)", body, re.M)
+                return key.group(1) if key else None
+        return None
 
     def no_instance_policies(self, env: str) -> set[str]:
         """The services the root gives the module's `<service> has no instance` policy (its warm_services), with the
@@ -677,7 +688,10 @@ class SourceTest(unittest.TestCase):
 
     def test_the_reader_reads_what_it_should(self):
         # Known facts at the pinned commit, so a reader that silently reads nothing fails here.
-        self.assertEqual(INFRA.services("beta")["svc-voice"], (1, 20))
+        # svc-voice's 40 requests since the call centre's callbacks beside a call (callcentre.tf); model-gateway's
+        # two designs an instance, twenty instances (D-249).
+        self.assertEqual(INFRA.services("beta")["svc-voice"], (1, 40))
+        self.assertEqual(INFRA.services("beta")["model-gateway"], (20, 2))
         self.assertEqual(INFRA.services("production")["records"], (DEFAULT_MAX_INSTANCES, 80))
         self.assertIn("records", INFRA.ceilings("beta"))
         self.assertNotIn("records", INFRA.ceilings("production"))
@@ -757,9 +771,11 @@ class ResourcesTest(unittest.TestCase):
                                                      service, env), [], (env, service))
 
     def test_a_service_that_takes_no_web_requests_charts_what_it_does_instead(self):
-        # auth-outbox-publisher, tpa-jobs-drains and connectors run loops: Cloud Run counted no request for any of
-        # them in the week to 2026-11-12, so their pages chart their own counters, never Cloud Run's requests.
-        self.assertEqual(set(gen.NO_WEB_REQUESTS), {"auth-outbox-publisher", "tpa-jobs-drains", "connectors"})
+        # auth-outbox-publisher, auth-event-publisher, tpa-jobs-drains and connectors run loops: Cloud Run counted no
+        # request for any of them in the week to 2026-11-12, so their pages chart their own counters, never Cloud
+        # Run's requests.
+        self.assertEqual(set(gen.NO_WEB_REQUESTS), {"auth-outbox-publisher", "auth-event-publisher", "tpa-jobs-drains",
+                                                    "connectors"})
         requests_ = {"run.googleapis.com/request_count", "run.googleapis.com/request_latencies"}
         for env in RENDERED:
             for _page, service in service_pages(env):
@@ -854,8 +870,8 @@ class MutationTest(unittest.TestCase):
     def test_a_missing_resources_row(self):
         page = self.page("portal-api")
         page["panels"] = [p for p in page["panels"] if not p["title"].startswith("Resources · tpa-api")]
-        self.assertIn("portal-api: Resources rows for ['model-gateway', 'tpa-jobs-drains', 'watchtower', 'web'], not "
-                      "['model-gateway', 'tpa-api', 'tpa-jobs-drains', 'watchtower', 'web']",
+        self.assertIn("portal-api: Resources rows for ['model-gateway', 'ops-web', 'tpa-jobs-drains', 'watchtower', "
+                      "'web'], not ['model-gateway', 'ops-web', 'tpa-api', 'tpa-jobs-drains', 'watchtower', 'web']",
                       check_resources("portal-api", page, "beta"))
 
     def test_an_open_row_on_an_area_page(self):

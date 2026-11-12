@@ -452,11 +452,13 @@ class RunsTest(unittest.TestCase):
             minimum = INFRA.min_instances(env)
             self.assertEqual(set(gen.TERRAFORM_WARM[env]), {s for s in gen.RUNS[env] if minimum.get(s, 0) >= 1}, env)
             self.assertEqual(set(gen.KEPT_WARM[env]), set(gen.TERRAFORM_WARM[env]) | set(gen.DEPLOYMENT_WARM[env]))
-            # A deployment's tfvars can raise only a minimum its root reads from service_min_instances.
+            # A deployment's tfvars can raise only a minimum its root reads from service_min_instances: the key the
+            # service's module reads (ops-web reads web's).
             keys = INFRA.min_defaults(env) if gen.DEPLOYMENT_WARM[env] else {}
             for service in gen.DEPLOYMENT_WARM[env]:
                 self.assertIn(service, gen.RUNS[env], env)
-                self.assertIn(service.replace("-", "_"), keys, f"{env}: {service} has no service_min_instances key")
+                self.assertIn(INFRA.min_key(env, service), keys, f"{env}: {service} reads no service_min_instances key")
+            self.assertEqual(INFRA.min_key("beta", "ops-web"), "web")
 
     def test_every_service_with_a_no_instance_policy_is_kept_warm(self):
         for env in gen.RUNS:

@@ -83,13 +83,14 @@ DATABASES = ("auth-db", "tpa-db", "crm-db", "cc-db")
 SWEEP_DBS = ("auth-db", "tpa-db")   # a sweep's run needs auth (its token) and records (tpa-db)
 # Each scheduled job's missed-run deadline in minutes (beta's terraform.tfvars.example `missed_run_after`, about one
 # and a half times its cadence; docs/infra/monitoring.md §5; the importer's, feedingest.tf's
-# local.feed_ingest_missed_run_after, 43200 s), and what it needs to run: its own name while it can be paused or not be
+# local.feed_ingest_missed_run_after, 79200 s since 2026-11-01: over the 19 hours between its 12:00 and 07:00 slots),
+# and what it needs to run: its own name while it can be paused or not be
 # built, and the databases it reads (tpa-platform's database_dependent_jobs; the importer's missed run is gated on
 # auth-db and tpa-db, main.tf's monitoring inputs). The monthly verify and the quarterly drill have none.
 DEADLINES = [(APP, "tpa-jobs-erisa-clocks", 23, ("erisa-clocks", *SWEEP_DBS)),
              (APP, "tpa-jobs-nightly-anomalies", 90, ("nightly-anomalies", *SWEEP_DBS)),
              (APP, "auth-sweeper", 90, ("auth-db",)),
-             (APP, IMPORTER, 720, (IMPORTER, *SWEEP_DBS)),
+             (APP, IMPORTER, 1320, (IMPORTER, *SWEEP_DBS)),
              (APP, "tpa-jobs-stoploss-surveillance", 2160, ("stoploss-surveillance", *SWEEP_DBS)),
              (APP, "tpa-jobs-accumulator-reconcile", 2160, ("accumulator-reconcile", *SWEEP_DBS)),
              (APP, "tpa-jobs-workload-audit", 2160, ("workload-audit", *SWEEP_DBS)),
@@ -656,9 +657,13 @@ def deadline_title(job: str) -> str:
 
 # What a scheduled job's deadline tile says beside the generic words.
 DEADLINE_NOTES = {
-    IMPORTER: ("The administrator-feed importer's Everon sync runs at 06:00, 14:00 and 22:00 Chicago time, never "
-               "retried, and alerts on one failure (`feed-ingest-failed`); its `missed run` policy exists only while "
-               "its schedule is unpaused. production-full builds none of it.")}
+    IMPORTER: ("The administrator-feed importer's Everon sync runs at 07:00 and 12:00 Chicago time, never retried, "
+               "and alerts on one failure (`feed-ingest-failed`); its `missed run` policy exists only while its "
+               "schedule is unpaused. production-full builds none of it.")}
+# Why a deadline is what it is, where it is not about one and a half cadences.
+DEADLINE_WHY = {IMPORTER: "22 hours: over the 19 between its 12:00 and 07:00 slots (20 on the night the clocks go "
+                          "back) and under the 23 to the slot after next, so any one missed slot opens it before the "
+                          "next run"}
 
 
 def deadline_stats(w: int, h: int, env: str = "beta") -> list[dict]:
@@ -673,7 +678,8 @@ def deadline_stats(w: int, h: int, env: str = "beta") -> list[dict]:
         out.append(stat(deadline_title(job), ds,
                         executions(job, "succeeded", "+60s" if window <= 120 else "+3600s", by=(), name="runs"),
                         f"Successful executions of `{job}` in the last {window} minutes: its missed-run deadline "
-                        f"({deadline} minutes, about one and a half cadences) plus three, because Cloud Run's job "
+                        f"({deadline} minutes, {DEADLINE_WHY.get(job, 'about one and a half cadences')}) plus three, "
+                        "because Cloud Run's job "
                         "metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is "
                         f"open or about to be.{note}", w=w, h=h, time_from=f"{window}m", no_value="MISSED",
                         steps=thresholds("red", (1, "green")), deps=deps))
@@ -909,16 +915,19 @@ def whats_wrong(key, title, ds, services, jobs, db, reporting, checks, w=6, env=
 DEFAULT_MAX_INSTANCES, DEFAULT_CONCURRENCY = 100, 80
 LIMITS = {
     "beta": {
-        "max_instances": {"web": 100, "tpa-api": 100, "model-gateway": 100, "tpa-jobs-drains": 1, "auth": 20,
-                          "auth-outbox-publisher": 3, "watchtower": 1, "records": 20, "connectors": 4, "svc-voice": 1,
-                          "svc-ops": 1, "svc-twilio-rest": 1, "crm-web": 2, "engine": 1},
-        "concurrency": {"svc-voice": 20},   # one call each
-        "ceilings": {"auth": 20, "auth-outbox-publisher": 3, "records": 20, "connectors": 4},
+        "max_instances": {"web": 100, "ops-web": 100, "tpa-api": 100, "model-gateway": 20, "tpa-jobs-drains": 1,
+                          "auth": 20, "auth-outbox-publisher": 3, "auth-event-publisher": 1, "watchtower": 1,
+                          "records": 20, "connectors": 4, "svc-voice": 1, "svc-ops": 1, "svc-twilio-rest": 1,
+                          "crm-web": 2, "engine": 1},
+        # svc-voice's 40 are requests, not calls (a call's socket and its callbacks beside it, callcentre.tf);
+        # model-gateway's 2, two designs in its 1Gi (D-249), and its 20 instances against the regional quota.
+        "concurrency": {"svc-voice": 40, "model-gateway": 2},
+        "ceilings": {"auth": 20, "auth-outbox-publisher": 3, "model-gateway": 20, "records": 20, "connectors": 4},
         "max_connections": {"auth-db": 100, "tpa-db": 400, "crm-db": 200, "cc-db": 100},
     },
     "production": {   # production-full: records keeps Cloud Run's default; no call centre, CRM services or watchtower
         "max_instances": {"web": 100, "tpa-api": 100, "model-gateway": 100, "tpa-jobs-drains": 1, "auth": 20,
-                          "auth-outbox-publisher": 3, "records": 100, "connectors": 4},
+                          "auth-outbox-publisher": 3, "auth-event-publisher": 1, "records": 100, "connectors": 4},
         "concurrency": {},
         "ceilings": {"auth": 20, "auth-outbox-publisher": 3, "connectors": 4},
         "max_connections": {"auth-db": 500, "tpa-db": 400, "crm-db": 200},
@@ -929,15 +938,15 @@ LIMITS = {
 # The Cloud Run services each environment runs, which the overview's Services row tiles (a service an environment does
 # not run gets no tile there). production: what production-full's root builds. beta (the estate the owner runs, its
 # root named beta): what its switches turn on, as `gcloud run services list` reads it on 2026-11-12 (read only):
-# tpa-jobs-drains (tpa_jobs_drains_enabled) on since 2026-10-24 and connectors (connectors_enabled) since 2026-11-11.
-# ops-web and auth-event-publisher run too, built by a tpa-platform after the catalogue's pinned commit (06f73b72),
-# whose Terraform the tests read: they join SERVICES with the next re-vendor (tasks/todo.md). A switch turned on in
-# beta's tfvars is a line here.
+# tpa-jobs-drains (tpa_jobs_drains_enabled) on since 2026-10-24, connectors (connectors_enabled) since 2026-11-11, and
+# ops-web (ops_web_enabled, PC-OR-1: the ops portal's own container) and auth-event-publisher (sign-in events to
+# records, D-314), both minimum 1. A switch turned on in beta's tfvars is a line here.
 RUNS = {
-    "beta": ("web", "tpa-api", "model-gateway", "tpa-jobs-drains", "watchtower", "auth", "auth-outbox-publisher",
-             "records", "connectors", "svc-voice", "svc-ops", "svc-twilio-rest", "crm-web", "engine"),
-    "production": ("web", "tpa-api", "model-gateway", "tpa-jobs-drains", "auth", "auth-outbox-publisher", "records",
-                   "connectors"),
+    "beta": ("web", "ops-web", "tpa-api", "model-gateway", "tpa-jobs-drains", "watchtower", "auth",
+             "auth-outbox-publisher", "auth-event-publisher", "records", "connectors", "svc-voice", "svc-ops",
+             "svc-twilio-rest", "crm-web", "engine"),
+    "production": ("web", "tpa-api", "model-gateway", "tpa-jobs-drains", "auth", "auth-outbox-publisher",
+                   "auth-event-publisher", "records", "connectors"),
 }
 
 
@@ -949,13 +958,16 @@ RUNS = {
 # - DEPLOYMENT_WARM: what a deployment's own terraform.tfvars raises besides. Beta's (untracked; read by the
 #   orchestrating session on 2026-10-13, values only) sets service_min_instances = { auth = 1, records = 1,
 #   tpa_api = 1, svc_ops = 1 }, and web = 1 since (on 2026-11-12 `gcloud run services list` reads web's minimum 1
-#   and `web has no instance` is an enabled policy, both read only). The tests cannot read that file: they hold these
-#   to beta's list, and each to a service_min_instances key its root really has. A change to that file is a line here.
-# watchtower, this site, reads minimum 1 on 2026-11-12 too (tpa-platform D-334, after the pinned commit): it joins
-# TERRAFORM_WARM with the next re-vendor.
-TERRAFORM_WARM = {"beta": ("auth-outbox-publisher", "tpa-jobs-drains", "connectors", "svc-voice", "svc-twilio-rest"),
-                  "production": ("auth", "auth-outbox-publisher", "model-gateway", "tpa-jobs-drains", "connectors")}
-DEPLOYMENT_WARM = {"beta": ("auth", "records", "tpa-api", "svc-ops", "web"), "production": ()}
+#   and `web has no instance` is an enabled policy, both read only). ops-web reads web's key (its module's
+#   min_instances is var.service_min_instances.web), so it is warm with web (gcloud reads its minimum 1 on 2026-11-12).
+#   The tests cannot read that file: they hold these to beta's list, and each to the service_min_instances key its
+#   module really reads. A change to that file is a line here.
+# watchtower, this site, is minimum 1 by Terraform since D-334, and auth-event-publisher since D-314.
+TERRAFORM_WARM = {"beta": ("auth-outbox-publisher", "auth-event-publisher", "tpa-jobs-drains", "watchtower",
+                           "connectors", "svc-voice", "svc-twilio-rest"),
+                  "production": ("auth", "auth-outbox-publisher", "auth-event-publisher", "model-gateway",
+                                 "tpa-jobs-drains", "connectors")}
+DEPLOYMENT_WARM = {"beta": ("auth", "records", "tpa-api", "svc-ops", "web", "ops-web"), "production": ()}
 KEPT_WARM = {env: TERRAFORM_WARM[env] + tuple(s for s in DEPLOYMENT_WARM[env] if s not in TERRAFORM_WARM[env])
              for env in TERRAFORM_WARM}
 # What each root builds that has no tile here, and why (a service the environment does not run, or beta's
@@ -969,11 +981,17 @@ FILE_READER_BETA = ("beta runs it since 2026-10-13 (its deployment's tfvars turn
 # green; production-full builds none of it. A switch turned on is the owner's turn-on (tasks/todo.md, EN: stage b).
 ENROLL_OFF = ("enroll_enabled off (D-185, beta's enroll.tf; it builds nothing without enroll_db_enabled either): {} is "
               "not built, so no tile and no page until the owner's turn-on (tasks/todo.md, EN)")
+# The relay for SendGrid's signed delivery reports (OWNER-NT-6, hooks.tf), built only behind local.hooks_relay: not
+# running in the app project (`gcloud run services list`, read only, 2026-11-12), so no tile and no page until it is.
+HOOKS_RELAY_OFF = ("hooks-relay, the relay for SendGrid's signed delivery reports on the hooks host (OWNER-NT-6, "
+                   "hooks.tf), is built only behind its switch and does not run (gcloud run services list, read only, "
+                   "2026-11-12): no tile and no page until it does (tasks/todo.md)")
 NOT_RUN = {"beta": {"file-reader": FILE_READER_BETA,
                     "enroll": ENROLL_OFF.format("the enrollment engine (PHI project, internal)"),
                     "enroll-relay": ENROLL_OFF.format("the portal's API hop into the PHI project (app project)"),
-                    "enroll-web": ENROLL_OFF.format("the enrollment portal (app project, behind edge_enroll)")},
-           "production": {"file-reader": FILE_READER_OFF}}
+                    "enroll-web": ENROLL_OFF.format("the enrollment portal (app project, behind edge_enroll)"),
+                    "hooks-relay": HOOKS_RELAY_OFF},
+           "production": {"file-reader": FILE_READER_OFF, "hooks-relay": HOOKS_RELAY_OFF}}
 # The module's `<service> has no instance` (its threshold condition; its absence one waits ten minutes): instance_count
 # the most in each minute, summed over revisions, below one for five minutes.
 NO_INSTANCE_POLICY = {"aligner": "ALIGN_MAX", "period": "60s", "reducer": "REDUCE_SUM", "below": 1, "duration": "300s"}
@@ -1552,20 +1570,22 @@ def backup_rows(name: str, ds: str) -> list[dict]:
 #
 # Each service: its datasource, and the page whose Resources rows hold it.
 SERVICES = {
-    "web": (APP, "portal-api"), "tpa-api": (APP, "portal-api"), "model-gateway": (APP, "portal-api"),
-    "tpa-jobs-drains": (APP, "portal-api"), "watchtower": (APP, "portal-api"),
-    "auth": (APP, "sign-in"), "auth-outbox-publisher": (APP, "sign-in"),
+    "web": (APP, "portal-api"), "ops-web": (APP, "portal-api"), "tpa-api": (APP, "portal-api"),
+    "model-gateway": (APP, "portal-api"), "tpa-jobs-drains": (APP, "portal-api"), "watchtower": (APP, "portal-api"),
+    "auth": (APP, "sign-in"), "auth-outbox-publisher": (APP, "sign-in"), "auth-event-publisher": (APP, "sign-in"),
     "records": (PHI, "records"), "connectors": (PHI, "records"),
     "svc-voice": (CC, "callcentre"), "svc-ops": (CC, "callcentre"), "svc-twilio-rest": (CC, "callcentre"),
     "crm-web": (CRM, "crm"), "engine": (CRM, "crm"),
 }
 AREA_TITLES = {"portal-api": "Portal & API", "sign-in": "Sign-in", "records": "Member records",
                "callcentre": "Call centre", "crm": "CRM"}
-WHAT = {"watchtower": "this monitoring site"}   # a service whose name does not say what it is
+WHAT = {"watchtower": "this monitoring site", "ops-web": "the operations portal",
+        "auth-event-publisher": "sign-in events to records"}   # a service whose name does not say what it is
 # The services whose Cloud Run latency beta's `canary-latency` leaves out: they hold a stream or a call open.
 # Each environment's `latency_excluded_services` (its roots' monitoring calls): the services `canary-latency` leaves out
 # because they hold streams or calls open by design, so their Cloud Run p95 counts a stream's whole life.
-LATENCY_LEFT_OUT = {"beta": ("web", "tpa-api", "model-gateway", "engine", "svc-voice", "svc-ops"),
+LATENCY_LEFT_OUT = {"beta": ("web", "ops-web", "tpa-api", "model-gateway", "engine", "svc-voice", "svc-ops",
+                             "watchtower"),
                     "production": ("engine",)}
 # A service whose own request line times each answer without its streams and file transfers: its log metric, the
 # policy that reads it, the role whose project holds both, and what the line leaves out.
@@ -1579,6 +1599,8 @@ OWN_LATENCY = {
                "health probe"),
 }
 STREAMS = {"web": "relays the desk's event streams, held open about 40 s by design",
+           "ops-web": "relays the desk's event streams to tpa-api, held open about 40 s by design, as web did",
+           "watchtower": "holds Grafana's long queries and its live tail open",
            "tpa-api": "relays the desk's event streams, held open about 40 s by design",
            "model-gateway": "streams the model's answers",
            "engine": "holds the CRM's ledger stream (SSE) open until Cloud Run's 300 s request timeout by design, "
@@ -1974,6 +1996,34 @@ def messenger_refusals(w: int = 12, h: int = 8) -> dict:
                   "(`auth_message_vendor_failures`; `sign-in-message-vendor`).", bars=True, w=w, h=h, no_value=NONE)
 
 
+def events_lag(w: int = 12, h: int = 8) -> dict:
+    """auth-event-publisher's oldest unpublished event, read as `auth-events-lag` reads it, with both policies' lines
+    (`auth-events-stalled`, urgent, is its p1 twin)."""
+    lag, stalled = (CATALOGUE.threshold(name, "app") for name in ("auth-events-lag", "auth-events-stalled"))
+    assert lag["per_series_aligner"] == stalled["per_series_aligner"] == "ALIGN_PERCENTILE_99", (lag, stalled)
+    return series("Oldest unpublished sign-in event (p99, seconds)", APP,
+                  q(log("auth_events_outbox_lag"), REV, align="ALIGN_PERCENTILE_99", period=window(lag),
+                    reduce=lag["cross_series_reducer"], name="p99"),
+                  "How long the oldest event auth has not yet published to records has waited, as auth's event "
+                  "publisher reads it after each batch (`auth_events_outbox_lag`): a person's first sign-in waits for "
+                  f"its principal.joined, refused `mirror_stale` meanwhile. `auth-events-lag` opens above "
+                  f"{lag['threshold_value']:g} s for {minutes(lag, 'duration')} minutes; `auth-events-stalled` (urgent) "
+                  f"above {stalled['threshold_value']:g} s for {minutes(stalled, 'duration')}. The publisher writes it "
+                  "only while its batches complete: none at all is the heartbeat beside it missing.", unit="s",
+                  lines=[(lag["threshold_value"], "red"), (stalled["threshold_value"], "red")], w=w, h=h,
+                  no_value="Missing: no batch completed in this range, so publishing has stopped or is not reporting")
+
+
+def events_alive(w: int = 12, h: int = 8) -> dict:
+    return series("Event publisher heartbeat (batches completed)", APP,
+                  q(log("auth_events_publisher_alive"), REV, name="alive"),
+                  "One `publisher_alive` line a minute while auth's event publisher completes its batches, none while "
+                  "it does not (`auth_events_publisher_alive`): none for five minutes opens `auth-events-lag`, for "
+                  "fifteen `auth-events-stalled` (urgent; first sign-ins refused).", bars=True, w=w, h=h,
+                  no_value="Missing: no publisher_alive line in this range, so publishing has stopped or "
+                           "auth-event-publisher is not reporting")
+
+
 def drain_ticks(w: int = 12, h: int = 8) -> dict:
     return series("Drain ticks, by drain", APP,
                   q(log("tpa_jobs_runs"), REV, by=("job",), service_name="tpa-jobs-drains"),
@@ -2016,6 +2066,8 @@ def connectors_dead(w: int = 12, h: int = 8) -> dict:
 NO_WEB_REQUESTS = {
     "auth-outbox-publisher": ("the sign-in messages it sends", lambda: [messenger_lag(w=12, h=7),
                                                                         messenger_refusals(w=12, h=7)]),
+    "auth-event-publisher": ("the sign-in events it publishes", lambda: [events_lag(w=12, h=7),
+                                                                         events_alive(w=12, h=7)]),
     "tpa-jobs-drains": ("its drain ticks", lambda: [drain_ticks(w=12, h=7), drains_raised(w=12, h=7)]),
     "connectors": ("its delivery loop", lambda: [connectors_passes(w=8, h=7), connectors_deliveries(w=8, h=7),
                                                  connectors_dead(w=8, h=7)]),
@@ -2205,6 +2257,18 @@ def portal_api() -> dict:
                "auth's or tpa-api's refusals of an IAP assertion under a key the image does not pin (urgent "
                "`iap-unknown-key`: most likely Google rotated IAP's keys), and the image's own warning that its keys "
                "are stale. Silent while the header check is off (R302).", bars=True, no_value=NONE),
+        series("IAP assertions checked, by service and word", APP,
+               q(log("iap_checked"), REV, by=("service_name", "code"), name=alias("service_name", "code")),
+               "Requests auth or tpa-api checked for IAP's assertion (`iap_checked`: its request line's `iap` word is "
+               "not exempt, off or public), by service and word (`code`: ok, or the refusal's word): the denominator "
+               "of the not-ok panel beside it.", bars=True, no_value="No request checked in this range"),
+        series("IAP assertions not ok, by word and outcome", APP,
+               q(log("iap_not_ok"), REV, by=("service_name", "code", "outcome"),
+                 name=alias("service_name", "code", "outcome")),
+               "A browser request whose IAP assertion was not ok (`iap_not_ok`), by service, word (`code`: missing, "
+               "expired, audience, unknown_key, origin_mismatch, ...) and `outcome`: reported (report mode, refused "
+               "nothing) or refused (enforce, 401). `iap-refusals` and `iap-forgery` page (urgent); `iap-mismatch` and "
+               "`iap-report-daily` can wait.", bars=True, no_value=NONE),
         row("Requests"),
         series("Requests, by service and status class", APP,
                requests(WEB_API, by=("service_name", "response_code_class")),
@@ -2325,6 +2389,14 @@ def sign_in() -> dict:
         series("audit verify printed BREAK", APP, q(log("auth_audit_break"), JOB, by=("job_name",)),
                "`auth audit verify` printing a break (`audit-chain`, urgent). Only the line's prefix is matched.",
                bars=True, no_value=NONE),
+        row("Sign-in events (auth-event-publisher, to records)"),
+        events_lag(w=8, h=7),
+        events_alive(w=8, h=7),
+        series("Event publisher instances", APP, instances("auth-event-publisher"),
+               "auth-event-publisher's instances. With none, no sign-in event reaches records: a first sign-in waits "
+               "(`mirror_stale`), and `auth-events-lag` opens.", w=8, h=7,
+               no_value=idle_words("auth-event-publisher")),
+        *sign_in_protection(),
         row("auth's jobs"),
         series("Executions, by job and result", APP, executions(AUTH_JOBS),
                "Completed executions of auth's jobs per interval. Two failed in a row open `jobs-failed` (R380); one "
@@ -2336,6 +2408,55 @@ def sign_in() -> dict:
     return dashboard("tw-cloud-sign-in", "Sign-in (cloud)",
                      "auth, its messenger and its jobs in the app project: sign-in health, messages, audit.",
                      ["sign-in"], items)
+
+
+def sign_in_protection() -> list[dict]:
+    """auth's own guards and staff-only doors, each a count by the labels its catalogue entry carries: sign-ins paused
+    after wrong attempts, breached-password lookups with no answer, texted codes refused at a day's ceiling, staff
+    laptops, device-bound sessions and one-time passes."""
+    return [
+        row("Sign-in protection, staff laptops and one-time passes"),
+        series("Sign-ins paused after wrong attempts", APP,
+               q(log("auth_sign_in_protection"), REV, by=("code", "class"), name=alias("code", "class")),
+               "One per account whose sign-in auth paused after wrong attempts, by the pause (`code`: account, factor, "
+               "factor_ceiling, factor_repeated) and whose account (`class`: staff or outside), from auth's messenger "
+               "(`auth_sign_in_protection`; `auth-sign-in-repeated`, `auth-sign-in-ceiling`, `auth-sign-in-code-surge` "
+               "and the staff policies read it). Never the account, an address or a code.", bars=True, w=8, h=7,
+               no_value=NONE),
+        series("Breached-password lookups with no answer", APP,
+               q(log("auth_breach_corpus_unavailable"), REV, by=("code", "class"), name=alias("code", "class")),
+               "A breached-password lookup that gave auth no answer, so a sign-in or a password set was refused "
+               "(`auth_breach_corpus_unavailable`; `auth-breach-corpus-unavailable`), by when (`code`: set or login) "
+               "and why (`class`: timeout or read).", bars=True, w=8, h=7, no_value=NONE),
+        series("Texted codes refused at a day's ceiling", APP,
+               [q(log("auth_sms_codes_estate_ceiling"), REV, by=("code", "class"),
+                  name=alias("code", "class", prefix="members: ")),
+                q(log("auth_sms_codes_registration_ceiling"), REV, by=("code",), name=alias("code", prefix="set-up: "))],
+               "Members' texted codes auth refused because the estate's day is spent, by where (`code`: offer or "
+               "send) and which ceiling (`class`: soft, past the setting; hard, past twice it) "
+               "(`auth_sms_codes_estate_ceiling`; `auth-texted-codes-ceiling`), and applicants' set-up codes refused "
+               "at theirs (`auth_sms_codes_registration_ceiling`; `auth-registration-codes-ceiling`).", bars=True, w=8,
+               h=7, no_value=NONE),
+        series("Staff laptops: waiting, approved, mismatched, copied", APP,
+               q(log("auth_staff_devices"), None, by=("code", "outcome"), name=alias("code", "outcome")),
+               "auth's staff laptop lines (`auth_staff_devices`), from auth and its jobs: a laptop waiting for approval "
+               "(`device_pending`), one approved (`device_approved`, `outcome` operator or admin), an approval or "
+               "binding auth did not write (`device_tag_mismatch`) and a copied device cookie a second browser used "
+               "(`device_cookie_superseded`); `auth-device-*` read them. Never the person or the laptop.", bars=True,
+               w=8, h=7, no_value="No staff laptop event in this range"),
+        series("Device-bound staff sessions", APP,
+               q(log("auth_bound_sessions"), REV, by=("code", "operation"), name=alias("code", "operation")),
+               "auth's device-bound staff sessions (`auth_bound_sessions`): bound, refreshed, a binding Chrome "
+               "declined, a refused proof (at `register` or `refresh`), a session ended after five wrong proofs "
+               "(`binding_guessed`; `auth-binding-guessed`) and a binding auth did not write. Never the person or the "
+               "session.", bars=True, w=8, h=7, no_value="No bound-session event in this range"),
+        series("One-time sign-in passes issued and used", APP,
+               q(log("auth_sign_in_passes"), REV, by=("code",)),
+               "A one-time sign-in a TPA administrator issued for a member of staff, or that member of staff signed in "
+               "with (`auth_sign_in_passes`; `auth-sign-in-pass-issued`, `auth-sign-in-pass-used`). Who, for whom and "
+               "why are in auth's audit chain.", bars=True, w=8, h=7,
+               no_value="No sign-in pass issued or used in this range"),
+    ]
 
 
 def records(env: str = "beta") -> dict:
@@ -2596,6 +2717,21 @@ def crm() -> dict:
         *project_section(CRM, "CRM's project",
                          note=per_environment("", " The CRM runs in the app project here, so every app service counts "
                                                   "too.")),
+        row("Sign-in: the CRM's own door"),
+        series("Refused CRM passwords", CRM, q(log("crm_login_failures"), REV, name="refused"),
+               "One per password the CRM's engine refused at its sign-in door (`crm_login_failures`; "
+               "`crm-password-spray`, urgent, on a surge). Nothing of the line is read: no domain, address or "
+               "account.", bars=True, w=8, h=7, no_value=NONE),
+        series("CRM sign-ins throttled, by reason", CRM, q(log("crm_sign_in_throttled"), REV, by=("code",)),
+               "A sign-in the CRM's engine refused for a spent budget or a pause, by its closed reason "
+               "(`crm_sign_in_throttled`; `crm-sign-in-surge`).", bars=True, w=8, h=7, no_value=NONE),
+        series("CRM sign-ins paused, by pause and whose", CRM,
+               q(log("crm_sign_in_protection"), None, by=("code", "class"), name=alias("code", "class")),
+               "A sign-in pause the CRM's worker pass handled that names an account, by which pause (`code`) and whose "
+               "account (`class`: staff for an owner or admin of any business, else outside), from the engine and "
+               "`crm-reset-drain` (`crm_sign_in_protection`; `crm-sign-in-repeated`, `crm-sign-in-list` and "
+               "`crm-sign-in-staff-codes` urgent, the others can wait). Nothing about who.", bars=True, w=8, h=7,
+               no_value=NONE),
         row("Database and jobs"),
         db_stat("crm-db", CRM, "crm-db", w=6, h=7),
         series("CRM job executions", CRM, executions(CRM_JOBS),
@@ -2656,11 +2792,63 @@ def errors(cc: bool = True) -> dict:
                  no_value=NONE)
           for where, ds in (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
                             ("CRM", CRM))],
+        row("Security and configuration changes (Admin Activity audit log), by project"),
+        *[series(where, ds, security_changes(ds), SECURITY_CHANGES_WORDS, bars=True, w=24 // (4 if cc else 3), h=7,
+                 no_value=NONE)
+          for where, ds in (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
+                            ("CRM", CRM))],
+        row("Cloud Armor: attack rules and Adaptive Protection, by project"),
+        *[series(where, ds, [q(log("armor_waf_refused"), None, name="attack rule refused"),
+                             q(log("armor_waf_previewed"), None, name="attack rule in preview would refuse"),
+                             q(log("armor_adaptive_alerts"), None, name="Adaptive Protection alert")],
+                 ARMOR_WORDS, bars=True, w=24 // (4 if cc else 3), h=7, no_value=NONE)
+          for where, ds in (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
+                            ("CRM", CRM))],
     ]
     return dashboard("tw-cloud-errors", "Errors (cloud)",
                      "Error groups from the log-based error counters, by the labels the catalogue allows: the "
-                     "service, the exception class, the operation or event, the code and the SQLSTATE. Nothing "
-                     "else.", ["errors"], items, time="now-24h")
+                     "service, the exception class, the operation or event, the code and the SQLSTATE; then each "
+                     "project's security and configuration changes and Cloud Armor's refusals. Nothing else.",
+                     ["errors"], items, time="now-24h")
+
+
+# The Admin Activity audit log's security and configuration changes (the catalogue's shared counters, each in every
+# project, and each project's own two for its alert policies and log counters): the counter, its legend's prefix and
+# the policy that reads it. By method alone: who and what are in the entry.
+SECURITY_CHANGES = (("iam_policy_changes", "IAM", "iam-changed"),
+                    ("audit_config_changes", "audit config", "audit-config-changed"),
+                    ("org_policy_changes", "org policy", "org-policy-changed"),
+                    ("network_control_changes", "firewall or Armor", "network-control-changed"),
+                    ("logging_config_changes", "logging", "logging-changed"),
+                    ("service_account_key_changes", "service account key", "service-key-created"),
+                    ("run_public_invokers", "made public", "service-made-public"),
+                    ("iap_setting_changes", "IAP", "iap-changed"),
+                    ("security_changes_by_robot", "by a service account", "security-change-by-robot"),
+                    ("sql_exports_by_hand", "SQL export by hand", "sql-export-by-hand"),
+                    ("monitoring_changes", "alerts", "monitoring-changed"),
+                    ("log_metric_changes", "log counters", "log-counters-changed"))
+SECURITY_CHANGES_WORDS = (
+    "Changes from the project's Admin Activity audit log, by method: an IAM policy or custom role (`iam-changed`), an "
+    "audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor "
+    "rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created "
+    "(`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public "
+    "(`service-made-public`), IAP's settings (`iap-changed`), a security change by a service account that is not "
+    "Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the "
+    "project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). "
+    "Who and on what stay in the entry.")
+ARMOR_WORDS = (
+    "Cloud Armor in this project: requests a preconfigured attack rule refused (`armor_waf_refused`; "
+    "`armor-waf-refusals`), requests a rule in preview would have refused (`armor_waf_previewed`, the watch-only "
+    "period's hits), and Adaptive Protection's alerts of a layer-7 attack building (`armor_adaptive_alerts`; "
+    "`armor-adaptive-protection`). Counted, not by the rule's set: the catalogue's extractor for it is not anchored. "
+    "Nothing of a request is read.")
+
+
+def security_changes(ds: str) -> list[dict]:
+    """One project's security and configuration change counters, those its role's catalogue holds, by method."""
+    role = {APP: "app", PHI: "phi", CC: "cc", CRM: "crm"}[ds]
+    return [q(log(metric), None, by=("operation",), name=alias("operation", prefix=f"{word}: "))
+            for metric, word, _policy in SECURITY_CHANGES if CATALOGUE.metric(role, metric)]
 
 
 def databases(cc: bool = True) -> dict:
@@ -2749,7 +2937,7 @@ def importer_rows() -> list[dict]:
         series("Executions, by result", APP, executions(IMPORTER, by=("result",)),
                f"Completed executions of `{IMPORTER}` (`feeds everon sync --scheduled`), by result. One failed run "
                f"opens `feed-ingest-failed` ({failed['display_name'].strip(chr(34))}), never retried: the next slot "
-               "(06:00, 14:00, 22:00 Chicago time) is the retry. None at all: not deployed ("
+               "(07:00 and 12:00 Chicago time) is the retry. None at all: not deployed ("
                "feed_ingest_enabled off), its schedule paused (feed_ingest_paused), or no run yet; its deadline tile "
                "above says which.", bars=True, w=8, h=7, no_value=when_quiet((IMPORTER,), NO_RUNS)),
         series("Its schedule could not start it", APP, schedule_failures(IMPORTER, by=("code",)),
@@ -2762,6 +2950,22 @@ def importer_rows() -> list[dict]:
                "bar lasts as long as it ran. Its limit is 2h10m (7800 s); `job-timeout-feed-ingest-everon-sync` "
                "opens at 80% of it.", bars=True, decimals=0, w=8, h=7,
                no_value=when_quiet((IMPORTER,), "Not running in this range")),
+        series("Live runs that did not end whole, by outcome", APP,
+               q(log("everon_runs_not_whole"), JOB, by=("outcome",), job_name=IMPORTER),
+               "A live run whose summary line (`everon.run.summary`) was a warning or an error, or could not be built, "
+               "by the run's outcome word (`everon_runs_not_whole`; `feed-ingest-not-whole`, urgent). No count, run, "
+               "employer or person is read.", bars=True, w=8, h=7, no_value=when_quiet((IMPORTER,), NONE)),
+        *[series(f"{what.capitalize()} each whole-book run read", APP,
+                 # A distribution with one point a run: merged, its mean is that run's count (the volume check reads
+                 # the same, its sum over its count).
+                 q(log(metric), JOB, align="ALIGN_DELTA", reduce="REDUCE_MEAN", name=what, job_name=IMPORTER),
+                 f"The {what} each live whole-book run that exited 0 read (`{metric}`, one point a run, its summary "
+                 f"line's {field})." + (" `feed-ingest-employers-dropped` (urgent) opens when a run has fewer than "
+                                        "the run before." if metric == "everon_book_employers" else ""),
+                 w=8, h=7, decimals=0, points=True,
+                 no_value=when_quiet((IMPORTER,), "No whole-book run in this range"))
+          for metric, what, field in (("everon_book_employers", "employers", "employers_in_scope"),
+                                      ("everon_book_people", "people", "people"))],
     ]
 
 

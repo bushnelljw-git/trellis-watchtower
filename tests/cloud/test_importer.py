@@ -190,7 +190,10 @@ class PagesTest(unittest.TestCase):
         rows = sections(RENDERED["beta"]["jobs"])
         mine = rows[f"The administrator-feed importer ({IMPORTER})"]
         self.assertEqual([p["title"] for p in mine], ["Executions, by result", "Its schedule could not start it",
-                                                      "Its run, while it runs"])
+                                                      "Its run, while it runs",
+                                                      "Live runs that did not end whole, by outcome",
+                                                      "Employers each whole-book run read",
+                                                      "People each whole-book run read"])
         for p in mine:
             values = [v for t in p["targets"] for k, _o, v in lint.query_facts(t["timeSeriesList"])["filters"]
                       if k in ("resource.label.job_name", "resource.label.job_id")]
@@ -200,10 +203,11 @@ class PagesTest(unittest.TestCase):
         # holds (raw: the importer's quiet token), else its own words.
         raw = json.loads((ROOT / "cloud" / "dashboards" / "jobs.json").read_text())
         raw_row = sections(raw)[f"The administrator-feed importer ({IMPORTER})"]
+        words = (gen.NO_RUNS, gen.NONE, "Not running in this range", gen.NONE, "No whole-book run in this range",
+                 "No whole-book run in this range")
         self.assertEqual([p["fieldConfig"]["defaults"]["noValue"] for p in raw_row],
-                         [gen.when_quiet((IMPORTER,), w) for w in (gen.NO_RUNS, gen.NONE, "Not running in this range")])
-        self.assertEqual([p["fieldConfig"]["defaults"]["noValue"] for p in mine],
-                         [gen.NO_RUNS, gen.NONE, "Not running in this range"])
+                         [gen.when_quiet((IMPORTER,), w) for w in words])
+        self.assertEqual([p["fieldConfig"]["defaults"]["noValue"] for p in mine], list(words))
         self.assertNotIn(f"The administrator-feed importer ({IMPORTER})", sections(RENDERED["production"]["jobs"]))
         # The app project's job resources are every job's there, the importer's among them (no job filter).
         resources = next(title for title in rows if title.startswith("Job resources: app project"))

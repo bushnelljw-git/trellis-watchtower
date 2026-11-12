@@ -409,7 +409,7 @@
     {
       "type": "stat",
       "title": "feed-ingest",
-      "description": "Successful executions of `feed-ingest-everon-sync` in the last 723 minutes: its missed-run deadline (720 minutes, about one and a half cadences) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. The administrator-feed importer's Everon sync runs at 06:00, 14:00 and 22:00 Chicago time, never retried, and alerts on one failure (`feed-ingest-failed`); its `missed run` policy exists only while its schedule is unpaused. production-full builds none of it. Reads \"not deployed\", in no colour, while `feed-ingest-everon-sync` is not built (its switch off; the service's TPA_NOT_DEPLOYED_JOBS), whatever else holds. Reads \"paused\" or \"database stopped\", in no colour, while `feed-ingest-everon-sync` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "description": "Successful executions of `feed-ingest-everon-sync` in the last 1323 minutes: its missed-run deadline (1320 minutes, 22 hours: over the 19 between its 12:00 and 07:00 slots (20 on the night the clocks go back) and under the 23 to the slot after next, so any one missed slot opens it before the next run) plus three, because Cloud Run's job metrics can arrive up to 180 s after the run. MISSED: none, so its `missed run` policy is open or about to be. The administrator-feed importer's Everon sync runs at 07:00 and 12:00 Chicago time, never retried, and alerts on one failure (`feed-ingest-failed`); its `missed run` policy exists only while its schedule is unpaused. production-full builds none of it. Reads \"not deployed\", in no colour, while `feed-ingest-everon-sync` is not built (its switch off; the service's TPA_NOT_DEPLOYED_JOBS), whatever else holds. Reads \"paused\" or \"database stopped\", in no colour, while `feed-ingest-everon-sync` or `auth-db` or `tpa-db` is paused or stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -458,7 +458,7 @@
         }
       ],
       "interval": "1m",
-      "timeFrom": "723m",
+      "timeFrom": "1323m",
       "hideTimeOverride": true,
       "fieldConfig": {
         "defaults": {
@@ -1962,7 +1962,7 @@
     {
       "type": "timeseries",
       "title": "Executions, by result",
-      "description": "Completed executions of `feed-ingest-everon-sync` (`feeds everon sync --scheduled`), by result. One failed run opens `feed-ingest-failed` (the Everon importer's run failed), never retried: the next slot (06:00, 14:00, 22:00 Chicago time) is the retry. None at all: not deployed (feed_ingest_enabled off), its schedule paused (feed_ingest_paused), or no run yet; its deadline tile above says which.",
+      "description": "Completed executions of `feed-ingest-everon-sync` (`feeds everon sync --scheduled`), by result. One failed run opens `feed-ingest-failed` (URGENT the Everon importer's run failed), never retried: the next slot (07:00 and 12:00 Chicago time) is the retry. None at all: not deployed (feed_ingest_enabled off), its schedule paused (feed_ingest_paused), or no run yet; its deadline tile above says which.",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -2267,6 +2267,312 @@
       "id": 24
     },
     {
+      "type": "timeseries",
+      "title": "Live runs that did not end whole, by outcome",
+      "description": "A live run whose summary line (`everon.run.summary`) was a warning or an error, or could not be built, by the run's outcome word (`everon_runs_not_whole`; `feed-ingest-not-whole`, urgent). No count, run, employer or person is read.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 42
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/everon_runs_not_whole",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=",
+              "feed-ingest-everon-sync"
+            ],
+            "groupBys": [
+              "metric.label.outcome"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.outcome}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,feed-ingest-everon-sync,@@None in this range@@",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 25
+    },
+    {
+      "type": "timeseries",
+      "title": "Employers each whole-book run read",
+      "description": "The employers each live whole-book run that exited 0 read (`everon_book_employers`, one point a run, its summary line's employers_in_scope). `feed-ingest-employers-dropped` (urgent) opens when a run has fewer than the run before.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 42
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/everon_book_employers",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=",
+              "feed-ingest-everon-sync"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "employers"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "@@R,feed-ingest-everon-sync,@@No whole-book run in this range@@",
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "always",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "pointSize": 6
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 26
+    },
+    {
+      "type": "timeseries",
+      "title": "People each whole-book run read",
+      "description": "The people each live whole-book run that exited 0 read (`everon_book_people`, one point a run, its summary line's people).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 42
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/everon_book_people",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=",
+              "feed-ingest-everon-sync"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "people"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "@@R,feed-ingest-everon-sync,@@No whole-book run in this range@@",
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "always",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "pointSize": 6
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 27
+    },
+    {
       "type": "row",
       "title": "PHI project jobs",
       "collapsed": false,
@@ -2275,9 +2581,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 49
       },
-      "id": 25
+      "id": 28
     },
     {
       "type": "timeseries",
@@ -2287,7 +2593,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 43
+        "y": 50
       },
       "datasource": {
         "type": "stackdriver",
@@ -2380,7 +2686,7 @@
           "sort": "desc"
         }
       },
-      "id": 26
+      "id": 29
     },
     {
       "type": "timeseries",
@@ -2390,7 +2696,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 43
+        "y": 50
       },
       "datasource": {
         "type": "stackdriver",
@@ -2483,7 +2789,7 @@
           "sort": "desc"
         }
       },
-      "id": 27
+      "id": 30
     },
     {
       "type": "row",
@@ -2494,9 +2800,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 58
       },
-      "id": 28
+      "id": 31
     },
     {
       "type": "timeseries",
@@ -2506,7 +2812,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 52
+        "y": 59
       },
       "datasource": {
         "type": "stackdriver",
@@ -2599,7 +2905,7 @@
           "sort": "desc"
         }
       },
-      "id": 29
+      "id": 32
     },
     {
       "type": "row",
@@ -2610,9 +2916,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 67
       },
-      "id": 30
+      "id": 33
     },
     {
       "type": "timeseries",
@@ -2622,7 +2928,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 61
+        "y": 68
       },
       "datasource": {
         "type": "stackdriver",
@@ -2692,331 +2998,6 @@
             "thresholdsStyle": {
               "mode": "off"
             }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 31
-    },
-    {
-      "type": "timeseries",
-      "title": "Tasks running, by job (each run's length)",
-      "description": "Task attempts running (`job/running_task_attempts`), the most in each interval: a run's bar lasts as long as its task ran. The module's `job-timeout-<job>` opens at 80% of a job's timeout.",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 61
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-app"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/job/running_task_attempts",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_job"
-            ],
-            "groupBys": [
-              "resource.label.job_name"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_MAX",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "{{resource.label.job_name}}"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "decimals": 0,
-          "noValue": "No runs in this range",
-          "custom": {
-            "drawStyle": "bars",
-            "lineWidth": 1,
-            "fillOpacity": 60,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 32
-    },
-    {
-      "type": "timeseries",
-      "title": "Killed for memory, or failed to start, by job",
-      "description": "A job's container killed for exceeding its memory limit (`run_oom_kills`; `run-oom` pages on one), or Cloud Run's system log at ERROR for it (`run_system_errors`; `canary-startup`).",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 61
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-app"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/run_oom_kills",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_job"
-            ],
-            "groupBys": [
-              "resource.label.job_name"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "killed for memory · {{resource.label.job_name}}"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/run_system_errors",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_job"
-            ],
-            "groupBys": [
-              "resource.label.job_name"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "failed probe or exit · {{resource.label.job_name}}"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "noValue": "None in this range",
-          "custom": {
-            "drawStyle": "bars",
-            "lineWidth": 1,
-            "fillOpacity": 60,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 33
-    },
-    {
-      "type": "timeseries",
-      "title": "CPU, by job (p99)",
-      "description": "Each job's container CPU, the share of its limit in use (`container/cpu/utilizations`), the 99th percentile in each interval while it runs. No policy reads a job's CPU: a slow job shows as a long bar above.",
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 68
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-app"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/cpu/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_job"
-            ],
-            "groupBys": [
-              "resource.label.job_name"
-            ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_99",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "{{resource.label.job_name}}"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "noValue": "No runs in this range",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            },
-            "axisSoftMax": 1
           }
         },
         "overrides": []
@@ -3040,13 +3021,338 @@
     },
     {
       "type": "timeseries",
+      "title": "Tasks running, by job (each run's length)",
+      "description": "Task attempts running (`job/running_task_attempts`), the most in each interval: a run's bar lasts as long as its task ran. The module's `job-timeout-<job>` opens at 80% of a job's timeout.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 68
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/running_task_attempts",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.job_name}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "No runs in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 35
+    },
+    {
+      "type": "timeseries",
+      "title": "Killed for memory, or failed to start, by job",
+      "description": "A job's container killed for exceeding its memory limit (`run_oom_kills`; `run-oom` pages on one), or Cloud Run's system log at ERROR for it (`run_system_errors`; `canary-startup`).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 68
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory · {{resource.label.job_name}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_system_errors",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed probe or exit · {{resource.label.job_name}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 36
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU, by job (p99)",
+      "description": "Each job's container CPU, the share of its limit in use (`container/cpu/utilizations`), the 99th percentile in each interval while it runs. No policy reads a job's CPU: a slow job shows as a long bar above.",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 75
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/cpu/utilizations",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_99",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.job_name}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No runs in this range",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 37
+    },
+    {
+      "type": "timeseries",
       "title": "Memory, by job (p99)",
       "description": "Each job's container memory, the share of its limit in use (`container/memory/utilizations`), the 99th percentile in each interval while it runs. At the limit the task is killed (`run-oom`).",
       "gridPos": {
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 68
+        "y": 75
       },
       "datasource": {
         "type": "stackdriver",
@@ -3135,7 +3441,7 @@
           "sort": "desc"
         }
       },
-      "id": 35
+      "id": 38
     },
     {
       "type": "row",
@@ -3146,9 +3452,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 75
+        "y": 82
       },
-      "id": 36
+      "id": 39
     },
     {
       "type": "timeseries",
@@ -3158,7 +3464,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 76
+        "y": 83
       },
       "datasource": {
         "type": "stackdriver",
@@ -3228,331 +3534,6 @@
             "thresholdsStyle": {
               "mode": "off"
             }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 37
-    },
-    {
-      "type": "timeseries",
-      "title": "Tasks running, by job (each run's length)",
-      "description": "Task attempts running (`job/running_task_attempts`), the most in each interval: a run's bar lasts as long as its task ran. The module's `job-timeout-<job>` opens at 80% of a job's timeout.",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 76
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-phi"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-phi"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_PHI_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/job/running_task_attempts",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_job"
-            ],
-            "groupBys": [
-              "resource.label.job_name"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_MAX",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "{{resource.label.job_name}}"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "decimals": 0,
-          "noValue": "No runs in this range",
-          "custom": {
-            "drawStyle": "bars",
-            "lineWidth": 1,
-            "fillOpacity": 60,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 38
-    },
-    {
-      "type": "timeseries",
-      "title": "Killed for memory, or failed to start, by job",
-      "description": "A job's container killed for exceeding its memory limit (`run_oom_kills`; `run-oom` pages on one), or Cloud Run's system log at ERROR for it (`run_system_errors`; `canary-startup`).",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 76
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-phi"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-phi"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_PHI_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/run_oom_kills",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_job"
-            ],
-            "groupBys": [
-              "resource.label.job_name"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "killed for memory · {{resource.label.job_name}}"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-phi"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_PHI_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/run_system_errors",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_job"
-            ],
-            "groupBys": [
-              "resource.label.job_name"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "failed probe or exit · {{resource.label.job_name}}"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "noValue": "None in this range",
-          "custom": {
-            "drawStyle": "bars",
-            "lineWidth": 1,
-            "fillOpacity": 60,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "id": 39
-    },
-    {
-      "type": "timeseries",
-      "title": "CPU, by job (p99)",
-      "description": "Each job's container CPU, the share of its limit in use (`container/cpu/utilizations`), the 99th percentile in each interval while it runs. No policy reads a job's CPU: a slow job shows as a long bar above.",
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 83
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-phi"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-phi"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_PHI_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "run.googleapis.com/container/cpu/utilizations",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_job"
-            ],
-            "groupBys": [
-              "resource.label.job_name"
-            ],
-            "crossSeriesReducer": "REDUCE_MAX",
-            "perSeriesAligner": "ALIGN_PERCENTILE_99",
-            "alignmentPeriod": "grafana-auto",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "{{resource.label.job_name}}"
-        }
-      ],
-      "interval": "1m",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "noValue": "No runs in this range",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisSoftMin": 0,
-            "thresholdsStyle": {
-              "mode": "off"
-            },
-            "axisSoftMax": 1
           }
         },
         "overrides": []
@@ -3576,13 +3557,338 @@
     },
     {
       "type": "timeseries",
+      "title": "Tasks running, by job (each run's length)",
+      "description": "Task attempts running (`job/running_task_attempts`), the most in each interval: a run's bar lasts as long as its task ran. The module's `job-timeout-<job>` opens at 80% of a job's timeout.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 83
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/job/running_task_attempts",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.job_name}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "No runs in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 41
+    },
+    {
+      "type": "timeseries",
+      "title": "Killed for memory, or failed to start, by job",
+      "description": "A job's container killed for exceeding its memory limit (`run_oom_kills`; `run-oom` pages on one), or Cloud Run's system log at ERROR for it (`run_system_errors`; `canary-startup`).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 83
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_oom_kills",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "killed for memory · {{resource.label.job_name}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/run_system_errors",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "failed probe or exit · {{resource.label.job_name}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 42
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU, by job (p99)",
+      "description": "Each job's container CPU, the share of its limit in use (`container/cpu/utilizations`), the 99th percentile in each interval while it runs. No policy reads a job's CPU: a slow job shows as a long bar above.",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 90
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/cpu/utilizations",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_99",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.job_name}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No runs in this range",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 43
+    },
+    {
+      "type": "timeseries",
       "title": "Memory, by job (p99)",
       "description": "Each job's container memory, the share of its limit in use (`container/memory/utilizations`), the 99th percentile in each interval while it runs. At the limit the task is killed (`run-oom`).",
       "gridPos": {
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 83
+        "y": 90
       },
       "datasource": {
         "type": "stackdriver",
@@ -3671,7 +3977,7 @@
           "sort": "desc"
         }
       },
-      "id": 41
+      "id": 44
     },
     {
       "type": "row",
@@ -3682,9 +3988,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 90
+        "y": 97
       },
-      "id": 42
+      "id": 45
     },
     {
       "type": "timeseries",
@@ -3694,7 +4000,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 91
+        "y": 98
       },
       "datasource": {
         "type": "stackdriver",
@@ -3787,7 +4093,7 @@
           "sort": "desc"
         }
       },
-      "id": 43
+      "id": 46
     },
     {
       "type": "timeseries",
@@ -3797,7 +4103,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 91
+        "y": 98
       },
       "datasource": {
         "type": "stackdriver",
@@ -3890,7 +4196,7 @@
           "sort": "desc"
         }
       },
-      "id": 44
+      "id": 47
     },
     {
       "type": "timeseries",
@@ -3900,7 +4206,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 91
+        "y": 98
       },
       "datasource": {
         "type": "stackdriver",
@@ -4025,7 +4331,7 @@
           "sort": "desc"
         }
       },
-      "id": 45
+      "id": 48
     },
     {
       "type": "timeseries",
@@ -4035,7 +4341,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 98
+        "y": 105
       },
       "datasource": {
         "type": "stackdriver",
@@ -4128,7 +4434,7 @@
           "sort": "desc"
         }
       },
-      "id": 46
+      "id": 49
     },
     {
       "type": "timeseries",
@@ -4138,7 +4444,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 98
+        "y": 105
       },
       "datasource": {
         "type": "stackdriver",
@@ -4231,7 +4537,7 @@
           "sort": "desc"
         }
       },
-      "id": 47
+      "id": 50
     }
   ]
 }

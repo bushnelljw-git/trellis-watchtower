@@ -133,18 +133,24 @@ def promql_name(metric_type: str) -> str:
 # held to the names the catalogue's own policies use (test_names_agree_with_the_catalogue).
 NAMES = {
     "app": {
-        "service_name": {"web", "auth", "auth-outbox-publisher", "tpa-api", "model-gateway", "tpa-jobs-drains",
-                         "watchtower"},
+        "service_name": {"web", "ops-web", "auth", "auth-outbox-publisher", "auth-event-publisher", "tpa-api",
+                         "model-gateway", "tpa-jobs-drains", "watchtower"},
         # feed-ingest-everon-sync: the administrator-feed importer (feedingest.tf, OWNER-EV-12), its Cloud Run job
         # and its Cloud Scheduler job, built only behind feed_ingest_enabled.
-        "job_name": {"migrate-auth", "auth-publisher", "auth-sweeper", "auth-audit-head", "auth-audit-verify",
+        # auth-publisher (the event publisher's job, kept beside the service while var.auth_event_publisher is
+        # "both", D-313) is not here: since the catalogue at 1e15b0e8 the root adds it to `jobs-failed`'s list itself
+        # (main.tf, local.auth_publisher_job), so the catalogue names it nowhere; pages read it as `auth-.*`.
+        "job_name": {"migrate-auth", "auth-sweeper", "auth-audit-head", "auth-audit-verify",
                      "auth-audit-verify-monthly", "auth-bootstrap", "auth-tag-credentials", "auth-retag-bearer-key",
                      "tpa-jobs-erisa-clocks", "tpa-jobs-nightly-anomalies", "tpa-jobs-stoploss-surveillance",
                      "tpa-jobs-accumulator-reconcile", "tpa-jobs-workload-audit", "tpa-jobs-member-access",
                      "feed-ingest-everon-sync"},
+        # auth-reset-drain and crm-reset-drain (R5106): the two forgot-password drains' schedules, both in the app
+        # project (auth's an HTTP target; the CRM copy's beside it, R282), named by `scheduler-failed`.
         "job_id": {"erisa-clocks", "nightly-anomalies", "stoploss-surveillance", "accumulator-reconcile",
                    "workload-audit", "member-access", "auth-publish", "auth-sweep", "auth-audit-head",
-                   "auth-audit-verify", "auth-audit-verify-monthly", "feed-ingest-everon-sync"},
+                   "auth-audit-verify", "auth-audit-verify-monthly", "feed-ingest-everon-sync", "auth-reset-drain",
+                   "crm-reset-drain"},
         "database_id": {"auth-db"},
     },
     # migrate-enroll and enroll-db: the enrollment service's migration job and database (enroll.tf, D-185), built only
@@ -159,8 +165,8 @@ NAMES = {
     },
     # crm-lane-send, crm-lane-comp and crm-reset-drain: the CRM copy's won-deal sender, commission pass and
     # forgot-password drain (crm.tf, R430, R441 and R5106), each behind its own switch, all three run (the week to
-    # 2026-11-12); the catalogue's crm_lane_* sections name the first two, a later catalogue the drain
-    # (AHEAD_OF_THE_CATALOGUE). The CRM's job tiles and charts read all five (gen.CRM_JOBS).
+    # 2026-11-12); the catalogue's crm_lane_* sections name the first two and its crm_reset_drain section the drain.
+    # The CRM's job tiles and charts read all five (gen.CRM_JOBS).
     "crm": {"service_name": {"crm-web", "engine"}, "job_name": {"migrate-crm", "seed-crm", "crm-lane-send",
                                                                  "crm-lane-comp", "crm-reset-drain"}, "job_id": set(),
             "database_id": {"crm-db"}},
@@ -169,11 +175,10 @@ NAMES = {
 }
 
 
-# Names a page reads ahead of the vendored catalogue: crm-reset-drain, the CRM copy's forgot-password drain (crm.tf,
-# R5106; tpa-platform's catalogue names it after the pinned commit, its crm_reset_drain section).
-# test_names_agree_with_the_catalogue refuses a name here that the vendored catalogue already names, so a re-vendor that
-# lands one empties this.
-AHEAD_OF_THE_CATALOGUE: dict[str, set[str]] = {"job_name": {"crm-reset-drain"}}
+# Names a page reads ahead of the vendored catalogue (none since the re-vendor at tpa-platform 1e15b0e8, which names
+# crm-reset-drain in its crm_reset_drain section). test_names_agree_with_the_catalogue refuses a name here that the
+# vendored catalogue already names, so a re-vendor that lands one empties this.
+AHEAD_OF_THE_CATALOGUE: dict[str, set[str]] = {}
 
 
 def queries(paths=None):
@@ -210,18 +215,28 @@ class CatalogueTest(unittest.TestCase):
     def test_the_reader_finds_the_catalogue(self):
         # Known facts of the catalogue, so a reader that silently reads nothing fails here.
         self.assertEqual(set(self.catalogue.roles), {"app", "phi", "crm", "cc"})
-        # sql_automated_backups since D-173 (2026-10-24): `<db>-backup-missing` reads its absence.
+        # sql_automated_backups since D-173 (2026-10-24): `<db>-backup-missing` reads its absence. The Admin Activity
+        # security changes and Cloud Armor's three since #202 and D-308 (every project's, the Errors page's).
         self.assertEqual(set(self.catalogue.shared), {"run_system_errors", "sql_proxy_errors", "sql_restarts",
                                                       "sql_backup_failures", "sql_automated_backups", "run_oom_kills",
                                                       "run_crash_exits", "secret_version_changes",
-                                                      "kms_version_changes"})
+                                                      "kms_version_changes", "iam_policy_changes",
+                                                      "audit_config_changes", "org_policy_changes",
+                                                      "network_control_changes", "logging_config_changes",
+                                                      "service_account_key_changes", "run_public_invokers",
+                                                      "iap_setting_changes", "security_changes_by_robot",
+                                                      "sql_exports_by_hand", "armor_waf_refused",
+                                                      "armor_waf_previewed", "armor_adaptive_alerts"})
         # The synthetic journeys' section is read, as the app role's (their result lines land in the app project).
         self.assertEqual(set(self.catalogue.synthetics), {"synthetic_results"})
-        # The importer's two sections (OWNER-EV-12): records' count is the PHI role's, the failed run's policy the
-        # app section's, and the others are not read.
+        # The importer's two sections (OWNER-EV-12): records' count is the PHI role's, the failed run's policy and its
+        # runs' own counters (not whole, and each whole-book run's employers and people) the app section's, and the
+        # others are not read.
         self.assertEqual(cat.SECTIONS, {"feed_ingest": "app", "feed_ingest_records": "phi"})
         self.assertEqual({k: set(v) for k, v in self.catalogue.sections.items()},
-                         {"feed_ingest": set(), "feed_ingest_records": {"source_sync_alerts"}})
+                         {"feed_ingest": {"everon_runs_not_whole", "everon_book_employers", "everon_book_people"},
+                          "feed_ingest_records": {"source_sync_alerts"}})
+        self.assertTrue(self.catalogue.roles["app"]["everon_book_people"]["distribution"])
         self.assertEqual(self.catalogue.roles["phi"]["source_sync_alerts"]["labels"], set())
         self.assertFalse(self.catalogue.roles["phi"]["source_sync_alerts"]["distribution"])
         self.assertNotIn("source_sync_alerts", self.catalogue.roles["app"])

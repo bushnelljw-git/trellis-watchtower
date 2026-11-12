@@ -538,7 +538,7 @@
     {
       "type": "timeseries",
       "title": "Memory (p99, p95, p50)",
-      "description": "tpa-jobs-drains's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 10 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
+      "description": "tpa-jobs-drains's container memory, the share of its memory limit in use (`container/memory/utilizations`), percentiles across its instances in each 5-minute window. Cloud Run has no disk: files the container writes are held in memory and count here. The red line is `run-memory-high`'s: the p99 above 90% for 30 minutes pages; at the limit the container is killed (`run-oom`, the last panel of this row).",
       "gridPos": {
         "h": 7,
         "w": 6,
