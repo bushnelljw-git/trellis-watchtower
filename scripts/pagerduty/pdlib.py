@@ -134,7 +134,7 @@ SERVICES = [
 # The events are what a connection must carry to post an incident and close it in the channel: the shape PagerDuty's
 # own Slack screen makes (kind "stakeholder", no priority filter). 2026-11-12: three connections made through the API
 # as kind "responder" with every event were accepted, listed as healthy and posted nothing, so that kind is a gap.
-SLACK_CHANNEL = "pd-incidents"
+SLACK_CHANNEL = "obatpa-incidents"
 SLACK_EVENTS = ["incident.triggered", "incident.resolved"]
 SLACK_SILENT_KINDS = ("responder",)
 

@@ -18,7 +18,7 @@ What it makes (each found by its exact name, created when absent and corrected w
     contact method).
 
 It also reads (never makes) each service's Slack connection and prints "by hand" until a person has connected the
-service to #pd-incidents with every urgency, every priority and the five incident events (docs/PAGERDUTY.md).
+service to #obatpa-incidents with every urgency, every priority and the five incident events (docs/PAGERDUTY.md).
 
 What it will not do: delete anything; touch "Default Service" or the "Default" escalation policy; create a
 notification rule without --add-rules (so a rule a person removed stays removed); change a schedule that has more

@@ -31,13 +31,22 @@ PagerDuty deleted the TPA's first account. The owner made a new one and the same
   orchestration is the three severity rules alone, and `pd_setup.py` neither reads nor writes a grouping setting.
   Severity, urgency and priority are unchanged. The account refuses the title rules outright (`forbidden_feature`
   for template strings, variables and extractions, proven again on 2026-11-12 in a single flat set).
-- **The titles come from a second integration instead.** The owner, the same day, of #pd-incidents: *"the messages to
+- **The titles come from a second integration instead.** The owner, the same day, of the incidents channel: *"the messages to
   that channel suck, not easy to read whats going on, long form text not well formatted, it should be very well
   structured, easy to read"*, and *"I want ALL message and alerts to be well structured and formatted and links to
   the production watchtower platform"*. Each service now has a "Google Cloud Monitoring (titled)" integration, a
   small piece of code PagerDuty runs on every notification, which needs no add-on ("Incident titles" below). The
   plain "Google Cloud Monitoring" integration and its key stay: they are the way back.
-- **Slack channel: #pd-incidents**, the channel PagerDuty made in the workspace (the first account's
+- **Slack thread reply with watchtower links (2026-11-12).** PagerDuty's own channel post shows only the title, status
+  and priority, and none of an event's links. So an incident workflow, "TPA: Slack thread with watchtower links",
+  replies in each incident's thread with the incident link and the watchtower pages (action
+  `pagerduty.com:slack:reply-in-incident-thread:1`; made through `POST /incident_workflows`, by hand, not yet by
+  `pd_setup.py`). Started by hand through the API it posts as designed. Its **trigger** could not be made through the
+  API (`POST /incident_workflows/triggers` answered 500 "Reduce of empty array with no initial value" for every
+  shape tried with the account key), so a person adds it in PagerDuty: the workflow → Triggers → "Conditional
+  trigger", the three "TPA beta ·" services, condition "incident status is triggered".
+- **Slack channel: #obatpa-incidents** (the owner's name for it, 2026-11-12; made as #pd-incidents, same channel id
+  C0CH19SCVDL, so the connections did not change), the channel PagerDuty made in the workspace (the first account's
   #tpa-beta-alerts is gone). The three connections were made through PagerDuty's Slack integration API
   (`POST app.pagerduty.com/integration-slack/workspaces/<team>/connections`). Made as `notification_type: responder`
   with every event and priorities `["*"]`, they were accepted, listed as healthy and **posted nothing**: the owner
@@ -329,7 +338,7 @@ level 2 reaches nobody. He should then do steps 1 to 3 for himself.
 PagerDuty is already linked to the Sentient Forge Slack workspace, and Jonathan's PagerDuty user is linked to his
 Slack user. Steps for a person:
 
-1. The channel is **#pd-incidents** (2026-11-12). A different channel needs **@PagerDuty** invited to it and
+1. The channel is **#obatpa-incidents** (2026-11-12). A different channel needs **@PagerDuty** invited to it and
    `SLACK_CHANNEL` in `pdlib.py` changed.
 2. Connect each of the three "TPA beta ·" services to that channel. Either run `/pd connect` in the channel, or go
    to PagerDuty → Integrations → Slack. Choose:
@@ -339,7 +348,7 @@ Slack user. Steps for a person:
    Made through the API, a connection takes the screen's shape (`notification_type: stakeholder`, `priorities: null`):
    a "responder" one posts nothing ("The new account", above).
 3. Re-run `python3 scripts/pagerduty/pd_setup.py`. Each service's "Slack:" line turns from "by hand … not
-   connected" to "ok … connected to #pd-incidents". If a setting is missing, the line names it.
+   connected" to "ok … connected to #obatpa-incidents". If a setting is missing, the line names it.
 
 Slack is reached **through PagerDuty**, not through Google's own Slack channel. You get one message per incident, with
 Acknowledge and Resolve buttons and every update in its thread. tpa-platform's `alert_slack_channel_ids` stays empty,

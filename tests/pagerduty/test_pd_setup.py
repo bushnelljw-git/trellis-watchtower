@@ -118,7 +118,7 @@ class DryRunAndIdempotency(Base):
         self.assertIn("summary: 26 to create", with_rules.stdout)
         self.assertEqual(self.state.writes(), [])
         self.assertIn('by hand     Slack: "TPA beta · Call centre"  [not connected: a person connects it to '
-                      '#pd-incidents', result.stdout)
+                      '#obatpa-incidents', result.stdout)
 
     def test_apply_then_rerun_changes_nothing(self):
         first = self.apply()
@@ -408,7 +408,7 @@ class SlackReport(Base):
         full = {"events": ["incident.triggered", "incident.resolved", "incident.status_update_published"],
                 "urgency": None, "priorities": None}
         kind = config.pop("kind", "stakeholder")
-        return {"source_id": self.ids[name], "channel_name": "pd-incidents", "notification_type": kind,
+        return {"source_id": self.ids[name], "channel_name": "obatpa-incidents", "notification_type": kind,
                 "config": {**full, **config}}
 
     def test_connections_are_reported_never_made(self):
@@ -418,8 +418,8 @@ class SlackReport(Base):
                             urgency="high", priorities=["PRI1"]),
         ]
         result = self.pd()
-        self.assertIn('ok          Slack: "TPA beta · Portal & API" connected to #pd-incidents', result.stdout)
-        self.assertIn('by hand     Slack: "TPA beta · Member records" connected to #pd-incidents  [in PagerDuty, '
+        self.assertIn('ok          Slack: "TPA beta · Portal & API" connected to #obatpa-incidents', result.stdout)
+        self.assertIn('by hand     Slack: "TPA beta · Member records" connected to #obatpa-incidents  [in PagerDuty, '
                       'set events: add resolved; urgency: both high and low (it is high only); priorities: all]',
                       result.stdout)
         self.assertIn('by hand     Slack: "TPA beta · Call centre"  [not connected', result.stdout)
@@ -443,9 +443,9 @@ class SlackKind(SlackReport):
             self.connection("TPA beta · Member records"),
         ]
         out = self.pd().stdout
-        self.assertIn('by hand     Slack: "TPA beta · Portal & API" connected to #pd-incidents  [in PagerDuty, set '
+        self.assertIn('by hand     Slack: "TPA beta · Portal & API" connected to #obatpa-incidents  [in PagerDuty, set '
                       'kind: "responder" posts nothing in the channel', out)
-        self.assertIn('ok          Slack: "TPA beta · Member records" connected to #pd-incidents', out)
+        self.assertIn('ok          Slack: "TPA beta · Member records" connected to #obatpa-incidents', out)
 
 
 class Secrets(Base):
