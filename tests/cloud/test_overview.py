@@ -1,7 +1,10 @@
 """The overview, calm (the owner, 2026-10-13: "This seems super busy, can we make it easier without losing the
-stats?"): three open rows (Right now, Services, Databases) and everything else in rows shut by default, nothing lost.
+stats?"): four open rows (Can people sign in?, Right now, Services, Databases) and everything else in rows shut by
+default, nothing lost.
 
-- Right now: one status tile per area, linking to the area's pages, then uptime, the sign-in journeys, incidents.
+- Can people sign in? (SR-OR-1, the owner 2026-11-12: "i want these alerts on the main watchtower dashboard"): first;
+  its tiles are tests/cloud/test_signin.py's.
+- Right now: one status tile per area, linking to the area's pages, then uptime, incidents.
 - Services: one tile per service the environment runs, and none for one it does not (beta's switches, production-
   full's root), each the same shape; auth's and tpa-api's read their private check as `inside-down` does (no checker
   region passing), never a share of regions (two of three fail by design).
@@ -35,7 +38,8 @@ from test_resources import INFRA, INFRA_SOURCE, CHECKOUT_PRESENT, RENDERED, sect
 
 BEFORE = json.loads((HERE / "fixtures" / "overview-before-calm.json").read_text())
 PRIVATE = "servicedirectory_service"
-OPEN = ["Right now", "Services", "Databases"]
+OPEN = ["Can people sign in? The sign-in robots every five minutes, the codes going out, the outside checks, the "
+        "sign-in alerts", "Right now", "Services", "Databases"]
 AREA_PAGES = {"Portal & sign-in": {"portal-api", "sign-in"}, "Member records": {"records"},
               "Call centre": {"callcentre"}, "CRM": {"crm"}}
 
@@ -99,12 +103,14 @@ def area_panels(overview: dict) -> list[dict]:
 def check_layout(overview: dict, env: str) -> list[str]:
     rows = [p for p in overview["panels"] if p["type"] == "row"]
     problems = []
-    if [r["title"].split(":")[0] for r in rows[:3]] != OPEN or any(r["collapsed"] for r in rows[:3]):
-        problems.append(f"{env}: the first rows are {[(r['title'], r['collapsed']) for r in rows[:3]]}, not "
+    if [r["title"].split(":")[0] for r in rows[:4]] != OPEN or any(r["collapsed"] for r in rows[:4]):
+        problems.append(f"{env}: the first rows are {[(r['title'], r['collapsed']) for r in rows[:4]]}, not "
                         f"{OPEN}, open")
-    if not all(r["collapsed"] for r in rows[3:]):
-        problems.append(f"{env}: open below Databases: {[r['title'] for r in rows[3:] if not r['collapsed']]}")
-    right_now = sections(overview)[rows[0]["title"]]
+    if overview["panels"][0] is not rows[0]:
+        problems.append(f"{env}: the page does not open on its first row")
+    if not all(r["collapsed"] for r in rows[4:]):
+        problems.append(f"{env}: open below Databases: {[r['title'] for r in rows[4:] if not r['collapsed']]}")
+    right_now = sections(overview)[rows[1]["title"]]
     areas = [p for p in right_now if p["title"] in AREA_PAGES]
     want = [a for a in AREA_PAGES if a != "Call centre" or env == "beta"]
     if [p["title"] for p in areas] != want:
@@ -207,6 +213,15 @@ def check_queries_kept(env: str, pages: dict[str, dict]) -> list[str]:
                 problems.append(f"{where}: auth and its messenger have no tiles")
         elif service in gen.SERVICES and service not in gen.RUNS[env]:
             continue   # a service this environment does not run gets no tile
+        elif lint.query_facts(tsl)["metric"] == gen.SYNTHETIC:
+            # The synthetic journeys' runs, every job's: the staff journeys J1 to J3 are off by ruling, so each query
+            # of the result lines now names a sign-in robot's job (beta's alone; production-full builds neither).
+            robots = {v for p, t in queries(overview) for k, _op, v in facts(t)["filters"]
+                      if facts(t)["metric"] == gen.SYNTHETIC and k == "resource.label.job_name"}
+            if env == "beta" and robots != set(gen.ROBOT_JOBS):
+                problems.append(f"{where}: the result lines are read for {sorted(robots)}, not the two robots")
+            if env != "beta" and robots:
+                problems.append(f"{where}: production-full builds no robot, but the overview reads {sorted(robots)}")
         else:
             problems.append(f"{where} ({q['datasource']}): {tsl['filters'][2]} {tsl['filters'][4:]} "
                             f"{tsl['perSeriesAligner']} {tsl['alignmentPeriod']} is on no page the overview links")

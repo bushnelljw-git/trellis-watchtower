@@ -20,8 +20,16 @@
 #                       importer while feed_ingest_enabled is false). A job is never in both lists.
 #   TPA_STOPPED_DATABASES  comma list, may be empty: Cloud SQL instances stopped on purpose (tpa-platform's
 #                       local.database_stopped; `auth_db` and `auth-db` both name auth-db).
-#                       All three are beta's alone: with TPA_ENVIRONMENT=production any one set is refused, so
-#                       production's tiles can never be quieted.
+#   TPA_SIGNIN_ROBOTS   comma list, may be empty or unset: what of the sign-in robots tpa-platform has built (SR-OR-1):
+#                       `signin-robot-secrets` once their secrets and the secret-read counter exist (stage 1,
+#                       signin_robot_principals_enabled), and each robot's job once it is built (stage 2,
+#                       signin_robots_enabled; never without the secrets). What it does not name reads "not deployed"
+#                       and its queries are never sent (its counter does not exist until it is built, and Cloud
+#                       Monitoring answers a query for a metric that does not exist with a 404 the panel shows as an
+#                       error). So an estate that has not built them, and a tpa-platform that predates them, read
+#                       right with nothing set; a built robot paused on purpose is in TPA_PAUSED_JOBS too.
+#                       All four are beta's alone: with TPA_ENVIRONMENT=production any one set is refused, so
+#                       production's tiles can never be quieted (production-full builds no robot).
 #                       Their tiles, and the tiles of what reads them, read "not deployed", "paused" or "database
 #                       stopped" in no colour instead of red (scripts/cloud_dashboards.py, when_quiet), in that order
 #                       when several hold.
@@ -31,8 +39,8 @@
 #   render-dashboards.sh --render-only SRC DST   render only (tests/cloud/test_render.py)
 #
 # Every value is checked before it is written into the JSON: a project id must look like one, the environment is one
-# of two words, and a not-deployed, paused or stopped name must be one this image knows for its list (anything else
-# is refused, so a typo can never quietly turn a red tile neutral).
+# of two words, and a not-deployed, paused, stopped or built name must be one this image knows for its list (anything
+# else is refused, so a typo can never quietly turn a red tile neutral).
 set -eu
 
 src=/etc/grafana/dashboards
@@ -46,8 +54,11 @@ fi
 
 # What TPA_PAUSED_JOBS, TPA_NOT_DEPLOYED_JOBS and TPA_STOPPED_DATABASES may name (scripts/cloud_dashboards.py
 # PAUSABLE, SWITCHED and DATABASES; the render test holds these to them).
-KNOWN_PAUSED_JOBS="erisa-clocks nightly-anomalies stoploss-surveillance accumulator-reconcile workload-audit member-access feed-ingest-everon-sync"
+KNOWN_PAUSED_JOBS="erisa-clocks nightly-anomalies stoploss-surveillance accumulator-reconcile workload-audit member-access feed-ingest-everon-sync synthetics-member-sign-in synthetics-broker-sign-in"
 KNOWN_NOT_DEPLOYED_JOBS="feed-ingest-everon-sync"
+# The sign-in robots' secrets and jobs (scripts/cloud_dashboards.py ROBOT_SECRETS, ROBOT_JOBS): each "not deployed"
+# unless TPA_SIGNIN_ROBOTS names it.
+KNOWN_SIGNIN_ROBOTS="signin-robot-secrets synthetics-member-sign-in synthetics-broker-sign-in"
 KNOWN_DATABASES="auth-db tpa-db crm-db cc-db"
 # The pages that read the call-centre project alone (scripts/cloud_dashboards.py CC_ONLY): the Call centre page and
 # its services' own pages. With no call-centre project they are left out.
@@ -96,7 +107,7 @@ esac
 # Production pauses, stops and switches off nothing on purpose (and its pages carry no tile of a job it does not
 # build), so a quiet tile there would hide a real failure.
 if [ "$environment" = production ]; then
-  for var in TPA_PAUSED_JOBS TPA_NOT_DEPLOYED_JOBS TPA_STOPPED_DATABASES; do
+  for var in TPA_PAUSED_JOBS TPA_NOT_DEPLOYED_JOBS TPA_STOPPED_DATABASES TPA_SIGNIN_ROBOTS; do
     eval "value=\${$var:-}"
     [ -z "$value" ] || refuse "$var must be empty with TPA_ENVIRONMENT=production, got '${value}'"
   done
@@ -104,6 +115,25 @@ fi
 paused="$(names TPA_PAUSED_JOBS $KNOWN_PAUSED_JOBS)"
 not_deployed="$(names TPA_NOT_DEPLOYED_JOBS $KNOWN_NOT_DEPLOYED_JOBS)"
 stopped="$(names TPA_STOPPED_DATABASES $KNOWN_DATABASES)"
+built="$(names TPA_SIGNIN_ROBOTS $KNOWN_SIGNIN_ROBOTS)"
+# A robot's job is built only beside its secrets (tpa-platform makes them first and keeps them while it is built).
+case " $(echo $built) " in
+  *" synthetics-"*)
+    case " $(echo $built) " in
+      *" signin-robot-secrets "*) ;;
+      *) refuse "TPA_SIGNIN_ROBOTS names a robot but not signin-robot-secrets: a robot is never built without its secrets" ;;
+    esac ;;
+esac
+# A robot tpa-platform has not built is not deployed, as a switched-off job is.
+for name in $KNOWN_SIGNIN_ROBOTS; do
+  case " $(echo $built) " in
+    *" $name "*) ;;
+    *) case " $(echo $paused) " in
+         *" $name "*) refuse "TPA_PAUSED_JOBS names '$name', which TPA_SIGNIN_ROBOTS does not: a robot that is not built has no schedule to pause" ;;
+       esac
+       not_deployed="$(printf '%s\n%s' "$not_deployed" "$name")" ;;
+  esac
+done
 # A job that is not built has no schedule to pause: a name in both lists is a mistake in what set them.
 for name in $not_deployed; do
   case " $(echo $paused) " in
@@ -129,6 +159,12 @@ program="$work/program.sed"
     printf 's/@@R[a-z0-9,-]*,%s,[a-z0-9,-]*@@[^@]*@@/database stopped/g\n' "$name"
     printf 's/@@F[a-z0-9,-]*,%s,[a-z0-9,-]*@@\\([^@]*\\)@@[^@]*@@/\\1/g\n' "$name"
   done
+  # A query that names a job not deployed is never sent (`"hide": true`); every other is (`false`). The token and
+  # its quotes settle together, so the JSON holds a boolean.
+  for name in $not_deployed; do
+    printf 's/"@@H[a-z0-9,-]*,%s,[a-z0-9,-]*@@"/true/g\n' "$name"
+  done
+  printf 's/"@@H[a-z0-9,-]*@@"/false/g\n'
   printf 's/@@R[a-z0-9,-]*@@\\([^@]*\\)@@/\\1/g\n'
   printf 's/@@F[a-z0-9,-]*@@[^@]*@@\\([^@]*\\)@@/\\1/g\n'
   printf '%s\n' "$settle_environment"

@@ -29,10 +29,14 @@ THRESHOLD_DEFAULTS = {"comparison": "COMPARISON_GT", "threshold_value": "0", "du
 # The catalogue's optional sections this reader reads, each as the role whose project beta's root places it in (beta's
 # main.tf, local.monitoring_inputs; held to it by tests/cloud/test_importer.py): the administrator-feed importer's
 # (OWNER-EV-12, feedingest.tf), `feed_ingest` the app role's (the project that runs the job) and `feed_ingest_records`
-# the PHI role's (records' line). Every log metric of a section read here must be charted, as a role's are
-# (tests/cloud/test_catalogue.py). The other optional sections (`beta_text_codes`, `crm_lane_*`, `perimeter_dry_run`)
-# are not read.
-SECTIONS = {"feed_ingest": "app", "feed_ingest_records": "phi"}
+# the PHI role's (records' line); and the sign-in sections the overview's first row reads (SR-OR-1, D-335), each the
+# app role's: `signin_robots` (the robots' secret read and their policies; their result lines are the synthetics
+# section's), `auth_texts` (each texted code's delivery as Twilio reported it, while auth_sms_twilio_enabled) and
+# `auth_email_everyone` (emails the messenger could not hand on, while email_everyone_enabled). Every log metric of a
+# section read here must be charted, as a role's are (tests/cloud/test_catalogue.py). The other optional sections
+# (`beta_text_codes`, `crm_lane_*`, `perimeter_dry_run`, ...) are not read.
+SECTIONS = {"feed_ingest": "app", "feed_ingest_records": "phi", "signin_robots": "app", "auth_texts": "app",
+            "auth_email_everyone": "app"}
 
 
 def git_blob_sha(data: bytes) -> str:
@@ -153,6 +157,34 @@ class Catalogue:
                                         if value != "<block>"}}
         out["threshold_value"] = float(out["threshold_value"])
         return out
+
+    def promql(self, name: str, section: str, condition: int = 0) -> str:
+        """A policy's PromQL condition as one line: the reader keeps a block scalar as "<block>", so its text is read
+        here from the file, the folded (`>-`) lines joined by a space. KeyError when the policy has no such
+        condition."""
+        lines = self.text.splitlines()
+        start = lines.index(f"{section}:")
+        policies = next(i for i in range(start + 1, len(lines)) if lines[i] == "  alert_policies:")
+        at = next(i for i in range(policies + 1, len(lines)) if lines[i] == f"    {name}:"
+                  or (lines[i] and not lines[i].startswith(" ")))
+        if lines[at] != f"    {name}:":
+            raise KeyError(name)
+        found = -1
+        for i in range(at + 1, len(lines)):
+            line = lines[i]
+            if line and not line.startswith("      "):
+                break   # the next policy, or the next section
+            if line.strip() == "query: >-":
+                found += 1
+                if found == condition:
+                    indent = len(line) - len(line.lstrip())
+                    body = []
+                    for nxt in lines[i + 1:]:
+                        if nxt.strip() and len(nxt) - len(nxt.lstrip()) <= indent:
+                            break
+                        body.append(nxt.strip())
+                    return " ".join(b for b in body if b)
+        raise KeyError(f"{name} condition {condition}")
 
     def jobs_named(self) -> set[str]:
         """Every Cloud Run job the catalogue's alert filters name (`job_name = one_of(...)` or `= "..."`), and every

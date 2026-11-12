@@ -51,7 +51,8 @@ A cloud dashboard (the production image, read by grp-platform through IAP) also 
      panel would read as zero. Nothing here reads logs: the datasource has no log query, and a log-based metric is a
      metric;
   7. a filter, a group-by or a legend (`{{...}}`, `${__field.labels.X}`) names a label outside the allowlist below,
-     or one the allowlist admits on other metrics alone (LABEL_ONLY_ON: Cloud NAT's drop `reason`), or a legend names
+     or one the allowlist admits on other metrics alone (LABEL_ONLY_ON: Cloud NAT's drop `reason`, an uptime
+     check's `check_id`), or a legend names
      `__field.labels` without one allowed key; a resource label is used without the query's
      `resource.type`; the metric is not a Google Cloud one; a filter is not `=` or `=~`; a cross-series reducer, primary
      or secondary, is missing or REDUCE_NONE (which would return every label of every series); or any Grafana
@@ -106,17 +107,21 @@ FORBIDDEN_RE = re.compile(r"(?<![A-Za-z0-9_])(" + "|".join(sorted(FORBIDDEN, key
 # ---- Cloud: what a query may name ------------------------------------------------------------------------------------
 # The catalogue's closed label list (tpa-platform docs/infra/monitoring.md §2) and Google's own metric labels the
 # dashboards read (the status class, a job execution's or task attempt's result, an instance's state, the reason
-# Cloud NAT dropped a packet: each a fixed word of Google's), as `metric.label.X`; the resource labels that come with
+# Cloud NAT dropped a packet: each a fixed word of Google's; and our own uptime check's id), as `metric.label.X`; the resource labels that come with
 # every series and name our own services, jobs, instances, schedules, hosts, NAT gateways and buckets, as
 # `resource.label.X`.
 CATALOGUE_LABELS = {"service", "operation", "gate", "code", "outcome", "status_class", "job", "lane", "class", "sqlstate"}
-GOOGLE_METRIC_LABELS = {"response_code_class", "result", "state", "reason"}
+GOOGLE_METRIC_LABELS = {"response_code_class", "result", "state", "reason", "check_id"}
 METRIC_LABELS = CATALOGUE_LABELS | GOOGLE_METRIC_LABELS
 RESOURCE_LABELS = {"service_name", "job_name", "database_id", "job_id", "host", "gateway_name", "bucket_name"}
 ALLOWED_LABELS = {f"metric.label.{x}" for x in METRIC_LABELS} | {f"resource.label.{x}" for x in RESOURCE_LABELS}
 # A label allowed on these metrics alone: `reason` is the word Cloud NAT gives a packet it dropped, on its sent-packet
-# drop counter only (the received-packet one carries none); on any other metric it could be anything.
-LABEL_ONLY_ON = {"metric.label.reason": {"router.googleapis.com/nat/dropped_sent_packets_count"}}
+# drop counter only (the received-packet one carries none); on any other metric it could be anything. `check_id` is
+# the id Google gives one of our uptime checks (its display name in words, then a suffix: "beta-sign-in-auth-me-..."),
+# which tells apart the checks that share a host (the portal host's /health, /auth/me and /tpa/), on uptime results
+# alone.
+LABEL_ONLY_ON = {"metric.label.reason": {"router.googleapis.com/nat/dropped_sent_packets_count"},
+                 "metric.label.check_id": {"monitoring.googleapis.com/uptime_check/check_passed"}}
 
 # servicedirectory_service: a private uptime check's resource (Google's VPC checkers reading auth's and tpa-api's
 # /ready at their internal balancers; tpa-platform D-149). Its one label read here is service_name. nat_gateway: a

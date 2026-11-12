@@ -193,6 +193,21 @@ owning session assigns its id.
 | records-service | `2026-09-24-watchtower-to-records-service-audit-partition-horizon.md` | 1 | A daily horizon fact and a runbook. The monthly partitions end at 2027-12. |
 | trellis | `2026-09-24-watchtower-to-trellis-client-error-reporting.md` | 2 | Browser error reporting through the client-errors route. |
 
+**Owed to tpa-platform, not yet filed in trellis-security (2026-11-12, the sign-in row, SR-OR-1):** the website reads
+the sign-in robots as "not deployed", and sends none of their queries, unless the service's `TPA_SIGNIN_ROBOTS` names
+them (cloud/README.md, "Can people sign in?"). So beta's `watch.tf` writes, in the apply that makes them and never
+before this image runs (an older image refuses a robot in `TPA_PAUSED_JOBS`):
+- `TPA_SIGNIN_ROBOTS = join(",", concat(local.signin_robots_exist ? ["signin-robot-secrets"] : [],
+  sort([for k in keys(local.signin_robots_built) : "synthetics-${k}"])))`: the secrets from stage 1 (their
+  urgent `signin-robot-secret-read` exists from then), each robot's job from stage 2;
+- into `local.watch_paused_jobs`, `var.signin_robots_paused ? [for k in keys(local.signin_robots_built) :
+  "synthetics-${k}"] : []`, so they read "paused" (a stopped auth-db is already `TPA_STOPPED_DATABASES`, which the
+  robots read as "database stopped");
+- tests/infra/test_beta_watch.py's `ENV_NAMES` gains the name, and a test holds both lines to `signin_robots_exist`
+  and `signin_robots_built`, so stage 2 cannot land without them. Until they land a built robot reads "not deployed"
+  on the overview while PagerDuty pages for it: the one way this row reads a real failure as neutral. Class 1 (a
+  value-free list of names on the website's own service).
+
 The model-gateway rebuild is the member Ask session's. A note to that session is at trellis
 `tasks/member-assist/FROM-WATCHTOWER-SESSION-2026-09-24-model-gateway-body-logs.md`.
 

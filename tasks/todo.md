@@ -472,6 +472,25 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   - [ ] Follow-up: the CRM lane jobs' deadline tiles (crm.tf's crm_lane_send_missed_runs, crm_lane_comp_missed_runs,
     crm_reset_drain's) and their schedules' failures, once the catalogue is re-vendored with their schedule names.
 
+- [x] SR (2026-11-12, the owner, of the sign-in robots: "i want these alerts on the main watchtower dashboard";
+  trellis-security rulings/SR-OR-1.md) the overview opens on "Can people sign in?" (cloud/README.md, the same heading;
+  tests/cloud/test_signin.py):
+  - [x] The member robot and the broker robot, each its check now as its policies read it (from the catalogue's own
+    PromQL, refused if its shape moves), its last pass and its day's pass rate; the texted codes and emails in 24 h; the
+    portal host's two outside checks; the sign-in alerts that hold now, each its policy's rule. Every window ends now
+    (the newest row of a join: a quiet window has no point).
+  - [x] The robots read "not deployed" unless TPA_SIGNIN_ROBOTS names them, and their queries are then never sent
+    (`"hide"`, the render's H token: their counter does not exist, a 404); "paused" by TPA_PAUSED_JOBS; "database
+    stopped" with auth-db.
+  - [x] The old journeys table gone and the Portal & sign-in area reads the robots alone: J1 to J3 read nowhere (off by
+    ruling). Sign-in gains the robots' row and the texted codes' and emails' charts; production/sign-in.json without
+    them.
+  - [x] The catalogue's signin_robots, auth_texts and auth_email_everyone sections read (SECTIONS); `check_id` allowed on
+    uptime results alone.
+  - [ ] Owed by tpa-platform: watch.tf writes TPA_SIGNIN_ROBOTS and the paused robots (docs/REQUESTS.md).
+  - [ ] Pixels on the real page once deployed; and once the robots run, a read of their lines through the row
+    (timeSeries.list), since today their metric does not exist (404).
+
 ## Review
 
 ### 2026-10-11 (cloud dashboards)

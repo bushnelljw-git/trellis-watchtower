@@ -7649,7 +7649,7 @@
     {
       "type": "timeseries",
       "title": "NAT ports: allocated, in use",
-      "description": "Cloud NAT's ports for auth's messenger, the model gateway and the synthetic journeys: the ports allocated to every instance behind the gateway (`nat/allocated_ports`), and the most connections one instance held to one destination (`nat/port_usage`). In use close to an instance's share of the allocated ports, new connections wait or drop. A cold gateway allocates ports as instances arrive, so the first calls after a quiet spell can wait.",
+      "description": "Cloud NAT's ports for auth's messenger, the model gateway and the sign-in robots: the ports allocated to every instance behind the gateway (`nat/allocated_ports`), and the most connections one instance held to one destination (`nat/port_usage`). In use close to an instance's share of the allocated ports, new connections wait or drop. A cold gateway allocates ports as instances arrive, so the first calls after a quiet spell can wait.",
       "gridPos": {
         "h": 7,
         "w": 5,
@@ -7777,7 +7777,7 @@
     {
       "type": "timeseries",
       "title": "NAT new connections",
-      "description": "New connections Cloud NAT opened for auth's messenger, the model gateway and the synthetic journeys (`nat/new_connections_count`), per interval.",
+      "description": "New connections Cloud NAT opened for auth's messenger, the model gateway and the sign-in robots (`nat/new_connections_count`), per interval.",
       "gridPos": {
         "h": 7,
         "w": 5,

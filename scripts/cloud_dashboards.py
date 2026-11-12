@@ -21,7 +21,9 @@ policy, a database's max_connections: LIMITS); and, with no call-centre project 
 production-full), the variants in cloud/dashboards/no-cc/ replace the pages that have a call-centre part, and the
 pages that read the call centre alone are left out. Each such string is a token, `@@R,deps,@@normal@@`,
 `@@F,deps,@@quiet@@normal@@`, `@@E@@production@@beta@@`, or, for a number, `"@@N@@production@@beta@@"` (its quotes go
-with it), that the render step resolves (when_quiet, per_environment, per_env_number below).
+with it), that the render step resolves (when_quiet, per_environment, per_env_number below); and a sign-in robot's
+query carries `"hide": "@@H,jobs,@@"`, settled to true (Grafana never sends it) while one of `jobs` is not deployed
+(TPA_SIGNIN_ROBOTS does not name it: hidden_while_not_deployed).
 
 Usage:
   scripts/cloud_dashboards.py           write cloud/dashboards/*.json
@@ -77,7 +79,20 @@ IMPORTER = "feed-ingest-everon-sync"
 # auth-db).
 SWEEPS = ("erisa-clocks", "nightly-anomalies", "stoploss-surveillance", "accumulator-reconcile", "workload-audit",
           "member-access")
-PAUSABLE = (*SWEEPS, IMPORTER)
+# The sign-in robots (SR-OR-1; tpa-platform's beta signinrobots.tf, local.signin_robots): each a Cloud Run job
+# `synthetics-<key>` running this repository's journey `<key>` every five minutes, `who` the people its alert subject
+# names, needing auth-db alone (its `databases`). Built only behind signin_robots_enabled, so each is "not deployed"
+# unless the service's TPA_SIGNIN_ROBOTS names it (built) and "paused" while TPA_PAUSED_JOBS does; production-full
+# builds neither. tests/cloud/test_signin.py holds these to the root and to synthetics/result.py's JOBS.
+SIGNIN_ROBOTS = (("member-sign-in", "Members", "Member robot", "a software passkey"),
+                 ("broker-sign-in", "Brokers", "Broker robot", "an authenticator code"))
+ROBOT_JOBS = tuple(f"synthetics-{key}" for key, *_rest in SIGNIN_ROBOTS)
+ROBOT_DBS = ("auth-db",)
+# The robots' two secrets and their read counter (signin_robot_secret_read, and the urgent signin-robot-secret-read),
+# which tpa-platform makes from stage 1 (signin_robot_principals_enabled), before any robot job: TPA_SIGNIN_ROBOTS
+# names it beside the jobs once they exist, and its queries are not sent until then.
+ROBOT_SECRETS = "signin-robot-secrets"
+PAUSABLE = (*SWEEPS, IMPORTER, *ROBOT_JOBS)
 SWITCHED = (IMPORTER,)
 DATABASES = ("auth-db", "tpa-db", "crm-db", "cc-db")
 SWEEP_DBS = ("auth-db", "tpa-db")   # a sweep's run needs auth (its token) and records (tpa-db)
@@ -152,17 +167,18 @@ PRIVATE = "servicedirectory_service"   # a private uptime check (D-149: auth's a
 # The home's status colours, as on the local home page: up is teal, not green (green and red sit 4.1 apart for a
 # deuteranope, teal and red 13+); red for a failure, amber for "look", and the base text colour for no answer.
 TEAL, RED, AMBER = "#14b8a6", "#d03b3b", "#fab219"
-# Each synthetic journey's Cloud Run job (tpa-platform infra/envs/beta/synthetics.tf, local.synthetic_journeys) and
-# what it proves.
-JOURNEYS = (("synthetics-staff-sign-in", "J1 staff sign-in", "the portal, auth and a desk read that reaches tpa-db"),
-            ("synthetics-ops-desk", "J2 ops desk", "the ops host, auth and the live queue in svc-ops"),
-            ("synthetics-crm", "J3 CRM sign-in", "the CRM's own sign-in"))
+# The staff journeys J1 to J3 (tpa-platform's beta synthetics.tf: synthetics-staff-sign-in, -ops-desk, -crm) are off by
+# ruling (OWNER-EV-12 51.2, which SR-OR-1 re-ruled for the two sign-in robots alone): no page reads them. Their result
+# lines would share `synthetic_results` with the robots', so every query of it here names a robot's job.
 AUTO = "grafana-auto"   # one aligned point per panel interval (at least the panel's 1m)
 
 
 def log(name: str) -> str:
     """A log-based metric's Cloud Monitoring type."""
     return f"logging.googleapis.com/user/{name}"
+
+
+SYNTHETIC = log("synthetic_results")   # one per sign-in robot run: its result line (synthetics/result.py)
 
 
 def label(name: str) -> str:
@@ -275,8 +291,25 @@ def crm_errors(period=AUTO, by=CRM_ERROR_LABELS, groups=False):
 
 # ---- Panels --------------------------------------------------------------------------------------------------------
 def target(ds: str, query: dict, ref: str) -> dict:
-    return {"refId": ref, "datasource": {"type": "stackdriver", "uid": ds}, "queryType": "timeSeriesList",
-            "timeSeriesList": {"projectName": PROJECT[ds], **query["tsl"]}, "aliasBy": query["alias"]}
+    out = {"refId": ref, "datasource": {"type": "stackdriver", "uid": ds}, "queryType": "timeSeriesList",
+           "timeSeriesList": {"projectName": PROJECT[ds], **query["tsl"]}, "aliasBy": query["alias"]}
+    if "hide" in query:
+        out["hide"] = query["hide"]
+    return out
+
+
+def hidden_while_not_deployed(query: dict, deps) -> dict:
+    """The query, never sent while one of `deps` (a sign-in robot) is not deployed: its counter does not exist
+    until tpa-platform builds the robots, and Cloud Monitoring answers a query for a metric that does not exist with a
+    404 the panel shows as an error. `hide` is a token render-dashboards.sh settles to true or false (Grafana's Cloud
+    Monitoring datasource drops a hidden query before it asks: datasource.ts filterQuery)."""
+    names = "," + ",".join(deps) + ","
+    return {**query, "hide": f"@@H{names}@@"}
+
+
+def ref_id(i: int) -> str:
+    """A query's refId, as Grafana names them: A to Z, then AA, AB, ..."""
+    return chr(ord("A") + i) if i < 26 else ref_id(i // 26 - 1) + chr(ord("A") + i % 26)
 
 
 def thresholds(*steps) -> dict:
@@ -391,7 +424,7 @@ def panel(kind: str, title: str, ds: str | None, queries, description: str, *, w
         p["links"] = links
     if ds:
         p["datasource"] = {"type": "stackdriver", "uid": ds}
-        p["targets"] = [target(ds, query, chr(ord("A") + i)) for i, query in enumerate(queries)]
+        p["targets"] = [target(ds, query, ref_id(i)) for i, query in enumerate(queries)]
         p["interval"] = "1m"
     if time_from:
         # The window is in the title; Grafana's "Last 1 hour" label would take the title's room in a small panel.
@@ -689,7 +722,8 @@ def deadline_stats(w: int, h: int, env: str = "beta") -> list[dict]:
 # ---- The home: what is wrong now, one project at a time ------------------------------------------------------------
 # A cloud panel reads one project (rule 8), so the home's headline and "What's wrong now" are one per project, in
 # the order TPA (portal and sign-in, then member records), call centre, CRM. Each reads counts where more than 0 is
-# a problem, named with a ✕ (5xx answers, uptime and inside checks failing, journeys failed or broken, crashes,
+# a problem, named with a ✕ (5xx answers, uptime and inside checks failing, the sign-in robots' checks failed or broken,
+# crashes,
 # out-of-memory kills, failed job runs, minutes a database was down), plus one "reporting" count that is above 0
 # whenever the project's metrics arrive at all. That one turns negative, so it stays apart: it is drawn teal and
 # never counts as a problem, and with nothing at all (no metric arrived, or the query failed) the panel reads
@@ -702,9 +736,10 @@ REPORTING = {"type": "range", "options": {"from": -1e15, "to": -0.5, "result": {
 
 
 def area_queries(ds: str, services: str, jobs: str | None, db: str, *, checks: bool = False,
-                 warm: tuple[str, ...] = ()) -> list[dict]:
+                 warm: tuple[str, ...] = (), robots: bool = False) -> list[dict]:
     """The problem counts of one project, and its "reporting" count (named `seeing`) last. `warm`: the services of
-    the area the environment keeps warm, whose instances are read as `<service> has no instance` reads them."""
+    the area the environment keeps warm, whose instances are read as `<service> has no instance` reads them.
+    `robots`: the environment builds the sign-in robots (beta's root alone)."""
     out = [q(RUN_REQUESTS, REV, period=NOW, by=("service_name",), name=alias("service_name", prefix="✕ 5xx · "),
              service_name=Re(services), response_code_class="5xx")]
     if checks:
@@ -715,11 +750,14 @@ def area_queries(ds: str, services: str, jobs: str | None, db: str, *, checks: b
                 *[q(UPTIME, PRIVATE, align=INSIDE_POLICY["aligner"], period=NOW, reduce=reducer,
                     by=("service_name",), name=f"inside {what} · {service}", service_name=service)
                   for service in INSIDE_CHECKED
-                  for what, reducer in (("passing", INSIDE_POLICY["reducer"]), ("reporting", "REDUCE_COUNT"))],
-                q(log("synthetic_results"), JOB, period=NOW, by=("job",), name=alias("job", prefix="✕ ") + " failed",
-                  outcome="fail"),
-                q(log("synthetic_results"), JOB, period=NOW, by=("job",), name=alias("job", prefix="✕ ") + " broke",
-                  outcome="error")]
+                  for what, reducer in (("passing", INSIDE_POLICY["reducer"]), ("reporting", "REDUCE_COUNT"))]]
+    if checks and robots:
+        # The sign-in robots' failed and broken checks (SR-OR-1), one row each, never the staff journeys J1 to J3
+        # (off by ruling); not asked while a robot is not deployed (its counter does not exist yet).
+        out += [hidden_while_not_deployed(q(SYNTHETIC, JOB, period=NOW, by=(), name=f"✕ {who}' sign-in check {word}",
+                                            job_name=job, outcome=outcome), (job,))
+                for job, (_key, who, *_rest) in zip(ROBOT_JOBS, SIGNIN_ROBOTS)
+                for word, outcome in (("failed", "fail"), ("broke", "error"))]
     out += [q(log("run_crash_exits"), REV, period=NOW, by=("service_name",),
               name=alias("service_name", prefix="✕ crashed · "), service_name=Re(services)),
             q(log("run_oom_kills"), REV, period=NOW, by=("service_name",),
@@ -868,8 +906,9 @@ AREAS = [
     ("crm", "CRM", CRM, CRM_SERVICES, CRM_JOBS, "crm-db", "✓ CRM", False),
 ]
 AREA_WORDS = ("5xx answers, uptime and inside checks failing (behind IAP a check passes on its sign-in page), "
-              "synthetic journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the "
-              "database was down, its failed backups and failed point-in-time log archives")
+              "the sign-in robots' failed or broken checks (once they are deployed), crashes, out-of-memory kills, "
+              "failed job runs, minutes the database was down, its failed backups and failed point-in-time log "
+              "archives")
 
 
 
@@ -882,7 +921,7 @@ def warm_in(services: str, env: str) -> tuple[str, ...]:
 def whats_wrong(key, title, ds, services, jobs, db, reporting, checks, w=6, env="beta") -> dict:
     warm = warm_in(services, env)
     p = panel("table", f"What's wrong · {AREA_STATUS[key][0]}", ds,
-              area_queries(ds, services, jobs, db, checks=checks, warm=warm),
+              area_queries(ds, services, jobs, db, checks=checks, warm=warm, robots=env == "beta"),
               "Each problem of the last 15 minutes with its count (answers, failures, runs or minutes), worst "
               "first; the teal row says the project's metrics are arriving. Empty reads '? Can't tell'.",
               w=w, h=6, time_from="15m", no_value=when_quiet((db,), "? Can't tell"),
@@ -1165,7 +1204,7 @@ def area_status(key, title, ds, services, jobs, db, reporting, checks, w=3, env=
     queries and rows as "What's wrong now" (area_rows); "? Can't tell" when nothing arrived at all."""
     name, pages = AREA_STATUS[key]
     warm = warm_in(services, env)
-    p = stat(name, ds, area_queries(ds, services, jobs, db, checks=checks, warm=warm),
+    p = stat(name, ds, area_queries(ds, services, jobs, db, checks=checks, warm=warm, robots=env == "beta"),
              f"The last 15 minutes in this project: how many problems, of "
              f"{AREA_WORDS if checks else 'its 5xx answers, crashes, out-of-memory kills, failed job runs, the minutes ' + db + ' was down, and its failed backups and point-in-time log archives'}"
              + (f", and five minutes or more with no instance for a service kept warm ({', '.join(warm)}: "
@@ -1231,35 +1270,572 @@ def uptime_tile(w=4, h=5) -> dict:
     return p
 
 
-def journeys_table(w=6, h=5) -> dict:
-    """Each synthetic journey's runs in the last hour, by outcome, one row per journey."""
-    job, outcome = label("job"), label("outcome")
-    p = panel("table", "Sign-in journeys (1 h)", APP,
-              q(log("synthetic_results"), JOB, period="+3600s", by=("job", "outcome"), name=alias("job", "outcome")),
-              "Each journey's runs in the last hour, by outcome (`synthetic_results`, one result line per run): "
-              + "; ".join(f"`{j}` ({n}): {what}" for j, n, what in JOURNEYS) + ". pass is teal; fail is amber, red "
-              "from two (`synthetic-failing` pages on two fails and no pass in eleven minutes; J1 and J2 urgent); "
-              "error is amber (the runner itself broke: `synthetic-broken`). No runs at all: the journeys are off "
-              "or paused (`synthetic-blind` when one goes quiet 15 minutes).",
-              w=w, h=h, time_from="1h", no_value="no runs (off or paused)",
+# ---- Can people sign in? The overview's first row (SR-OR-1, D-335) -------------------------------------------------
+# The owner, 2026-11-12, of the sign-in robots that sign in as a member and a broker every five minutes and page when
+# they cannot: "i want these alerts on the main watchtower dashboard". The row: each robot (its check now, its last
+# pass, its day's pass rate), the sign-in codes going out (texts, emails), the two outside checks on the portal host,
+# and the sign-in alerts, each read as its own policy reads it (Grafana's Cloud Monitoring datasource cannot list
+# incidents: the incidents are PagerDuty's).
+#
+# How a window that ends now is read. Cloud Monitoring places an aligned point at the request's end time, then one
+# alignment period back, and so on, and Grafana's frame takes each point's end time; a counter writes no point for a
+# period nothing happened in. So a query whose alignment period is a policy's window has its latest window's count at
+# the end of the panel's range, or no point there at all. Each panel below joins its queries by time, keeps the
+# newest row, and reads each window's count from it (a missing one as none). One query's window is the panel's whole
+# range, so whenever anything at all happened in the range the newest row is the range's end (never an older window
+# of another query).
+
+def _window_steps() -> list[dict]:
+    """Join every query by time and keep the newest row: each field is then its query's count in the window that
+    ends now, or empty."""
+    return [{"id": "joinByField", "options": {"byField": "Time", "mode": "outer"}},
+            {"id": "sortBy", "options": {"sort": [{"field": "Time", "desc": True}]}},
+            {"id": "limit", "options": {"limitField": 1}}]
+
+
+class Arithmetic:
+    """calculateField steps on one row, each a named field, for the row's rules: none where a count is empty, at
+    least one, at least n, not, and, or, the larger of, a weight. Every count a rule reads goes through `count` first,
+    so an empty one (the window had nothing, or its query was not asked) reads 0; the names it adds are `made`, which
+    the panels leave out of what they show."""
+
+    def __init__(self):
+        self.steps: list[dict] = []
+        self.made: list[str] = []
+
+    def _add(self, steps: list[dict], name: str, *extra: str) -> str:
+        if name in self.made:   # asked again: the field is there already, never a second one of the same name
+            return name
+        self.steps += steps
+        self.made += [*extra, name]
+        return name
+
+    def count(self, field: str) -> str:
+        return self._add([reduce_row(f"{field} ·", "sum", [field])], f"{field} ·")
+
+    def at_least(self, field: str, n: int = 1) -> str:
+        """1 where the count `field` (whole, never negative) is n or more, else 0."""
+        if n > 1:
+            self._add([calc(f"{field} / {n}", field, "/", n), unary(f"{field} ÷ {n}", "floor", f"{field} / {n}")],
+                      f"{field} ÷ {n}", f"{field} / {n}")
+            field = f"{field} ÷ {n}"
+        name = f"{field} ≥ 1"
+        return self._add(at_least_one(field, name), name, *at_least_names(name)[:2])
+
+    def positive(self, field: str) -> str:
+        """1 where `field` (any number) is above 0, else 0: half of it plus its size, then at least one."""
+        size, both, half = f"|{field}|", f"{field} + |{field}|", f"({field})⁺"
+        self._add([unary(size, "abs", field), calc(both, field, "+", size), calc(half, both, "/", 2)], half, size, both)
+        return self.at_least(half)
+
+    def minus(self, left, right, name: str) -> str:
+        return self._add([calc(name, left, "-", right)], name)
+
+    def times(self, left, right, name: str) -> str:
+        return self._add([calc(name, left, "*", right)], name)
+
+    def not_(self, flag: str) -> str:
+        return self._add([calc(f"not {flag}", 1, "-", flag)], f"not {flag}")
+
+    def all_of(self, name: str, *flags: str) -> str:
+        first, *rest = flags
+        for i, flag in enumerate(rest):
+            step = name if i == len(rest) - 1 else f"{name} ({i})"
+            self._add([calc(step, first, "*", flag)], step)
+            first = step
+        return first if rest else self._add([calc(name, first, "*", 1)], name)
+
+    def weighted(self, flag: str, weight: str, name: str) -> str:
+        """`flag` times `weight`, a number in words: a token render-dashboards.sh settles (when_quiet) or a literal."""
+        return self._add([{"id": "calculateField", "options": {
+            "mode": "binary", "alias": name, "replaceFields": False,
+            "binary": {"left": {"matcher": {"id": "byName", "options": flag}}, "operator": "*",
+                       "right": {"fixed": weight}}}}], name)
+
+    def largest(self, name: str, fields: list[str]) -> str:
+        return self._add([reduce_row(name, "max", fields)], name)
+
+    def total(self, name: str, fields: list[str]) -> str:
+        return self._add([reduce_row(name, "sum", fields)], name)
+
+
+SYNTHETIC_PROMQL = "logging_googleapis_com:user_synthetic_results"
+
+
+def _robot_selector(extra: str, window: str) -> str:
+    return (f'sum by (job_name) (sum_over_time({SYNTHETIC_PROMQL}{{monitored_resource="cloud_run_job", '
+            f'job_name="__JOB__"{extra}}}[{window}]))')
+
+
+def signin_rules() -> dict:
+    """The robots' five policies as the row reproduces them, read from the vendored catalogue: each one's PromQL must
+    be exactly the shape written here with the numbers and codes read from it, or the generator refuses (a moved
+    window, count or code is a change here, never a page that quietly disagrees with its pager)."""
+    text = {n: CATALOGUE.promql(n, "signin_robots") for n in
+            ("signin-failing", "signin-robot-locked-out", "signin-silent", "signin-robot-broken", "signin-checks-off")}
+    window = int(re.search(r"\[(\d+)m\]", text["signin-failing"]).group(1))
+    fails = int(re.search(r">= (\d+)\)", text["signin-failing"]).group(1))
+    lockout = re.search(r'code!~"([a-z_|]+)"', text["signin-failing"]).group(1)
+    locks = int(re.search(r">= (\d+)\)", text["signin-robot-locked-out"]).group(1))
+    latest = int(re.search(r"\[(\d+)m\]", text["signin-silent"]).group(1))
+    silent_hold = seconds(CATALOGUE.policy("signin-silent", section="signin_robots")["conditions"]["-0"]["promql"]
+                          ["duration"].strip('"'))
+    broken = int(re.search(r"\[(\d+)m\]", text["signin-robot-broken"]).group(1))
+    off_hours = int(re.search(r"\[(\d+)h\]", text["signin-checks-off"]).group(1))
+    w, fail, passed = f"{window}m", ', outcome="fail"', ', outcome="pass"'
+    want = {
+        "signin-failing": f"(({_robot_selector(fail, w)} >= {fails}) and on(job_name) "
+                          f"({_robot_selector(fail + f', code!~{chr(34)}{lockout}{chr(34)}', w)} > 0)) "
+                          f"unless on(job_name) ({_robot_selector(passed, w)} > 0)",
+        "signin-robot-locked-out": f"({_robot_selector(fail + f', code=~{chr(34)}{lockout}{chr(34)}', w)} >= {locks}) "
+                                   f"unless on(job_name) ({_robot_selector(passed, w)} > 0)",
+        "signin-silent": f'absent_over_time({SYNTHETIC_PROMQL}{{monitored_resource="cloud_run_job", '
+                         f'job_name="__JOB__"}}[{latest}m])',
+        "signin-robot-broken": f'{_robot_selector(", outcome=" + chr(34) + "error" + chr(34), f"{broken}m")} > 0',
+        "signin-checks-off": f'({_robot_selector(", code=" + chr(34) + "disabled" + chr(34), f"{off_hours}h")} > 0) '
+                             f"unless on(job_name) ({_robot_selector(passed, f'{off_hours}h')} > 0)",
+    }
+    for name, query in want.items():
+        assert text[name] == query, f"the catalogue's {name} is not the shape the sign-in row reads:\n{text[name]}"
+    return {"window": window, "fails": fails, "lockout": lockout, "locks": locks, "latest": latest,
+            "silent": latest + silent_hold // 60, "broken": broken, "off_hours": off_hours}
+
+
+SIGNIN = signin_rules()
+# What the row's own words read beside the rules: the latest run (the silent policy's window: a run every five
+# minutes), and the last pass in bands of it, a quarter hour and an hour.
+LAST_PASS_BANDS = (SIGNIN["latest"], SIGNIN["silent"], 60)
+# The code a run ends with when auth refuses it because Sign-in checks is switched off (synthetics/result.py).
+DISABLED = "disabled"
+
+
+def robot_windows() -> dict[str, tuple[dict, int]]:
+    """Each count a robot's rules read: its name, its filters and its window in minutes."""
+    s = SIGNIN
+    day = s["off_hours"] * 60
+    return {f"fail {s['window']}m": ({"outcome": "fail"}, s["window"]),
+            f"lockout {s['window']}m": ({"outcome": "fail", "code": Re(s["lockout"])}, s["window"]),
+            f"pass {s['window']}m": ({"outcome": "pass"}, s["window"]),
+            f"error {s['broken']}m": ({"outcome": "error"}, s["broken"]),
+            f"any {s['silent']}m": ({}, s["silent"]),
+            "off 24h": ({"code": DISABLED}, day), "pass 24h": ({"outcome": "pass"}, day),
+            # Read by the robot's own tile alone: the latest run, the last pass's bands and the day's failures. The
+            # day's every line is the tile's anchor: with anything at all in the day, its newest row is now.
+            f"off {s['window']}m": ({"code": DISABLED}, s["window"]),
+            **{f"pass {m}m": ({"outcome": "pass"}, m) for m in LAST_PASS_BANDS if m != s["window"]},
+            "fail 24h": ({"outcome": "fail"}, day), "any 24h": ({}, day)}
+
+
+ALERT_WINDOWS = 7   # the first seven of robot_windows(): what the policies read
+
+
+def robot_counts(key: str, job: str, *, tile: bool = True) -> list[dict]:
+    """One robot's counts, each in its own window ending now, never asked while it is not deployed: every one for its
+    tile, its policies' alone for the alerts table."""
+    windows = list(robot_windows().items())
+    return [hidden_while_not_deployed(q(SYNTHETIC, JOB, period=f"+{minutes_ * 60}s", by=(), name=f"{key} {what}",
+                                        job_name=job, **where), (job,))
+            for what, (where, minutes_) in (windows if tile else windows[:ALERT_WINDOWS])]
+
+
+# A robot's check now, worst first: its code, its words and its colour (red for what pages, amber to look at, teal
+# for signing in, the base colour for no verdict). Each is its policy's own rule where it has one.
+ROBOT_STATES = {
+    8: ("✕ Failing", RED, "signin-failing"),
+    7: ("✕ Locked out", RED, "signin-robot-locked-out"),
+    6: ("✕ Not reporting", RED, "signin-silent"),
+    5: ("⚠ Robot broken", AMBER, "signin-robot-broken"),
+    4: ("⚠ Failed once", AMBER, None),
+    3: ("⚠ Off over a day", AMBER, "signin-checks-off"),
+    2: ("Switched off", NEUTRAL, None),
+    1: ("✓ Signing in", TEAL, None),
+    0: ("No verdict", NEUTRAL, None),
+}
+LAST_PASS_WORDS = {4: f"≤ {LAST_PASS_BANDS[0]} min ago", 3: f"≤ {LAST_PASS_BANDS[1]} min ago",
+                   2: "≤ 1 h ago", 1: "1 to 24 h ago", 0: "none in 24 h"}
+
+
+def robot_flags(a: Arithmetic, key: str, job: str) -> dict[str, str]:
+    """One robot's policies on the newest row, each a flag (1 or 0) by the policy's name, each weighed 0 while the
+    robot is not running on purpose (not deployed, paused, auth-db stopped): tpa-platform writes its policies only
+    while it runs (signinrobots.tf, local.signin_robots_running)."""
+    s = SIGNIN
+    c = {what: a.count(f"{key} {what}") for what in list(robot_windows())[:ALERT_WINDOWS]}
+    fail, lock, passed = c[f"fail {s['window']}m"], c[f"lockout {s['window']}m"], c[f"pass {s['window']}m"]
+    no_pass = a.not_(a.at_least(passed))
+    not_lockout = a.at_least(a.minus(fail, lock, f"{key} fails not a lockout"))
+    rules = {
+        "signin-failing": a.all_of(f"{key} failing rule", a.at_least(fail, s["fails"]), not_lockout, no_pass),
+        "signin-robot-locked-out": a.all_of(f"{key} locked out rule", a.at_least(lock, s["locks"]), no_pass),
+        "signin-silent": a.not_(a.at_least(c[f"any {s['silent']}m"])),
+        "signin-robot-broken": a.at_least(c[f"error {s['broken']}m"]),
+        "signin-checks-off": a.all_of(f"{key} off a day rule", a.at_least(c["off 24h"]),
+                                      a.not_(a.at_least(c["pass 24h"]))),
+    }
+    running = when_quiet((job, *ROBOT_DBS), "1", "0")
+    return {name: a.weighted(flag, running, f"{key} {name}") for name, flag in rules.items()}
+
+
+def robot_rules(a: Arithmetic, key: str, job: str) -> dict[str, str]:
+    """One robot's policies (robot_flags), then its check now (the worst that holds, ROBOT_STATES), its last pass (in
+    bands) and its day's pass rate, by name."""
+    s = SIGNIN
+    flags = robot_flags(a, key, job)
+    c = {what: a.count(f"{key} {what}") for what in robot_windows()}
+    # A failure in the window that is not (yet) a page, whatever passed beside it; switched off: refused by auth's
+    # switch in the window and no pass. The robot's own window, never one run's: lines land five minutes apart and
+    # more (a run of up to 190 s, then Logging's delay), so a narrower window would flicker.
+    failed_once = a.at_least(c[f"fail {s['window']}m"])
+    off_now = a.all_of(f"{key} off now", a.at_least(c[f"off {s['window']}m"]),
+                       a.not_(a.at_least(c[f"pass {s['window']}m"])))
+    signing_in = a.at_least(c[f"pass {s['silent']}m"])
+    by_code = {8: flags["signin-failing"], 7: flags["signin-robot-locked-out"], 6: flags["signin-silent"],
+               5: flags["signin-robot-broken"], 4: failed_once, 3: flags["signin-checks-off"], 2: off_now,
+               1: signing_in}
+    assert {code for code, (_t, _c, policy) in ROBOT_STATES.items() if policy} == {
+        code for code, flag in by_code.items() if flag in flags.values()}
+    assert all(by_code[code] == flags[policy] for code, (_t, _c, policy) in ROBOT_STATES.items() if policy)
+    state = a.largest(f"{key} now", [a.weighted(flag, str(code), f"{key} {code}×") for code, flag in by_code.items()])
+    bands = [a.weighted(a.at_least(c[f"pass {m}m"]), str(4 - i), f"{key} band {4 - i}")
+             for i, m in enumerate(LAST_PASS_BANDS)] + [a.weighted(a.at_least(c["pass 24h"]), "1", f"{key} band 1")]
+    last_pass = a.largest(f"{key} last pass", bands)
+    # The day's pass rate: passes over passes and failures (a skip or the runner's own error is no verdict). With
+    # none counted, -1, which reads "no runs counted": the share of nothing is no share.
+    counted = a.total(f"{key} counted", [c["pass 24h"], c["fail 24h"]])
+    none = a.not_(a.at_least(counted))
+    share = a._add([calc(f"{key} counted or 1", counted, "+", none), calc(f"{key} share", c["pass 24h"], "/",
+                                                                          f"{key} counted or 1")],
+                   f"{key} share", f"{key} counted or 1")
+    rate = a.minus(share, none, f"{key} pass rate")
+    return {**flags, "now": state, "last pass": last_pass, "pass rate": rate}
+
+
+def _quiet_steps(deps, steps: list[tuple[float, str]]) -> dict:
+    """thresholds() whose colours read neutral while one of `deps` is quiet."""
+    return thresholds(*[when_quiet(deps, steps[0][1], NEUTRAL)] +
+                      [(v, when_quiet(deps, colour, NEUTRAL)) for v, colour in steps[1:]])
+
+
+def robot_tile(key: str, who: str, title: str, factor: str, job: str, w: int = 5, h: int = 5) -> dict:
+    """One robot: its check now (each policy's own rule), its last pass, and its pass rate over the day."""
+    deps = (job, *ROBOT_DBS)
+    a = Arithmetic()
+    rules = robot_rules(a, key, job)
+    s = SIGNIN
+    shown = {rules["now"]: "now", rules["last pass"]: "last pass", rules["pass rate"]: "24 h"}
+    words = {code: when_quiet(deps, text_) for code, (text_, _c, _p) in ROBOT_STATES.items()}
+    p = stat(title, APP, robot_counts(key, job),
+             f"The {who.lower()}' sign-in robot (`{job}`, SR-OR-1): every five minutes it signs in on the public "
+             f"portal as a browser does, with {factor}, reads `/auth/me` and signs out; each run writes one result "
+             f"line (`synthetic_results`). now, worst first: ✕ Failing, red, while `signin-failing` is true ("
+             f"{s['fails']} failed checks and no pass in {s['window']} minutes, one of them not a lockout: it pages, "
+             f"urgent); ✕ Locked out, red ({s['locks']} lockouts or rate limits and no pass in {s['window']} minutes: "
+             f"`signin-robot-locked-out`, urgent); ✕ Not reporting, red (no result line for {s['silent']} minutes: "
+             f"`signin-silent`, urgent); ⚠ Robot broken, amber (the runner's own fault in {s['broken']} minutes: "
+             f"`signin-robot-broken`, can wait); ⚠ Failed once, amber (a failed check in {s['window']} minutes, not "
+             f"a page: a look); ⚠ Off over a day, amber (auth's switch has refused it for {s['off_hours']} hours "
+             f"with no pass: `signin-checks-off`, a notice); Switched off (auth's switch refused it in "
+             f"{s['window']} minutes and nothing passed: `{DISABLED}`, no verdict); ✓ Signing in, teal (a pass in "
+             f"{s['silent']} minutes). Right after it is unpaused it reads ✕ Not reporting until its first run's "
+             f"line lands (five to seven minutes), where its page waits ten. last pass: within {LAST_PASS_BANDS[0]} or {LAST_PASS_BANDS[1]} minutes, within "
+             "the hour, earlier today, or none in 24 h. 24 h: passes over passes and failures (a skip or the "
+             "runner's own error is no verdict). \"not deployed\" while tpa-platform has not built it "
+             "(signin_robots_enabled; the service's TPA_SIGNIN_ROBOTS), \"paused\" while its schedule is paused, "
+             "\"database stopped\" while auth-db is: in no colour, and nothing is asked of Cloud Monitoring while it "
+             "is not deployed. The link opens its runs on the Sign-in page.",
+             w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from=f"{s['off_hours']}h",
+             no_value=when_quiet(deps, f"✕ Not reporting: no result in {s['off_hours']} h"),
+             steps=_quiet_steps(deps, [(None, RED)]),
+             links=[{"title": f"{title}: its runs by outcome (Sign-in page)",
+                     "url": "/d/tw-cloud-sign-in?${__url_time_range}", "targetBlank": False},
+                    {"title": "Jobs: its executions and task attempts", "url": "/d/tw-cloud-jobs?${__url_time_range}",
+                     "targetBlank": False}],
+             transformations=_window_steps() + a.steps + [
+                 {"id": "organize", "options": {"includeByName": {name: True for name in shown},
+                                                "indexByName": {name: i for i, name in enumerate(shown)}}}],
+             overrides=[
+                 {"matcher": {"id": "byName", "options": rules["now"]}, "properties": [
+                     {"id": "displayName", "value": "now"}, {"id": "decimals", "value": 0},
+                     {"id": "mappings", "value": [{"type": "value", "options": {
+                         str(code): {"text": words[code], "index": code} for code in ROBOT_STATES}}]},
+                     {"id": "thresholds", "value": _quiet_steps(deps, [(None, NEUTRAL)] + [
+                         (code, colour) for code, (_t, colour, _p) in sorted(ROBOT_STATES.items()) if code])}]},
+                 {"matcher": {"id": "byName", "options": rules["last pass"]}, "properties": [
+                     {"id": "displayName", "value": "last pass"}, {"id": "decimals", "value": 0},
+                     {"id": "mappings", "value": [{"type": "value", "options": {
+                         str(code): {"text": text_, "index": code} for code, text_ in LAST_PASS_WORDS.items()}}]},
+                     {"id": "thresholds", "value": _quiet_steps(deps, [(None, AMBER), (2, NEUTRAL), (3, TEAL)])}]},
+                 {"matcher": {"id": "byName", "options": rules["pass rate"]}, "properties": [
+                     {"id": "displayName", "value": "24 h"}, {"id": "unit", "value": "percentunit"},
+                     {"id": "decimals", "value": 0},
+                     {"id": "mappings", "value": [{"type": "range", "options": {
+                         "from": -1.5, "to": -0.5, "result": {"text": "no runs counted", "index": 0}}}]},
+                     {"id": "thresholds", "value": _quiet_steps(deps, [(None, NEUTRAL), (0, AMBER), (0.99, TEAL)])}]}])
+    # Every field the organize step keeps is shown: a `fields` regex would be matched against each field's display
+    # name after the overrides ("now", "last pass", "24 h"), never the name it was calculated under.
+    p["options"]["orientation"] = "horizontal"
+    return p
+
+
+# The two outside checks on the portal host (tpa-platform's beta main.tf, local.sign_in_checks, D-335), p1, each from
+# three US regions every minute while the portal is open: the check's key and path, and its words. Google names a
+# check by its display name (the module's "<environment>: <key> <path>") in lower case with a hyphen for each run of
+# other characters, then a suffix of its own ("beta-sign-in-auth-me-LigyebjeN50", read 2026-11-12), so a check is
+# read by that middle part, never the environment's word or the suffix.
+OUTSIDE_CHECKS = (("sign-in", "/auth/me", "sign-in", "auth's own 401 to a GET of /auth/me with no session: the "
+                   "address, the certificate, Cloud Armor, web's proxy to auth, auth and auth-db"),
+                  ("portal-app", "/tpa/", "portal", "a 200 whose page holds the portal's <base href=\"/tpa/\": the "
+                   "members' and brokers' portal itself, from web"))
+
+
+def check_id_pattern(key: str, path: str) -> str:
+    return ".*-" + re.sub(r"[^a-z0-9]+", "-", f"{key} {path}".lower()).strip("-") + "-.*"
+
+
+def outside_check_counts(key: str, path: str, period: str) -> list[dict]:
+    """A check's regions failing and regions reporting, each region's latest result over the outage policy's
+    window, as `outage: <host><path>` counts them."""
+    where = {"check_id": Re(check_id_pattern(key, path))}
+    return [q(UPTIME, URL, align=UPTIME_POLICY["aligner"], period=period, reduce=reducer, by=(), name=f"{key} {what}",
+              **where) for what, reducer in (("failing", UPTIME_POLICY["reducer"]), ("reporting", "REDUCE_COUNT"))]
+
+
+def outside_checks_tile(w: int = 3, h: int = 5) -> dict:
+    a = Arithmetic()
+    period = "+" + UPTIME_POLICY["period"]
+    shown = {}
+    for key, path, short, _what in OUTSIDE_CHECKS:
+        failing, reporting = a.count(f"{key} failing"), a.at_least(a.count(f"{key} reporting"))
+        # Failing regions where it reported; -1 where it reported nothing (missing, never "passing").
+        state = a.minus(a.times(failing, reporting, f"{key} failing where reported"),
+                        a.not_(reporting), f"{key} status")
+        shown[state] = short
+    words = "; ".join(f"{short} (`{path}`): {what}" for _k, path, short, what in OUTSIDE_CHECKS)
+    outage = UPTIME_POLICY["above"] + 1
+    p = stat("Outside checks", APP, [x for key, path, *_r in OUTSIDE_CHECKS
+                                     for x in outside_check_counts(key, path, period)],
+             f"The two outside checks on the portal host (D-335), each from three US regions every minute, as their "
+             f"outage policies read them (each region's latest result over {seconds(UPTIME_POLICY['period']) // 60} "
+             f"minutes, the regions failing counted): {words}. ✕ failing, red, when more than "
+             f"{UPTIME_POLICY['above']} region fails (`outage: <host><path>` pages, urgent); ⚠ 1 region, amber (does "
+             "not page); ✓ passing, teal; missing when a check reported nothing in that window (not built, or not "
+             "reporting).", w=w, h=h, calc="lastNotNull", text_mode="value_and_name",
+             time_from=f"{seconds(UPTIME_POLICY['period']) // 60}m", no_value=UPTIME_MISSING,
+             transformations=_window_steps() + a.steps + [
+                 {"id": "organize", "options": {"includeByName": {n: True for n in shown},
+                                                "indexByName": {n: i for i, n in enumerate(shown)}}}],
+             overrides=[{"matcher": {"id": "byName", "options": name}, "properties": [
+                 {"id": "displayName", "value": short}, {"id": "decimals", "value": 0},
+                 {"id": "mappings", "value": [
+                     {"type": "value", "options": {"-1": {"text": "missing", "index": 0},
+                                                   "0": {"text": "✓ passing", "index": 1},
+                                                   "1": {"text": "⚠ 1 region", "index": 2}}},
+                     {"type": "range", "options": {"from": outage, "to": 1e9,
+                                                   "result": {"text": "✕ failing", "index": 3}}}]},
+                 {"id": "thresholds", "value": thresholds(AMBER, (0, TEAL), (1, AMBER), (outage, RED))}]}
+                 for name, short in shown.items()])
+    p["options"]["orientation"] = "horizontal"
+    return p
+
+
+def texts_tile(w: int = 4, h: int = 5) -> dict:
+    """Texted sign-in codes in the day: delivered and not, as Twilio reported each back, and those never handed over."""
+    a = Arithmetic()
+    day = "+86400s"
+    queries = [q(log("auth_texts_reported"), REV, period=day, by=(), name="reported"),
+               q(log("auth_texts_reported"), REV, period=day, by=(), name="delivered reported", code="delivered"),
+               q(log("auth_texts_not_sent"), REV, period=day, by=(), name="refused at send"),
+               q(log("auth_message_vendor_failures"), REV, period=day, by=(), name="vendor failed", lane="sms")]
+    reported, delivered = a.count("reported"), a.count("delivered reported")
+    shown = {a.total("delivered", [delivered]): "delivered",
+             a.minus(reported, delivered, "not delivered"): "not delivered",
+             a.total("not sent", [a.count("refused at send"), a.count("vendor failed")]): "not sent"}
+    p = stat("Texted codes (24 h)", APP, queries,
+             "Members' and brokers' texted sign-in codes in the last 24 hours. delivered and not delivered: as Twilio "
+             "reported each one back to auth's messenger (`auth_texts_reported`, by its closed word; "
+             "`auth-texts-not-delivered` at five in an hour, `auth-texts-blocked`, urgent, when the carriers refuse "
+             "the line). not sent: never handed to Twilio, for the number's or the account's reason "
+             "(`auth_texts_not_sent`) or because the vendor or the path refused or did not answer "
+             "(`auth_message_vendor_failures` on the sms lane; `sign-in-message-vendor`, urgent, at five in 15 "
+             "minutes). A text whose delivery is never read back counts in none of these. Each member's own status "
+             "is in their Notifications in ops.", w=w, h=h, calc="lastNotNull", text_mode="value_and_name",
+             time_from="24h", no_value="No texted code in 24 h",
+             transformations=_window_steps() + a.steps + [
+                 {"id": "organize", "options": {"includeByName": {n: True for n in shown},
+                                                "indexByName": {n: i for i, n in enumerate(shown)}}}],
+             overrides=[{"matcher": {"id": "byName", "options": "delivered"}, "properties": [
+                            {"id": "thresholds", "value": thresholds(NEUTRAL, (1, TEAL))}]},
+                        *[{"matcher": {"id": "byName", "options": name}, "properties": [
+                            {"id": "thresholds", "value": thresholds(NEUTRAL, (1, AMBER))}]}
+                          for name in ("not delivered", "not sent")]], decimals=0)
+    p["options"]["orientation"] = "horizontal"
+    return p
+
+
+def emails_tile(env: str, w: int = 3, h: int = 5) -> dict:
+    """Sign-in emails the vendor would not take, and (where it is built) those the messenger could not hand on."""
+    a = Arithmetic()
+    day = "+86400s"
+    queries = [q(log("auth_message_vendor_failures"), REV, period=day, by=(), name="vendor failed", lane="email")]
+    shown = {a.total("refused", [a.count("vendor failed")]): "refused"}
+    if env == "beta":
+        queries.append(q(log("auth_email_undeliverable"), REV, period=day, by=(), name="undeliverable count"))
+        shown[a.total("undeliverable", [a.count("undeliverable count")])] = "undeliverable"
+    p = stat("Emails (24 h)", APP, queries,
+             "Sign-in emails (invitations, resets, codes) in the last 24 hours that did not go: refused or never "
+             "answered by SendGrid or the path (`auth_message_vendor_failures` on the email lane; "
+             "`sign-in-message-vendor`, urgent, at five in 15 minutes)" +
+             (", and addressed to an address that cannot be delivered to (`auth_email_undeliverable`)" if env == "beta"
+              else "") + ". No counter counts the emails sent: auth writes no line per email, so none going wrong "
+             "reads as none here. A message of either kind waiting too long is the Sign-in alerts tile's (`auth-"
+             "messages-stalled`).", w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from="24h",
+             no_value="None refused in 24 h", steps=thresholds(NEUTRAL, (1, AMBER)), decimals=0,
+             transformations=_window_steps() + a.steps + [
+                 {"id": "organize", "options": {"includeByName": {n: True for n in shown},
+                                                "indexByName": {n: i for i, n in enumerate(shown)}}}])
+    p["options"]["orientation"] = "horizontal"
+    return p
+
+
+# The messenger's and the outside checks' p1 policies the alerts tile reads beside the robots' (D-335): each read from
+# the catalogue, each refused unless it is the shape written here.
+def messenger_rules() -> dict:
+    vendor = CATALOGUE.threshold("sign-in-message-vendor", "app")
+    stalled = CATALOGUE.threshold("auth-messages-stalled", "app")
+    assert (vendor["per_series_aligner"], vendor["cross_series_reducer"]) == ("ALIGN_DELTA", "REDUCE_SUM"), vendor
+    assert (stalled["per_series_aligner"], stalled["cross_series_reducer"]) == ("ALIGN_PERCENTILE_99",
+                                                                                "REDUCE_MAX"), stalled
+    blocked = CATALOGUE.promql("auth-texts-blocked", "auth_texts")
+    m = 'logging_googleapis_com:user_auth_texts_reported{monitored_resource="cloud_run_revision"'
+    t = re.search(r'code="([a-z_]+)"\}\[1h\]\)\) > 0 or', blocked).group(1)
+    f = re.search(r'code="([a-z_]+)"\}\[1h\]\)\) >= (\d+)', blocked)
+    share = re.search(r"\) > ([0-9.]+) \* sum", blocked).group(1)
+    want = (f'sum(increase({m}, code="{t}"}}[1h])) > 0 or (sum(increase({m}, code="{f.group(1)}"}}[1h])) >= '
+            f'{f.group(2)} and sum(increase({m}, code="{f.group(1)}"}}[1h])) > {share} * sum(increase({m}}}[1h])))')
+    assert blocked == want, f"the catalogue's auth-texts-blocked is not the shape the sign-in row reads:\n{blocked}"
+    assert share == "0.5", share   # read as twice the filtered above all of them
+    return {"vendor": vendor, "stalled": stalled, "unverified": t, "filtered": f.group(1),
+            "filtered_count": int(f.group(2))}
+
+
+MESSENGER = messenger_rules()
+SECRET_READ = CATALOGUE.threshold("signin-robot-secret-read", section="signin_robots")
+# Each alert's weight in the tile, by how it pages: urgent (p1, PagerDuty high urgency), can wait (p2), a notice
+# (email and Slack, never PagerDuty: `signin-checks-off`, the beta root's tier override).
+URGENT, CAN_WAIT, NOTICE = "2", "1", "0.5"
+PAGE_WORDS = {2: "urgent", 1: "can wait", 0.5: "notice"}
+
+
+def alerts_table(env: str, w: int = 6, h: int = 5) -> dict:
+    """The sign-in alerts: each policy's own rule on the newest row of its windows, one row for each that holds (its
+    words and how it pages), or one teal row when none does."""
+    a = Arithmetic()
+    queries, alerts = [], {}   # alerts: the row's words -> (its flag, its weight)
+    if env == "beta":
+        for (key, who, *_rest), job in zip(SIGNIN_ROBOTS, ROBOT_JOBS):
+            queries += robot_counts(key, job, tile=False)
+            flags = robot_flags(a, key, job)
+            alerts.update({f"✕ {who} can't sign in": (flags["signin-failing"], URGENT),
+                           f"✕ {who}' check locked out": (flags["signin-robot-locked-out"], URGENT),
+                           f"✕ {who}' check silent": (flags["signin-silent"], URGENT),
+                           f"⚠ {who}' check broken": (flags["signin-robot-broken"], CAN_WAIT),
+                           f"⚠ {who}' check off a day": (flags["signin-checks-off"], NOTICE)})
+        queries.append(hidden_while_not_deployed(
+            q(log("signin_robot_secret_read"), None, align=SECRET_READ["per_series_aligner"],
+              period=window(SECRET_READ), reduce=SECRET_READ["cross_series_reducer"], by=(), name="secret read"),
+            (ROBOT_SECRETS,)))
+        alerts["✕ A robot's secret was read"] = (a.at_least(a.count("secret read")), URGENT)
+    v, s = MESSENGER["vendor"], MESSENGER["stalled"]
+    for lane, word in (("sms", "Text"), ("email", "Email")):
+        queries.append(q(log("auth_message_vendor_failures"), REV, period=window(v), by=(), name=f"vendor {lane}",
+                         lane=lane))
+        alerts[f"✕ {word} vendor failing"] = (a.at_least(a.count(f"vendor {lane}"), int(v["threshold_value"]) + 1),
+                                              URGENT)
+    queries.append(q(log("auth_messages_outbox_lag"), REV, align=s["per_series_aligner"], period="+" + s["duration"],
+                     reduce=s["cross_series_reducer"], by=(), name="oldest waiting"))
+    # auth-messages-stalled and the sender's no instance are written only while auth-db runs (beta's
+    # database_dependent_policies and warm_service_databases): weighed 0 while it is stopped on purpose.
+    auth_db_up = when_quiet(ROBOT_DBS, "1", "0")
+    alerts["✕ A sign-in message stuck"] = (a.weighted(a.positive(a.minus(
+        a.count("oldest waiting"), s["threshold_value"], "waiting past the bar")), auth_db_up, "stuck while up"),
+        URGENT)
+    if env == "beta":
+        hour = "+3600s"
+        queries += [q(log("auth_texts_reported"), REV, period=hour, by=(), name="texts 1h"),
+                    q(log("auth_texts_reported"), REV, period=hour, by=(), name="unverified 1h",
+                      code=MESSENGER["unverified"]),
+                    q(log("auth_texts_reported"), REV, period=hour, by=(), name="filtered 1h",
+                      code=MESSENGER["filtered"])]
+        filtered = a.count("filtered 1h")
+        most = a.positive(a.minus(a.times(filtered, 2, "filtered ×2"), a.count("texts 1h"), "filtered over the rest"))
+        alerts["✕ Carriers blocking texts"] = (a.at_least(a.total("blocked", [
+            a.at_least(a.count("unverified 1h")),
+            a.all_of("filtered and most", a.at_least(filtered, MESSENGER["filtered_count"]), most)])), URGENT)
+    sender = "auth-outbox-publisher"
+    queries.append(q(RUN_INSTANCES, REV, align=NO_INSTANCE_POLICY["aligner"],
+                     period=f"+{seconds(NO_INSTANCE_POLICY['duration'])}s", reduce=NO_INSTANCE_POLICY["reducer"],
+                     by=(), name="sender instances", service_name=sender))
+    alerts["✕ Sender has no instance"] = (a.weighted(a.not_(a.at_least(a.count("sender instances"))), auth_db_up,
+                                                     "no sender while up"), URGENT)
+    if env == "beta":
+        for key, path, short, _what in OUTSIDE_CHECKS:
+            failing, _reporting = outside_check_counts(key, path, "+" + UPTIME_POLICY["period"])
+            queries.append(failing)
+            alerts[f"✕ Outside check: {short}"] = (a.at_least(a.count(f"{key} failing"), UPTIME_POLICY["above"] + 1),
+                                                    URGENT)
+    # The newest row is the range's end whenever the uptime checks report at all (every minute, from three regions).
+    queries.append(q(UPTIME, URL, align="ALIGN_COUNT", period="+86400s", reduce="REDUCE_SUM", name="seeing"))
+    weighted = [a.weighted(flag, weight, name) for name, (flag, weight) in alerts.items()]
+    firing = a.at_least(a.total("firing", weighted))
+    calm = "✓ None firing"
+    a.times(a.times(a.not_(firing), a.at_least(a.count("seeing")), "calm and seeing"), -1, calm)
+    keep = [*alerts, calm]
+    robots = (" The robots' rules (urgent unless said): two failed checks and no pass in "
+              f"{SIGNIN['window']} minutes, one not a lockout (`signin-failing`); two lockouts or rate limits and no "
+              f"pass (`signin-robot-locked-out`); no result for {SIGNIN['silent']} minutes while it runs "
+              f"(`signin-silent`); the runner's own fault (`signin-robot-broken`, can wait); switched off a day "
+              "(`signin-checks-off`, a notice); anyone but the robots reading a robot's secret "
+              "(`signin-robot-secret-read`). A robot not deployed, paused or with auth-db stopped asks nothing of its "
+              "own and is never silent." if env == "beta" else "")
+    p = panel("table", "Sign-in alerts", APP, queries,
+              "The sign-in alerts that hold now, each its policy's own rule read from the same counters and windows, "
+              "so a red row here is what pages (urgent: PagerDuty high urgency; can wait; a notice: email and Slack). "
+              "This site cannot list incidents (Grafana's Cloud Monitoring datasource reads metrics only): the "
+              "incidents, who has them and when they closed are PagerDuty's (the page's PagerDuty link)." + robots +
+              f" The messenger: five or more sends refused or unanswered by a vendor on one lane in "
+              f"{minutes(v)} minutes (`sign-in-message-vendor`); the oldest message waiting above "
+              f"{s['threshold_value']:g} s (`auth-messages-stalled`; read over its last {minutes(s, 'duration')} "
+              f"minutes, where the policy wants each minute above, so a row here can lead its page by a minute)" +
+              (f"; the carriers refusing the texts' line, one `{MESSENGER['unverified']}` or "
+               f"{MESSENGER['filtered_count']} `{MESSENGER['filtered']}` and more than half of the texts in an hour "
+               "(`auth-texts-blocked`)" if env == "beta" else "") +
+              f"; `{sender}` with no instance for {minutes(NO_INSTANCE_POLICY, 'duration')} minutes (its `has no "
+              "instance`)." + (" The outside checks: more than one region failing on the portal host's "
+                              "`/auth/me` or `/tpa/` (`outage`)." if env == "beta" else "") +
+              ("" if env == "beta" else " The sign-in robots, the texted codes' delivery reads and the two outside "
+               "checks on the portal host are not built in this environment, so none of their rules is here.") +
+              " \"? Can't tell\": nothing arrived, or the queries failed.",
+              w=w, h=h, time_from="24h", no_value="? Can't tell",
               custom={"align": "auto", "cellOptions": {"type": "auto"}, "inspect": False, "filterable": False},
-              transformations=[
-                  {"id": "reduce", "options": {"mode": "seriesToRows", "reducers": ["sum"], "labelsToFields": True,
+              transformations=_window_steps() + a.steps + [
+                  {"id": "organize", "options": {"includeByName": {name: True for name in keep}}},
+                  {"id": "reduce", "options": {"mode": "seriesToRows", "reducers": ["sum"], "labelsToFields": False,
                                                "includeTimeField": False}},
-                  {"id": "groupingToMatrix", "options": {"columnField": outcome, "rowField": job, "valueField": "Total",
-                                                         "emptyValue": "zero"}},
-                  {"id": "organize", "options": {"renameByName": {f"{job}\\{outcome}": "Journey"}}}])
-    p["options"] = {"showHeader": True, "cellHeight": "sm", "footer": {"show": False, "reducer": ["sum"], "fields": ""}}
-    colour = lambda steps: [{"id": "custom.cellOptions", "value": {"type": "color-text"}},
-                            {"id": "color", "value": {"mode": "thresholds"}}, {"id": "thresholds", "value": steps},
-                            {"id": "decimals", "value": 0}]
-    p["fieldConfig"]["overrides"] = [
-        {"matcher": {"id": "byName", "options": "Journey"}, "properties": [{"id": "mappings", "value": [
-            {"type": "value", "options": {j: {"text": n, "index": i} for i, (j, n, _w) in enumerate(JOURNEYS)}}]}]},
-        {"matcher": {"id": "byName", "options": "pass"}, "properties": colour(thresholds(NEUTRAL, (1, TEAL)))},
-        {"matcher": {"id": "byName", "options": "fail"}, "properties": colour(thresholds(NEUTRAL, (1, AMBER),
-                                                                                         (2, RED)))},
-        {"matcher": {"id": "byName", "options": "error"}, "properties": colour(thresholds(NEUTRAL, (1, AMBER)))}]
+                  {"id": "filterByValue", "options": {"type": "include", "match": "any", "filters": [
+                      {"fieldName": "Total", "config": {"id": "greater", "options": {"value": 0}}},
+                      {"fieldName": "Total", "config": {"id": "lower", "options": {"value": 0}}}]}},
+                  {"id": "sortBy", "options": {"sort": [{"field": "Total", "desc": True}]}},
+                  {"id": "organize", "options": {"renameByName": {"Field": "Alert", "Total": "Pages"}}}])
+    p["options"] = {"showHeader": False, "cellHeight": "sm", "footer": {"show": False, "reducer": ["sum"],
+                                                                         "fields": ""}}
+    p["fieldConfig"]["overrides"] = [{"matcher": {"id": "byName", "options": "Pages"}, "properties": [
+        {"id": "custom.width", "value": 80}, {"id": "custom.cellOptions", "value": {"type": "color-text"}},
+        {"id": "color", "value": {"mode": "thresholds"}},
+        {"id": "thresholds", "value": thresholds(NEUTRAL, (-1e15, TEAL), (-0.5, NEUTRAL), (0.25, AMBER), (1.5, RED))},
+        {"id": "mappings", "value": [
+            {"type": "value", "options": {str(-1): {"text": "watching", "index": 0},
+                                          **{f"{k:g}": {"text": t, "index": i + 1}
+                                             for i, (k, t) in enumerate(PAGE_WORDS.items())}}}]}]}]
     return p
 
 
@@ -2132,10 +2708,26 @@ UPTIME_WORDING = per_environment(
     "These hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.")
 
 
+SIGNIN_ROW = ("Can people sign in? The sign-in robots every five minutes, the codes going out, the outside checks, "
+              "the sign-in alerts")
+
+
+def signin_row(env: str) -> list[dict]:
+    """The overview's first row (SR-OR-1, the owner: "i want these alerts on the main watchtower dashboard"). Beta's
+    root builds the robots, the texted codes' delivery reads and the outside checks on the portal host;
+    production-full builds none of them, so its row is the messenger's own and its alerts."""
+    if env != "beta":
+        return [row(SIGNIN_ROW), emails_tile(env, w=6), alerts_table(env, w=18)]
+    member, broker = ((key, who, title, factor, job) for (key, who, title, factor), job in zip(SIGNIN_ROBOTS, ROBOT_JOBS))
+    return [row(SIGNIN_ROW), robot_tile(*member, w=4), robot_tile(*broker, w=4), texts_tile(w=4), emails_tile(env, w=3),
+            outside_checks_tile(w=3), alerts_table(env, w=6)]
+
+
 def overview(cc: bool = True, env: str = "beta") -> dict:
-    """The home page, calm: three open rows (Right now: a status per area, uptime, the sign-in journeys, incidents;
-    Services: a tile per service the environment runs; Databases: a tile per instance), then the detail in rows shut
-    by default. Written per environment (`env`: the services it runs) and with or without the call centre (`cc`)."""
+    """The home page, calm: four open rows (Can people sign in?: the sign-in robots, the codes going out, the outside
+    checks and the sign-in alerts; Right now: a status per area, uptime, incidents; Services: a tile per service the
+    environment runs; Databases: a tile per instance), then the detail in rows shut by default. Written per
+    environment (`env`: the services it runs) and with or without the call centre (`cc`)."""
     def area(name, ds, services, deps, p95_query, p95_desc, groups, fifth, jobs):
         return collapsed([
             row(name),
@@ -2156,10 +2748,12 @@ def overview(cc: bool = True, env: str = "beta") -> dict:
     deps = {"portal-api": SWEEP_DBS, "sign-in": ("auth-db",), "records": ("tpa-db",), "callcentre": ("cc-db",),
             "crm": ("crm-db",)}
     running = [s_ for s_ in SERVICES if s_ in RUNS[env] and (cc or SERVICES[s_][0] != CC)]
+    area_w = 16 // len(areas)
     items = [
-        row("Right now: each area, uptime, the sign-in journeys, incidents"),
-        *[area_status(*a, w=12 // len(areas), env=env) for a in areas],
-        uptime_tile(), journeys_table(w=5), incidents_tile(cc),
+        *signin_row(env),
+        row("Right now: each area, uptime, incidents"),
+        *[area_status(*a, w=area_w, env=env) for a in areas],
+        uptime_tile(w=20 - area_w * len(areas)), incidents_tile(cc, w=4),
         row("Services: " + ", ".join(dict.fromkeys(AREA_SHORT[SERVICES[s_][1]] for s_ in running)) +
             " (status, instances now, 5xx in 15 minutes)"),
         *[service_status(s_, deps[SERVICES[s_][1]] if s_ != "watchtower" else (), env) for s_ in running],
@@ -2238,7 +2832,9 @@ def overview(cc: bool = True, env: str = "beta") -> dict:
               jobs_stat("CRM jobs (24 h)", CRM, CRM_JOBS, None, ("crm-db",))),
     ]
     return dashboard("tw-cloud-overview", "TPA overview (cloud)",
-                     "Home: is anything wrong now, by area, service and database (its backups and point-in-time logs "
+                     "Home: can people sign in (the sign-in robots, the codes going out, the outside checks, the "
+                     "sign-in alerts); is anything wrong now, by area, service and database (its backups and "
+                     "point-in-time logs "
                      "too), read from Cloud Monitoring; the detail (each problem by name, uptime by host, the scheduled "
                      "runs, each area's numbers) in the rows shut below. " + NOTHING_BUT_METRICS, ["overview"], items)
 
@@ -2298,7 +2894,7 @@ def portal_api() -> dict:
                bars=True, no_value=NONE),
         *area_resources("portal-api"),
         *project_section(APP, "app project", "app-net-nat",
-                         "auth's messenger, the model gateway and the synthetic journeys"),
+                         "auth's messenger, the model gateway and the sign-in robots"),
         row("Instances and start-up"),
         series("Instances, by service", APP, instances(APP_SERVICES),
                "Cloud Run instances per service (the most in each interval). A warm service with none pages as "
@@ -2326,8 +2922,68 @@ def portal_api() -> dict:
                      ["portal-api"], items)
 
 
-def sign_in() -> dict:
+def robot_runs(w: int = 8, h: int = 7) -> list[dict]:
+    """The sign-in robots' own row on the Sign-in page, where each robot tile on the overview links: each robot's runs
+    by outcome and code, and any read of their secrets by anyone else (SR-OR-1)."""
+    out = [row("Sign-in robots: a member and a broker sign in on the portal every five minutes (SR-OR-1)")]
+    for (key, who, title, factor), job in zip(SIGNIN_ROBOTS, ROBOT_JOBS):
+        out.append(series(f"{title}: its checks, by outcome and code", APP,
+                          hidden_while_not_deployed(q(SYNTHETIC, JOB, by=("outcome", "code"),
+                                                      name=alias("outcome", "code"), job_name=job), (job,)),
+                          f"`{job}`'s result lines (`synthetic_results`), one per run, by outcome (pass; fail, the "
+                          f"portal's or auth's answer; skipped, `{DISABLED}` while auth's switch is off; error, the "
+                          f"runner's own fault) and its closed code: {who.lower()} signing in on the public portal "
+                          f"with {factor}, to `/auth/me` and out. The overview's tile reads these as its policies do.",
+                          bars=True, w=w, h=h,
+                          no_value=when_quiet((job, *ROBOT_DBS), "Missing: no check in this range (one every five "
+                                                                 "minutes while it runs)")))
+    out.append(series("A robot's secret read by anyone else", APP,
+                      hidden_while_not_deployed(q(log("signin_robot_secret_read"), None, by=(), name="reads"),
+                                                (ROBOT_SECRETS,)),
+                      "A read, or a refused try, of a version of either robot's secret by anyone but the robots' own "
+                      "account, or by someone acting as it (`signin_robot_secret_read`, from the Data Access audit "
+                      "log; `signin-robot-secret-read`, urgent). The entry says who; whoever reads one holds a robot "
+                      "login. None while the robots' secrets do not exist yet (before tpa-platform's stage 1).", bars=True, w=w,
+                      h=h, no_value=NONE))
+    return out
+
+
+def texts_and_emails(w: int = 8, h: int = 7) -> list[dict]:
+    """The texted codes' delivery as Twilio reports it back, and the emails the messenger could not hand on (the
+    catalogue's auth_texts and auth_email_everyone sections, beta's root alone)."""
+    return [
+        row("Texted codes and emails: what happened to each"),
+        series("Texted codes reported back, by how they ended", APP,
+               q(log("auth_texts_reported"), REV, by=("code",)),
+               "One per texted code Twilio delivered or did not deliver, as auth's messenger read it back "
+               "(`auth_texts_reported`), by its closed word (`delivered`, or why not). `auth-texts-not-delivered` at "
+               "five not delivered in an hour; `auth-texts-blocked` (urgent) when the carriers refuse the line.",
+               bars=True, w=w, h=h, no_value="No texted code reported in this range"),
+        series("Texted codes not handed to Twilio, by reason", APP, q(log("auth_texts_not_sent"), REV, by=("code",)),
+               "A texted code the messenger did not hand over for a reason of the number's or the account's "
+               "(`auth_texts_not_sent`: opted_out, bad_address, not_allowed; `auth-texts-not-sent` at five in an "
+               "hour). The vendor's own failures are the refusals chart above.", bars=True, w=w, h=h, no_value=NONE),
+        series("Delivery reads that failed, by kind", APP, q(log("auth_text_delivery_faults"), REV, by=("code",)),
+               "The messenger's own faults reading texts' delivery back (`auth_text_delivery_faults`; "
+               "`auth-text-delivery-reads-failing`): texts still go, members' Notifications stay at sent.", bars=True,
+               w=w, h=h, no_value=NONE),
+        series("Connections to the text vendor", APP, q(log("auth_twilio_connections"), None, by=(), name="connections"),
+               "Each TCP connection the messenger's firewall rule to Twilio admitted (`auth_twilio_connections`, from "
+               "the rule's own log: a count alone, never an address or a name).", bars=True, w=w, h=h,
+               no_value="No connection in this range"),
+        series("Emails that could not be delivered", APP, q(log("auth_email_undeliverable"), REV, by=(), name="emails"),
+               "An email the messenger could not hand on because its address cannot be delivered to "
+               "(`auth_email_undeliverable`). A count alone; never the address.", bars=True, w=w, h=h, no_value=NONE),
+        series("Mail kept from a synthetic login", APP,
+               q(log("auth_message_to_synthetic_login"), REV, by=(), name="kept"),
+               "Mail the messenger kept from a synthetic login (`auth_message_to_synthetic_login`): worth a look if "
+               "ever above zero. A count alone; never the login.", bars=True, w=w, h=h, no_value=NONE),
+    ]
+
+
+def sign_in(env: str = "beta") -> dict:
     items = [
+        *(robot_runs() if env == "beta" else []),
         row("Sign-in"),
         series("Requests, by service and status class", APP,
                requests(AUTH_SERVICES, by=("service_name", "response_code_class")),
@@ -2359,6 +3015,7 @@ def sign_in() -> dict:
         series("Messenger instances", APP, instances("auth-outbox-publisher"),
                "auth-outbox-publisher's instances. With none, no sign-in message is sent: `auth-messages-lag` opens "
                "on that too.", no_value=idle_words("auth-outbox-publisher")),
+        *(texts_and_emails() if env == "beta" else []),
         row("Audit and credentials"),
         series("Step-up refused, by status", APP, q(log("auth_stepup_failures"), REV, by=("code",)),
                "auth refusing a step-up (`auth_stepup_failures`, POST /auth/step-up): 401 a wrong code, password or "
@@ -2915,7 +3572,7 @@ def jobs(cc: bool = True, env: str = "beta") -> dict:
           if cc else []),
         series("CRM jobs", CRM, executions(CRM_JOBS), CRM_JOBS_WORDS, bars=True, no_value=NO_RUNS),
         *job_resources(APP, "app project (tpa-jobs, auth's jobs, " + ("the importer, " if importer else "") +
-                       "the synthetic journeys, and the CRM's where it shares the project)"),
+                       "the sign-in robots, and the CRM's where it shares the project)"),
         *job_resources(PHI, "PHI project"),
         *(job_resources(CC, "call-centre project") if cc else []),
         *job_resources(CRM, "the CRM's jobs", jobs=CRM_JOBS),
@@ -2983,8 +3640,11 @@ CC_ONLY = ["callcentre", *[f"service-{service}" for service, (ds, _page) in SERV
 # The pages written again for production (render-dashboards.sh uses production/<page> when TPA_ENVIRONMENT is
 # production): the overview tiles only the services production-full runs, the overview and Jobs only the scheduled
 # jobs it builds (BETA_ONLY_JOBS), Member records leaves out the importer's sync alerts (a counter production-full
-# never makes), and production has no call centre.
+# never makes), the overview's sign-in row and the Sign-in page leave out the sign-in robots, the texted codes'
+# delivery reads, the undeliverable emails and the outside checks on the portal host (beta's root alone builds them),
+# and production has no call centre.
 PRODUCTION = {"overview": lambda: overview(cc=False, env="production"),
+              "sign-in": lambda: sign_in(env="production"),
               "jobs": lambda: jobs(cc=False, env="production"),
               "records": lambda: records(env="production")}
 VARIANT_DIRS = ("no-cc", "production")

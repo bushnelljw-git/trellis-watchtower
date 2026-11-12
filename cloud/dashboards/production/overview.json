@@ -1,7 +1,7 @@
 {
   "uid": "tw-cloud-overview",
   "title": "TPA overview (cloud)",
-  "description": "Home: is anything wrong now, by area, service and database (its backups and point-in-time logs too), read from Cloud Monitoring; the detail (each problem by name, uptime by host, the scheduled runs, each area's numbers) in the rows shut below. Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.",
+  "description": "Home: can people sign in (the sign-in robots, the codes going out, the outside checks, the sign-in alerts); is anything wrong now, by area, service and database (its backups and point-in-time logs too), read from Cloud Monitoring; the detail (each problem by name, uptime by host, the scheduled runs, each area's numbers) in the rows shut below. Every panel reads Cloud Monitoring metrics: Google's own, and the log-based counters tpa-platform's catalogue defines, whose labels are a closed list. No panel reads a log line.",
   "tags": [
     "trellis-watchtower",
     "cloud",
@@ -104,7 +104,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Right now: each area, uptime, the sign-in journeys, incidents",
+      "title": "Can people sign in? The sign-in robots every five minutes, the codes going out, the outside checks, the sign-in alerts",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -117,13 +117,1325 @@
     },
     {
       "type": "stat",
-      "title": "Portal & sign-in",
-      "description": "The last 15 minutes in this project: how many problems, of 5xx answers, uptime and inside checks failing (behind IAP a check passes on its sign-in page), synthetic journeys failed or broken, crashes, out-of-memory kills, failed job runs, minutes the database was down, its failed backups and failed point-in-time log archives, and five minutes or more with no instance for a service kept warm (auth, auth-outbox-publisher, model-gateway, tpa-jobs-drains: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Portal & API and Sign-in. A backup missing (its alert judges today's backup from 14:00 UTC) or point-in-time logs stalled for 30 minutes cannot be read in fifteen minutes: auth-db's backups and logs tiles (Databases, and What's wrong now) show them. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "title": "Emails (24 h)",
+      "description": "Sign-in emails (invitations, resets, codes) in the last 24 hours that did not go: refused or never answered by SendGrid or the path (`auth_message_vendor_failures` on the email lane; `sign-in-message-vendor`, urgent, at five in 15 minutes). No counter counts the emails sent: auth writes no line per email, so none going wrong reads as none here. A message of either kind waiting too long is the Sign-in alerts tile's (`auth-messages-stalled`).",
       "gridPos": {
         "h": 5,
-        "w": 4,
+        "w": 6,
         "x": 0,
         "y": 1
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_message_vendor_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "metric.label.lane",
+              "=",
+              "email"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "vendor failed"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0,
+          "noValue": "None refused in 24 h"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "Time",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Time",
+                "desc": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "limit",
+          "options": {
+            "limitField": 1
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "vendor failed ·",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "vendor failed"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "refused",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "vendor failed ·"
+              ]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "refused": true
+            },
+            "indexByName": {
+              "refused": 0
+            }
+          }
+        }
+      ],
+      "id": 2
+    },
+    {
+      "type": "table",
+      "title": "Sign-in alerts",
+      "description": "The sign-in alerts that hold now, each its policy's own rule read from the same counters and windows, so a red row here is what pages (urgent: PagerDuty high urgency; can wait; a notice: email and Slack). This site cannot list incidents (Grafana's Cloud Monitoring datasource reads metrics only): the incidents, who has them and when they closed are PagerDuty's (the page's PagerDuty link). The messenger: five or more sends refused or unanswered by a vendor on one lane in 15 minutes (`sign-in-message-vendor`); the oldest message waiting above 120 s (`auth-messages-stalled`; read over its last 2 minutes, where the policy wants each minute above, so a row here can lead its page by a minute); `auth-outbox-publisher` with no instance for 5 minutes (its `has no instance`). The sign-in robots, the texted codes' delivery reads and the two outside checks on the portal host are not built in this environment, so none of their rules is here. \"? Can't tell\": nothing arrived, or the queries failed.",
+      "gridPos": {
+        "h": 5,
+        "w": 18,
+        "x": 6,
+        "y": 1
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_message_vendor_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "metric.label.lane",
+              "=",
+              "sms"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "vendor sms"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_message_vendor_failures",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "metric.label.lane",
+              "=",
+              "email"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "+900s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "vendor email"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_messages_outbox_lag",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_MAX",
+            "perSeriesAligner": "ALIGN_PERCENTILE_99",
+            "alignmentPeriod": "+120s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "oldest waiting"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "auth-outbox-publisher"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_MAX",
+            "alignmentPeriod": "+300s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "sender instances"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "monitoring.googleapis.com/uptime_check/check_passed",
+              "AND",
+              "resource.type",
+              "=",
+              "uptime_url"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "seeing"
+        }
+      ],
+      "interval": "1m",
+      "timeFrom": "24h",
+      "hideTimeOverride": true,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "? Can't tell",
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pages"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "#14b8a6",
+                      "value": -1000000000000000.0
+                    },
+                    {
+                      "color": "text",
+                      "value": -0.5
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 0.25
+                    },
+                    {
+                      "color": "#d03b3b",
+                      "value": 1.5
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "-1": {
+                        "text": "watching",
+                        "index": 0
+                      },
+                      "2": {
+                        "text": "urgent",
+                        "index": 1
+                      },
+                      "1": {
+                        "text": "can wait",
+                        "index": 2
+                      },
+                      "0.5": {
+                        "text": "notice",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": false,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "Time",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Time",
+                "desc": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "limit",
+          "options": {
+            "limitField": 1
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "vendor sms ·",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "vendor sms"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "vendor sms · / 5",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "vendor sms ·"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "vendor sms · ÷ 5",
+            "replaceFields": false,
+            "unary": {
+              "operator": "floor",
+              "fieldName": "vendor sms · / 5"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "vendor sms · ÷ 5 ≥ 1 +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "vendor sms · ÷ 5"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "vendor sms · ÷ 5 ≥ 1 /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "vendor sms · ÷ 5"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "vendor sms · ÷ 5 ≥ 1 +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "vendor sms · ÷ 5 ≥ 1",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "vendor sms · ÷ 5 ≥ 1 /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "vendor email ·",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "vendor email"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "vendor email · / 5",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "vendor email ·"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "vendor email · ÷ 5",
+            "replaceFields": false,
+            "unary": {
+              "operator": "floor",
+              "fieldName": "vendor email · / 5"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "vendor email · ÷ 5 ≥ 1 +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "vendor email · ÷ 5"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "vendor email · ÷ 5 ≥ 1 /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "vendor email · ÷ 5"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "vendor email · ÷ 5 ≥ 1 +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "vendor email · ÷ 5 ≥ 1",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "vendor email · ÷ 5 ≥ 1 /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "oldest waiting ·",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "oldest waiting"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "waiting past the bar",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "oldest waiting ·"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "fixed": "120.0"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "|waiting past the bar|",
+            "replaceFields": false,
+            "unary": {
+              "operator": "abs",
+              "fieldName": "waiting past the bar"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "waiting past the bar + |waiting past the bar|",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "waiting past the bar"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "|waiting past the bar|"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "(waiting past the bar)⁺",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "waiting past the bar + |waiting past the bar|"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "(waiting past the bar)⁺ ≥ 1 +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "(waiting past the bar)⁺"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "(waiting past the bar)⁺ ≥ 1 /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "(waiting past the bar)⁺"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "(waiting past the bar)⁺ ≥ 1 +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "(waiting past the bar)⁺ ≥ 1",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "(waiting past the bar)⁺ ≥ 1 /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "stuck while up",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "(waiting past the bar)⁺ ≥ 1"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "@@F,auth-db,@@0@@1@@"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "sender instances ·",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "sender instances"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "sender instances · ≥ 1 +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "sender instances ·"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "sender instances · ≥ 1 /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "sender instances ·"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "sender instances · ≥ 1 +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "sender instances · ≥ 1",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "sender instances · ≥ 1 /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "not sender instances · ≥ 1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "sender instances · ≥ 1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "no sender while up",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "not sender instances · ≥ 1"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "@@F,auth-db,@@0@@1@@"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ Text vendor failing",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "vendor sms · ÷ 5 ≥ 1"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ Email vendor failing",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "vendor email · ÷ 5 ≥ 1"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ A sign-in message stuck",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "stuck while up"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✕ Sender has no instance",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "no sender while up"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "2"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "firing",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "✕ Text vendor failing",
+                "✕ Email vendor failing",
+                "✕ A sign-in message stuck",
+                "✕ Sender has no instance"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "firing ≥ 1 +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "firing"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "firing ≥ 1 /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "firing"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "firing ≥ 1 +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "firing ≥ 1",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "firing ≥ 1 /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "not firing ≥ 1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "fixed": "1"
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "firing ≥ 1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "seeing ·",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "sum",
+              "include": [
+                "seeing"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "seeing · ≥ 1 +1",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "seeing ·"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "fixed": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "seeing · ≥ 1 /",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "seeing ·"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "seeing · ≥ 1 +1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "unary",
+            "alias": "seeing · ≥ 1",
+            "replaceFields": false,
+            "unary": {
+              "operator": "ceil",
+              "fieldName": "seeing · ≥ 1 /"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "calm and seeing",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "not firing ≥ 1"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "seeing · ≥ 1"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "✓ None firing",
+            "replaceFields": false,
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "calm and seeing"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "-1"
+              }
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "✕ Text vendor failing": true,
+              "✕ Email vendor failing": true,
+              "✕ A sign-in message stuck": true,
+              "✕ Sender has no instance": true,
+              "✓ None firing": true
+            }
+          }
+        },
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "seriesToRows",
+            "reducers": [
+              "sum"
+            ],
+            "labelsToFields": false,
+            "includeTimeField": false
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "Total",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                }
+              },
+              {
+                "fieldName": "Total",
+                "config": {
+                  "id": "lower",
+                  "options": {
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Total",
+                "desc": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "Field": "Alert",
+              "Total": "Pages"
+            }
+          }
+        }
+      ],
+      "id": 3
+    },
+    {
+      "type": "row",
+      "title": "Right now: each area, uptime, incidents",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "Portal & sign-in",
+      "description": "The last 15 minutes in this project: how many problems, of 5xx answers, uptime and inside checks failing (behind IAP a check passes on its sign-in page), the sign-in robots' failed or broken checks (once they are deployed), crashes, out-of-memory kills, failed job runs, minutes the database was down, its failed backups and failed point-in-time log archives, and five minutes or more with no instance for a service kept warm (auth, auth-outbox-publisher, model-gateway, tpa-jobs-drains: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Portal & API and Sign-in. A backup missing (its alert judges today's backup from 14:00 UTC) or point-in-time logs stalled for 30 minutes cannot be read in fifteen minutes: auth-db's backups and logs tiles (Databases, and What's wrong now) show them. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `auth-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 0,
+        "y": 7
       },
       "links": [
         {
@@ -352,72 +1664,6 @@
             "filters": [
               "metric.type",
               "=",
-              "logging.googleapis.com/user/synthetic_results",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_job",
-              "AND",
-              "metric.label.outcome",
-              "=",
-              "fail"
-            ],
-            "groupBys": [
-              "metric.label.job"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "+60s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "✕ {{metric.label.job}} failed"
-        },
-        {
-          "refId": "H",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/synthetic_results",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_job",
-              "AND",
-              "metric.label.outcome",
-              "=",
-              "error"
-            ],
-            "groupBys": [
-              "metric.label.job"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "+60s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "✕ {{metric.label.job}} broke"
-        },
-        {
-          "refId": "I",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
               "logging.googleapis.com/user/run_crash_exits",
               "AND",
               "resource.type",
@@ -440,7 +1686,7 @@
           "aliasBy": "✕ crashed · {{resource.label.service_name}}"
         },
         {
-          "refId": "J",
+          "refId": "H",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -473,7 +1719,7 @@
           "aliasBy": "✕ out of memory · {{resource.label.service_name}}"
         },
         {
-          "refId": "K",
+          "refId": "I",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -506,7 +1752,7 @@
           "aliasBy": "✕ out of memory · {{resource.label.job_name}}"
         },
         {
-          "refId": "L",
+          "refId": "J",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -543,7 +1789,7 @@
           "aliasBy": "✕ run failed · {{resource.label.job_name}}"
         },
         {
-          "refId": "M",
+          "refId": "K",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -570,7 +1816,7 @@
           "aliasBy": "instances reported"
         },
         {
-          "refId": "N",
+          "refId": "L",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -603,7 +1849,7 @@
           "aliasBy": "auth instances"
         },
         {
-          "refId": "O",
+          "refId": "M",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -636,7 +1882,7 @@
           "aliasBy": "auth-outbox-publisher instances"
         },
         {
-          "refId": "P",
+          "refId": "N",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -669,7 +1915,7 @@
           "aliasBy": "model-gateway instances"
         },
         {
-          "refId": "Q",
+          "refId": "O",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -702,7 +1948,7 @@
           "aliasBy": "tpa-jobs-drains instances"
         },
         {
-          "refId": "R",
+          "refId": "P",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -733,7 +1979,7 @@
           "aliasBy": "✕ backup failed · auth-db"
         },
         {
-          "refId": "S",
+          "refId": "Q",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -764,7 +2010,7 @@
           "aliasBy": "✕ point-in-time log archive failed · auth-db"
         },
         {
-          "refId": "T",
+          "refId": "R",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -797,7 +2043,7 @@
           "aliasBy": "auth-db up"
         },
         {
-          "refId": "U",
+          "refId": "S",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -828,7 +2074,7 @@
           "aliasBy": "auth-db points"
         },
         {
-          "refId": "V",
+          "refId": "T",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -1997,7 +3243,7 @@
           }
         }
       ],
-      "id": 2
+      "id": 5
     },
     {
       "type": "stat",
@@ -2005,9 +3251,9 @@
       "description": "The last 15 minutes in this project: how many problems, of its 5xx answers, crashes, out-of-memory kills, failed job runs, the minutes tpa-db was down, and its failed backups and point-in-time log archives, and five minutes or more with no instance for a service kept warm (connectors: `<service> has no instance` pages, urgent). Each one, named with its count, is in the shut row What's wrong now (details) below, and on Member records. A backup missing (its alert judges today's backup from 14:00 UTC) or point-in-time logs stalled for 30 minutes cannot be read in fifteen minutes: tpa-db's backups and logs tiles (Databases, and What's wrong now) show them. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `tpa-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
-        "w": 4,
-        "x": 4,
-        "y": 1
+        "w": 5,
+        "x": 5,
+        "y": 7
       },
       "links": [
         {
@@ -2918,7 +4164,7 @@
           }
         }
       ],
-      "id": 3
+      "id": 6
     },
     {
       "type": "stat",
@@ -2926,9 +4172,9 @@
       "description": "The last 15 minutes in this project: how many problems, of its 5xx answers, crashes, out-of-memory kills, failed job runs, the minutes crm-db was down, and its failed backups and point-in-time log archives. Each one, named with its count, is in the shut row What's wrong now (details) below, and on CRM. A backup missing (its alert judges today's backup from 14:00 UTC) or point-in-time logs stalled for 30 minutes cannot be read in fifteen minutes: crm-db's backups and logs tiles (Databases, and What's wrong now) show them. Amber: something to look at; whether it paged is PagerDuty's (the Incidents tile). \"? Can't tell\": nothing arrived, or the query failed. Reads \"paused\" or \"database stopped\", in no colour, while `crm-db` is stopped on purpose (the service's TPA_PAUSED_JOBS, TPA_STOPPED_DATABASES).",
       "gridPos": {
         "h": 5,
-        "w": 4,
-        "x": 8,
-        "y": 1
+        "w": 5,
+        "x": 10,
+        "y": 7
       },
       "links": [
         {
@@ -3602,7 +4848,7 @@
           }
         }
       ],
-      "id": 4
+      "id": 7
     },
     {
       "type": "stat",
@@ -3610,9 +4856,9 @@
       "description": "now: the hosts as their outage policy reads them (each checker region's latest result over twenty minutes, the regions failing counted): ✕ down, red, when more than 1 region fails on any host, as `outage: <host>` pages; one region failing alone does not page. 24 h: the worst host's share of checks passed in the last 24 hours (each host's is in the shut row Right now (details), and over time on Portal & API). @@E@@Each check reads `/health` on a public host (the portal, auth and api hosts) from three US regions: a pass is the service answering through the load balancer and Cloud Armor. An outage pages when more than one region fails.@@These hosts are behind IAP, so a check passes only on Google's sign-in page: it proves the address, the certificate, Cloud Armor and IAP, never the service behind them (that is the 5xx and instance panels). An outage pages when more than one region fails.@@",
       "gridPos": {
         "h": 5,
-        "w": 4,
-        "x": 12,
-        "y": 1
+        "w": 5,
+        "x": 15,
+        "y": 7
       },
       "datasource": {
         "type": "stackdriver",
@@ -3856,291 +5102,16 @@
           }
         }
       ],
-      "id": 5
-    },
-    {
-      "type": "table",
-      "title": "Sign-in journeys (1 h)",
-      "description": "Each journey's runs in the last hour, by outcome (`synthetic_results`, one result line per run): `synthetics-staff-sign-in` (J1 staff sign-in): the portal, auth and a desk read that reaches tpa-db; `synthetics-ops-desk` (J2 ops desk): the ops host, auth and the live queue in svc-ops; `synthetics-crm` (J3 CRM sign-in): the CRM's own sign-in. pass is teal; fail is amber, red from two (`synthetic-failing` pages on two fails and no pass in eleven minutes; J1 and J2 urgent); error is amber (the runner itself broke: `synthetic-broken`). No runs at all: the journeys are off or paused (`synthetic-blind` when one goes quiet 15 minutes).",
-      "gridPos": {
-        "h": 5,
-        "w": 5,
-        "x": 16,
-        "y": 1
-      },
-      "datasource": {
-        "type": "stackdriver",
-        "uid": "cloud-app"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "stackdriver",
-            "uid": "cloud-app"
-          },
-          "queryType": "timeSeriesList",
-          "timeSeriesList": {
-            "projectName": "__TPA_APP_PROJECT_ID__",
-            "filters": [
-              "metric.type",
-              "=",
-              "logging.googleapis.com/user/synthetic_results",
-              "AND",
-              "resource.type",
-              "=",
-              "cloud_run_job"
-            ],
-            "groupBys": [
-              "metric.label.job",
-              "metric.label.outcome"
-            ],
-            "crossSeriesReducer": "REDUCE_SUM",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "alignmentPeriod": "+3600s",
-            "view": "FULL",
-            "preprocessor": "none"
-          },
-          "aliasBy": "{{metric.label.job}} {{metric.label.outcome}}"
-        }
-      ],
-      "interval": "1m",
-      "timeFrom": "1h",
-      "hideTimeOverride": true,
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "noValue": "no runs (off or paused)",
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false,
-            "filterable": false
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Journey"
-            },
-            "properties": [
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "synthetics-staff-sign-in": {
-                        "text": "J1 staff sign-in",
-                        "index": 0
-                      },
-                      "synthetics-ops-desk": {
-                        "text": "J2 ops desk",
-                        "index": 1
-                      },
-                      "synthetics-crm": {
-                        "text": "J3 CRM sign-in",
-                        "index": 2
-                      }
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "pass"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "thresholds"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "text",
-                      "value": null
-                    },
-                    {
-                      "color": "#14b8a6",
-                      "value": 1
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "fail"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "thresholds"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "text",
-                      "value": null
-                    },
-                    {
-                      "color": "#fab219",
-                      "value": 1
-                    },
-                    {
-                      "color": "#d03b3b",
-                      "value": 2
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "error"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "thresholds"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "text",
-                      "value": null
-                    },
-                    {
-                      "color": "#fab219",
-                      "value": 1
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "fields": ""
-        }
-      },
-      "transformations": [
-        {
-          "id": "reduce",
-          "options": {
-            "mode": "seriesToRows",
-            "reducers": [
-              "sum"
-            ],
-            "labelsToFields": true,
-            "includeTimeField": false
-          }
-        },
-        {
-          "id": "groupingToMatrix",
-          "options": {
-            "columnField": "metric.label.outcome",
-            "rowField": "metric.label.job",
-            "valueField": "Total",
-            "emptyValue": "zero"
-          }
-        },
-        {
-          "id": "organize",
-          "options": {
-            "renameByName": {
-              "metric.label.job\\metric.label.outcome": "Journey"
-            }
-          }
-        }
-      ],
-      "id": 6
+      "id": 8
     },
     {
       "type": "text",
       "title": "Incidents",
       "gridPos": {
         "h": 5,
-        "w": 3,
-        "x": 21,
-        "y": 1
+        "w": 4,
+        "x": 20,
+        "y": 7
       },
       "options": {
         "mode": "markdown",
@@ -4174,7 +5145,7 @@
           "targetBlank": true
         }
       ],
-      "id": 7
+      "id": 9
     },
     {
       "type": "row",
@@ -4185,9 +5156,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 6
+        "y": 12
       },
-      "id": 8
+      "id": 10
     },
     {
       "type": "stat",
@@ -4197,7 +5168,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 7
+        "y": 13
       },
       "links": [
         {
@@ -4785,7 +5756,7 @@
           }
         }
       ],
-      "id": 9
+      "id": 11
     },
     {
       "type": "stat",
@@ -4795,7 +5766,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 7
+        "y": 13
       },
       "links": [
         {
@@ -5511,7 +6482,7 @@
           }
         }
       ],
-      "id": 10
+      "id": 12
     },
     {
       "type": "stat",
@@ -5521,7 +6492,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 7
+        "y": 13
       },
       "links": [
         {
@@ -6149,7 +7120,7 @@
           }
         }
       ],
-      "id": 11
+      "id": 13
     },
     {
       "type": "stat",
@@ -6159,7 +7130,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 7
+        "y": 13
       },
       "links": [
         {
@@ -6787,7 +7758,7 @@
           }
         }
       ],
-      "id": 12
+      "id": 14
     },
     {
       "type": "stat",
@@ -6797,7 +7768,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 7
+        "y": 13
       },
       "links": [
         {
@@ -7553,7 +8524,7 @@
           }
         }
       ],
-      "id": 13
+      "id": 15
     },
     {
       "type": "stat",
@@ -7563,7 +8534,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 7
+        "y": 13
       },
       "links": [
         {
@@ -8191,7 +9162,7 @@
           }
         }
       ],
-      "id": 14
+      "id": 16
     },
     {
       "type": "stat",
@@ -8201,7 +9172,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 11
+        "y": 17
       },
       "links": [
         {
@@ -8829,7 +9800,7 @@
           }
         }
       ],
-      "id": 15
+      "id": 17
     },
     {
       "type": "stat",
@@ -8839,7 +9810,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 11
+        "y": 17
       },
       "links": [
         {
@@ -9427,7 +10398,7 @@
           }
         }
       ],
-      "id": 16
+      "id": 18
     },
     {
       "type": "stat",
@@ -9437,7 +10408,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 11
+        "y": 17
       },
       "links": [
         {
@@ -10065,7 +11036,7 @@
           }
         }
       ],
-      "id": 17
+      "id": 19
     },
     {
       "type": "row",
@@ -10076,9 +11047,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 21
       },
-      "id": 18
+      "id": 20
     },
     {
       "type": "stat",
@@ -10088,7 +11059,7 @@
         "h": 5,
         "w": 8,
         "x": 0,
-        "y": 16
+        "y": 22
       },
       "datasource": {
         "type": "stackdriver",
@@ -10446,7 +11417,7 @@
           "targetBlank": false
         }
       ],
-      "id": 19
+      "id": 21
     },
     {
       "type": "stat",
@@ -10456,7 +11427,7 @@
         "h": 5,
         "w": 8,
         "x": 8,
-        "y": 16
+        "y": 22
       },
       "datasource": {
         "type": "stackdriver",
@@ -10814,7 +11785,7 @@
           "targetBlank": false
         }
       ],
-      "id": 20
+      "id": 22
     },
     {
       "type": "stat",
@@ -10824,7 +11795,7 @@
         "h": 5,
         "w": 8,
         "x": 16,
-        "y": 16
+        "y": 22
       },
       "datasource": {
         "type": "stackdriver",
@@ -11182,7 +12153,7 @@
           "targetBlank": false
         }
       ],
-      "id": 21
+      "id": 23
     },
     {
       "type": "stat",
@@ -11192,7 +12163,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 21
+        "y": 27
       },
       "links": [
         {
@@ -12049,7 +13020,7 @@
           }
         }
       ],
-      "id": 22
+      "id": 24
     },
     {
       "type": "stat",
@@ -12059,7 +13030,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 21
+        "y": 27
       },
       "links": [
         {
@@ -12916,7 +13887,7 @@
           }
         }
       ],
-      "id": 23
+      "id": 25
     },
     {
       "type": "stat",
@@ -12926,7 +13897,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 21
+        "y": 27
       },
       "links": [
         {
@@ -13783,7 +14754,7 @@
           }
         }
       ],
-      "id": 24
+      "id": 26
     },
     {
       "type": "stat",
@@ -13793,7 +14764,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 25
+        "y": 31
       },
       "links": [
         {
@@ -14394,7 +15365,7 @@
           }
         }
       ],
-      "id": 25
+      "id": 27
     },
     {
       "type": "stat",
@@ -14404,7 +15375,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 25
+        "y": 31
       },
       "links": [
         {
@@ -15005,7 +15976,7 @@
           }
         }
       ],
-      "id": 26
+      "id": 28
     },
     {
       "type": "stat",
@@ -15015,7 +15986,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 25
+        "y": 31
       },
       "links": [
         {
@@ -15616,7 +16587,7 @@
           }
         }
       ],
-      "id": 27
+      "id": 29
     },
     {
       "type": "row",
@@ -15631,7 +16602,7 @@
             "h": 6,
             "w": 8,
             "x": 0,
-            "y": 30
+            "y": 36
           },
           "datasource": {
             "type": "stackdriver",
@@ -15848,72 +16819,6 @@
                 "filters": [
                   "metric.type",
                   "=",
-                  "logging.googleapis.com/user/synthetic_results",
-                  "AND",
-                  "resource.type",
-                  "=",
-                  "cloud_run_job",
-                  "AND",
-                  "metric.label.outcome",
-                  "=",
-                  "fail"
-                ],
-                "groupBys": [
-                  "metric.label.job"
-                ],
-                "crossSeriesReducer": "REDUCE_SUM",
-                "perSeriesAligner": "ALIGN_DELTA",
-                "alignmentPeriod": "+60s",
-                "view": "FULL",
-                "preprocessor": "none"
-              },
-              "aliasBy": "✕ {{metric.label.job}} failed"
-            },
-            {
-              "refId": "H",
-              "datasource": {
-                "type": "stackdriver",
-                "uid": "cloud-app"
-              },
-              "queryType": "timeSeriesList",
-              "timeSeriesList": {
-                "projectName": "__TPA_APP_PROJECT_ID__",
-                "filters": [
-                  "metric.type",
-                  "=",
-                  "logging.googleapis.com/user/synthetic_results",
-                  "AND",
-                  "resource.type",
-                  "=",
-                  "cloud_run_job",
-                  "AND",
-                  "metric.label.outcome",
-                  "=",
-                  "error"
-                ],
-                "groupBys": [
-                  "metric.label.job"
-                ],
-                "crossSeriesReducer": "REDUCE_SUM",
-                "perSeriesAligner": "ALIGN_DELTA",
-                "alignmentPeriod": "+60s",
-                "view": "FULL",
-                "preprocessor": "none"
-              },
-              "aliasBy": "✕ {{metric.label.job}} broke"
-            },
-            {
-              "refId": "I",
-              "datasource": {
-                "type": "stackdriver",
-                "uid": "cloud-app"
-              },
-              "queryType": "timeSeriesList",
-              "timeSeriesList": {
-                "projectName": "__TPA_APP_PROJECT_ID__",
-                "filters": [
-                  "metric.type",
-                  "=",
                   "logging.googleapis.com/user/run_crash_exits",
                   "AND",
                   "resource.type",
@@ -15936,7 +16841,7 @@
               "aliasBy": "✕ crashed · {{resource.label.service_name}}"
             },
             {
-              "refId": "J",
+              "refId": "H",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -15969,7 +16874,7 @@
               "aliasBy": "✕ out of memory · {{resource.label.service_name}}"
             },
             {
-              "refId": "K",
+              "refId": "I",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16002,7 +16907,7 @@
               "aliasBy": "✕ out of memory · {{resource.label.job_name}}"
             },
             {
-              "refId": "L",
+              "refId": "J",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16039,7 +16944,7 @@
               "aliasBy": "✕ run failed · {{resource.label.job_name}}"
             },
             {
-              "refId": "M",
+              "refId": "K",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16066,7 +16971,7 @@
               "aliasBy": "instances reported"
             },
             {
-              "refId": "N",
+              "refId": "L",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16099,7 +17004,7 @@
               "aliasBy": "auth instances"
             },
             {
-              "refId": "O",
+              "refId": "M",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16132,7 +17037,7 @@
               "aliasBy": "auth-outbox-publisher instances"
             },
             {
-              "refId": "P",
+              "refId": "N",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16165,7 +17070,7 @@
               "aliasBy": "model-gateway instances"
             },
             {
-              "refId": "Q",
+              "refId": "O",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16198,7 +17103,7 @@
               "aliasBy": "tpa-jobs-drains instances"
             },
             {
-              "refId": "R",
+              "refId": "P",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16229,7 +17134,7 @@
               "aliasBy": "✕ backup failed · auth-db"
             },
             {
-              "refId": "S",
+              "refId": "Q",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16260,7 +17165,7 @@
               "aliasBy": "✕ point-in-time log archive failed · auth-db"
             },
             {
-              "refId": "T",
+              "refId": "R",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16293,7 +17198,7 @@
               "aliasBy": "auth-db up"
             },
             {
-              "refId": "U",
+              "refId": "S",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -16324,7 +17229,7 @@
               "aliasBy": "auth-db points"
             },
             {
-              "refId": "V",
+              "refId": "T",
               "datasource": {
                 "type": "stackdriver",
                 "uid": "cloud-app"
@@ -17365,7 +18270,7 @@
               }
             }
           ],
-          "id": 29
+          "id": 31
         },
         {
           "type": "table",
@@ -17375,7 +18280,7 @@
             "h": 6,
             "w": 8,
             "x": 8,
-            "y": 30
+            "y": 36
           },
           "datasource": {
             "type": "stackdriver",
@@ -18214,7 +19119,7 @@
               }
             }
           ],
-          "id": 30
+          "id": 32
         },
         {
           "type": "table",
@@ -18224,7 +19129,7 @@
             "h": 6,
             "w": 8,
             "x": 16,
-            "y": 30
+            "y": 36
           },
           "datasource": {
             "type": "stackdriver",
@@ -18847,7 +19752,7 @@
               }
             }
           ],
-          "id": 31
+          "id": 33
         },
         {
           "type": "stat",
@@ -18857,7 +19762,7 @@
             "h": 4,
             "w": 8,
             "x": 0,
-            "y": 36
+            "y": 42
           },
           "links": [
             {
@@ -19714,7 +20619,7 @@
               }
             }
           ],
-          "id": 32
+          "id": 34
         },
         {
           "type": "stat",
@@ -19724,7 +20629,7 @@
             "h": 4,
             "w": 8,
             "x": 8,
-            "y": 36
+            "y": 42
           },
           "links": [
             {
@@ -20581,7 +21486,7 @@
               }
             }
           ],
-          "id": 33
+          "id": 35
         },
         {
           "type": "stat",
@@ -20591,7 +21496,7 @@
             "h": 4,
             "w": 8,
             "x": 16,
-            "y": 36
+            "y": 42
           },
           "links": [
             {
@@ -21448,7 +22353,7 @@
               }
             }
           ],
-          "id": 34
+          "id": 36
         },
         {
           "type": "stat",
@@ -21458,7 +22363,7 @@
             "h": 4,
             "w": 8,
             "x": 0,
-            "y": 40
+            "y": 46
           },
           "links": [
             {
@@ -22059,7 +22964,7 @@
               }
             }
           ],
-          "id": 35
+          "id": 37
         },
         {
           "type": "stat",
@@ -22069,7 +22974,7 @@
             "h": 4,
             "w": 8,
             "x": 8,
-            "y": 40
+            "y": 46
           },
           "links": [
             {
@@ -22670,7 +23575,7 @@
               }
             }
           ],
-          "id": 36
+          "id": 38
         },
         {
           "type": "stat",
@@ -22680,7 +23585,7 @@
             "h": 4,
             "w": 8,
             "x": 16,
-            "y": 40
+            "y": 46
           },
           "links": [
             {
@@ -23281,16 +24186,16 @@
               }
             }
           ],
-          "id": 37
+          "id": 39
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 35
       },
-      "id": 28
+      "id": 30
     },
     {
       "type": "row",
@@ -23305,7 +24210,7 @@
             "h": 6,
             "w": 12,
             "x": 0,
-            "y": 31
+            "y": 37
           },
           "datasource": {
             "type": "stackdriver",
@@ -23390,7 +24295,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 39
+          "id": 41
         },
         {
           "type": "stat",
@@ -23400,7 +24305,7 @@
             "h": 6,
             "w": 12,
             "x": 12,
-            "y": 31
+            "y": 37
           },
           "datasource": {
             "type": "stackdriver",
@@ -23481,16 +24386,16 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 40
+          "id": 42
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 36
       },
-      "id": 38
+      "id": 40
     },
     {
       "type": "row",
@@ -23505,7 +24410,7 @@
             "h": 4,
             "w": 4,
             "x": 0,
-            "y": 32
+            "y": 38
           },
           "datasource": {
             "type": "stackdriver",
@@ -23592,7 +24497,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 42
+          "id": 44
         },
         {
           "type": "stat",
@@ -23602,7 +24507,7 @@
             "h": 4,
             "w": 4,
             "x": 4,
-            "y": 32
+            "y": 38
           },
           "datasource": {
             "type": "stackdriver",
@@ -23689,7 +24594,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 43
+          "id": 45
         },
         {
           "type": "stat",
@@ -23699,7 +24604,7 @@
             "h": 4,
             "w": 4,
             "x": 8,
-            "y": 32
+            "y": 38
           },
           "datasource": {
             "type": "stackdriver",
@@ -23786,7 +24691,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 44
+          "id": 46
         },
         {
           "type": "stat",
@@ -23796,7 +24701,7 @@
             "h": 4,
             "w": 4,
             "x": 12,
-            "y": 32
+            "y": 38
           },
           "datasource": {
             "type": "stackdriver",
@@ -23883,7 +24788,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 45
+          "id": 47
         },
         {
           "type": "stat",
@@ -23893,7 +24798,7 @@
             "h": 4,
             "w": 4,
             "x": 16,
-            "y": 32
+            "y": 38
           },
           "datasource": {
             "type": "stackdriver",
@@ -23980,7 +24885,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 46
+          "id": 48
         },
         {
           "type": "stat",
@@ -23990,7 +24895,7 @@
             "h": 4,
             "w": 4,
             "x": 20,
-            "y": 32
+            "y": 38
           },
           "datasource": {
             "type": "stackdriver",
@@ -24077,7 +24982,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 47
+          "id": 49
         },
         {
           "type": "stat",
@@ -24087,7 +24992,7 @@
             "h": 4,
             "w": 4,
             "x": 0,
-            "y": 36
+            "y": 42
           },
           "datasource": {
             "type": "stackdriver",
@@ -24174,7 +25079,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 48
+          "id": 50
         },
         {
           "type": "stat",
@@ -24184,7 +25089,7 @@
             "h": 4,
             "w": 4,
             "x": 4,
-            "y": 36
+            "y": 42
           },
           "datasource": {
             "type": "stackdriver",
@@ -24271,7 +25176,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 49
+          "id": 51
         },
         {
           "type": "stat",
@@ -24281,7 +25186,7 @@
             "h": 4,
             "w": 4,
             "x": 8,
-            "y": 36
+            "y": 42
           },
           "datasource": {
             "type": "stackdriver",
@@ -24368,7 +25273,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 50
+          "id": 52
         },
         {
           "type": "stat",
@@ -24378,7 +25283,7 @@
             "h": 4,
             "w": 4,
             "x": 12,
-            "y": 36
+            "y": 42
           },
           "datasource": {
             "type": "stackdriver",
@@ -24465,7 +25370,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 51
+          "id": 53
         },
         {
           "type": "stat",
@@ -24475,7 +25380,7 @@
             "h": 4,
             "w": 4,
             "x": 16,
-            "y": 36
+            "y": 42
           },
           "datasource": {
             "type": "stackdriver",
@@ -24562,16 +25467,16 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 52
+          "id": 54
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 37
       },
-      "id": 41
+      "id": 43
     },
     {
       "type": "row",
@@ -24586,7 +25491,7 @@
             "h": 5,
             "w": 4,
             "x": 0,
-            "y": 33
+            "y": 39
           },
           "datasource": {
             "type": "stackdriver",
@@ -24666,7 +25571,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 54
+          "id": 56
         },
         {
           "type": "stat",
@@ -24676,7 +25581,7 @@
             "h": 5,
             "w": 4,
             "x": 4,
-            "y": 33
+            "y": 39
           },
           "datasource": {
             "type": "stackdriver",
@@ -24769,7 +25674,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 55
+          "id": 57
         },
         {
           "type": "stat",
@@ -24779,7 +25684,7 @@
             "h": 5,
             "w": 4,
             "x": 8,
-            "y": 33
+            "y": 39
           },
           "datasource": {
             "type": "stackdriver",
@@ -24863,7 +25768,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 56
+          "id": 58
         },
         {
           "type": "stat",
@@ -24873,7 +25778,7 @@
             "h": 5,
             "w": 4,
             "x": 12,
-            "y": 33
+            "y": 39
           },
           "datasource": {
             "type": "stackdriver",
@@ -24999,7 +25904,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 57
+          "id": 59
         },
         {
           "type": "stat",
@@ -25009,7 +25914,7 @@
             "h": 5,
             "w": 4,
             "x": 16,
-            "y": 33
+            "y": 39
           },
           "links": [
             {
@@ -25111,7 +26016,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 58
+          "id": 60
         },
         {
           "type": "stat",
@@ -25121,7 +26026,7 @@
             "h": 5,
             "w": 4,
             "x": 20,
-            "y": 33
+            "y": 39
           },
           "datasource": {
             "type": "stackdriver",
@@ -25239,16 +26144,16 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 59
+          "id": 61
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 38
       },
-      "id": 53
+      "id": 55
     },
     {
       "type": "row",
@@ -25263,7 +26168,7 @@
             "h": 5,
             "w": 4,
             "x": 0,
-            "y": 34
+            "y": 40
           },
           "datasource": {
             "type": "stackdriver",
@@ -25343,7 +26248,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 61
+          "id": 63
         },
         {
           "type": "stat",
@@ -25353,7 +26258,7 @@
             "h": 5,
             "w": 4,
             "x": 4,
-            "y": 34
+            "y": 40
           },
           "datasource": {
             "type": "stackdriver",
@@ -25446,7 +26351,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 62
+          "id": 64
         },
         {
           "type": "stat",
@@ -25456,7 +26361,7 @@
             "h": 5,
             "w": 4,
             "x": 8,
-            "y": 34
+            "y": 40
           },
           "datasource": {
             "type": "stackdriver",
@@ -25544,7 +26449,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 63
+          "id": 65
         },
         {
           "type": "stat",
@@ -25554,7 +26459,7 @@
             "h": 5,
             "w": 4,
             "x": 12,
-            "y": 34
+            "y": 40
           },
           "datasource": {
             "type": "stackdriver",
@@ -25678,7 +26583,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 64
+          "id": 66
         },
         {
           "type": "stat",
@@ -25688,7 +26593,7 @@
             "h": 5,
             "w": 4,
             "x": 16,
-            "y": 34
+            "y": 40
           },
           "datasource": {
             "type": "stackdriver",
@@ -25894,7 +26799,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 65
+          "id": 67
         },
         {
           "type": "stat",
@@ -25904,7 +26809,7 @@
             "h": 5,
             "w": 4,
             "x": 20,
-            "y": 34
+            "y": 40
           },
           "datasource": {
             "type": "stackdriver",
@@ -26022,16 +26927,16 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 66
+          "id": 68
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 39
       },
-      "id": 60
+      "id": 62
     },
     {
       "type": "row",
@@ -26046,7 +26951,7 @@
             "h": 5,
             "w": 4,
             "x": 0,
-            "y": 35
+            "y": 41
           },
           "datasource": {
             "type": "stackdriver",
@@ -26126,7 +27031,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 68
+          "id": 70
         },
         {
           "type": "stat",
@@ -26136,7 +27041,7 @@
             "h": 5,
             "w": 4,
             "x": 4,
-            "y": 35
+            "y": 41
           },
           "datasource": {
             "type": "stackdriver",
@@ -26229,7 +27134,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 69
+          "id": 71
         },
         {
           "type": "stat",
@@ -26239,7 +27144,7 @@
             "h": 5,
             "w": 4,
             "x": 8,
-            "y": 35
+            "y": 41
           },
           "datasource": {
             "type": "stackdriver",
@@ -26327,7 +27232,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 70
+          "id": 72
         },
         {
           "type": "stat",
@@ -26337,7 +27242,7 @@
             "h": 5,
             "w": 4,
             "x": 12,
-            "y": 35
+            "y": 41
           },
           "datasource": {
             "type": "stackdriver",
@@ -26465,7 +27370,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 71
+          "id": 73
         },
         {
           "type": "stat",
@@ -26475,7 +27380,7 @@
             "h": 5,
             "w": 4,
             "x": 16,
-            "y": 35
+            "y": 41
           },
           "datasource": {
             "type": "stackdriver",
@@ -26681,7 +27586,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 72
+          "id": 74
         },
         {
           "type": "stat",
@@ -26691,7 +27596,7 @@
             "h": 5,
             "w": 4,
             "x": 20,
-            "y": 35
+            "y": 41
           },
           "datasource": {
             "type": "stackdriver",
@@ -26809,16 +27714,16 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 73
+          "id": 75
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 40
       },
-      "id": 67
+      "id": 69
     },
     {
       "type": "row",
@@ -26833,7 +27738,7 @@
             "h": 5,
             "w": 4,
             "x": 0,
-            "y": 36
+            "y": 42
           },
           "datasource": {
             "type": "stackdriver",
@@ -26913,7 +27818,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 75
+          "id": 77
         },
         {
           "type": "stat",
@@ -26923,7 +27828,7 @@
             "h": 5,
             "w": 4,
             "x": 4,
-            "y": 36
+            "y": 42
           },
           "datasource": {
             "type": "stackdriver",
@@ -27016,7 +27921,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 76
+          "id": 78
         },
         {
           "type": "stat",
@@ -27026,7 +27931,7 @@
             "h": 5,
             "w": 4,
             "x": 8,
-            "y": 36
+            "y": 42
           },
           "datasource": {
             "type": "stackdriver",
@@ -27141,7 +28046,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 77
+          "id": 79
         },
         {
           "type": "stat",
@@ -27151,7 +28056,7 @@
             "h": 5,
             "w": 4,
             "x": 12,
-            "y": 36
+            "y": 42
           },
           "datasource": {
             "type": "stackdriver",
@@ -27275,7 +28180,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 78
+          "id": 80
         },
         {
           "type": "stat",
@@ -27285,7 +28190,7 @@
             "h": 5,
             "w": 4,
             "x": 16,
-            "y": 36
+            "y": 42
           },
           "datasource": {
             "type": "stackdriver",
@@ -27491,7 +28396,7 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 79
+          "id": 81
         },
         {
           "type": "stat",
@@ -27501,7 +28406,7 @@
             "h": 5,
             "w": 4,
             "x": 20,
-            "y": 36
+            "y": 42
           },
           "datasource": {
             "type": "stackdriver",
@@ -27588,16 +28493,16 @@
             "wideLayout": true,
             "showPercentChange": false
           },
-          "id": 80
+          "id": 82
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 41
       },
-      "id": 74
+      "id": 76
     }
   ]
 }

@@ -28,8 +28,8 @@ var OVERVIEW = { uid: "tw-cloud-overview", name: "overview" };
 var SERVICE_UID = "tw-cloud-service-";
 // The Cloud Run services that have a page of their own (cloud/dashboards/service-<name>.json).
 var SERVICE_PAGES = [
-  "auth", "auth-outbox-publisher", "connectors", "crm-web", "engine", "model-gateway", "records", "svc-ops",
-  "svc-twilio-rest", "svc-voice", "tpa-api", "tpa-jobs-drains", "watchtower", "web"
+  "auth", "auth-event-publisher", "auth-outbox-publisher", "connectors", "crm-web", "engine", "model-gateway",
+  "ops-web", "records", "svc-ops", "svc-twilio-rest", "svc-voice", "tpa-api", "tpa-jobs-drains", "watchtower", "web"
 ];
 // The page for an alert, from the alert alone. The first row that matches wins. `words` are looked for, in lower
 // case, in the metric type, the resource type, the policy and condition names and the subject.

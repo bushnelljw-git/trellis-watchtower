@@ -97,10 +97,16 @@ class TerraformTest(unittest.TestCase):
         self.assertEqual(set(deps), {IMPORTER, "auth-db", "tpa-db"})
 
     def test_the_sections_are_read_as_the_roles_beta_places_them_in(self):
+        # Each section's local in beta's local.monitoring_inputs, and how it is placed: by role, or (the sign-in
+        # robots' secret read, signinrobots.tf) into the app project by its key, the project the app role lives in.
+        local = {"feed_ingest": "feed_ingest_policies", "feed_ingest_records": "feed_ingest_records_log_metrics",
+                 "signin_robots": "signin_robot_log_metrics", "auth_texts": "auth_texts_log_metrics",
+                 "auth_email_everyone": "auth_email_everyone_log_metrics"}
+        by_project = {"signin_robots"}
+        self.assertEqual(set(local), set(cat.SECTIONS))
         for section, role in cat.SECTIONS.items():
-            local = {"feed_ingest": "feed_ingest_policies", "feed_ingest_records": "feed_ingest_records_log_metrics"}
-            self.assertRegex(self.main, rf"in local\.{local[section]} : name => \w+ if contains\(roles, \"{role}\"\)",
-                             section)
+            where = rf"p == \"{role}\"" if section in by_project else rf"contains\(roles, \"{role}\"\)"
+            self.assertRegex(self.main, rf"in local\.{local[section]} : name => \w+ if {where}", section)
 
     def test_records_count_is_made_on_beta_whatever_the_switch_says(self):
         # The Member records chart over it is never a failed query on beta (tpa-platform D-181).

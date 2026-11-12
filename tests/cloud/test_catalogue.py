@@ -61,7 +61,8 @@ BUILTIN = {
     # Cloud metrics: API prefix is C", read by tpa-platform's module 2026-10-24): counters, with no metric label read.
     "cloudsql.googleapis.com/database/replication/log_archive_success_count": (set(), "counter"),
     "cloudsql.googleapis.com/database/replication/log_archive_failure_count": (set(), "counter"),
-    "monitoring.googleapis.com/uptime_check/check_passed": (set(), "bool"),
+    # check_id: which of our checks (the portal host has three: /health, /auth/me and /tpa/, D-335).
+    "monitoring.googleapis.com/uptime_check/check_passed": ({"check_id"}, "bool"),
     "router.googleapis.com/nat/allocated_ports": (set(), "gauge"),
     "router.googleapis.com/nat/port_usage": (set(), "gauge"),
     "router.googleapis.com/nat/new_connections_count": (set(), "counter"),
@@ -140,11 +141,14 @@ NAMES = {
         # auth-publisher (the event publisher's job, kept beside the service while var.auth_event_publisher is
         # "both", D-313) is not here: since the catalogue at 1e15b0e8 the root adds it to `jobs-failed`'s list itself
         # (main.tf, local.auth_publisher_job), so the catalogue names it nowhere; pages read it as `auth-.*`.
+        # synthetics-member-sign-in and synthetics-broker-sign-in: the sign-in robots (signinrobots.tf, SR-OR-1),
+        # built only behind signin_robots_enabled; the catalogue writes their policies once per robot as `__JOB__`
+        # (WRITTEN_PER_JOB), and tests/cloud/test_signin.py holds the names to the root.
         "job_name": {"migrate-auth", "auth-sweeper", "auth-audit-head", "auth-audit-verify",
                      "auth-audit-verify-monthly", "auth-bootstrap", "auth-tag-credentials", "auth-retag-bearer-key",
                      "tpa-jobs-erisa-clocks", "tpa-jobs-nightly-anomalies", "tpa-jobs-stoploss-surveillance",
                      "tpa-jobs-accumulator-reconcile", "tpa-jobs-workload-audit", "tpa-jobs-member-access",
-                     "feed-ingest-everon-sync"},
+                     "feed-ingest-everon-sync", "synthetics-member-sign-in", "synthetics-broker-sign-in"},
         # auth-reset-drain and crm-reset-drain (R5106): the two forgot-password drains' schedules, both in the app
         # project (auth's an HTTP target; the CRM copy's beside it, R282), named by `scheduler-failed`.
         "job_id": {"erisa-clocks", "nightly-anomalies", "stoploss-surveillance", "accumulator-reconcile",
@@ -179,6 +183,9 @@ NAMES = {
 # crm-reset-drain in its crm_reset_drain section). test_names_agree_with_the_catalogue refuses a name here that the
 # vendored catalogue already names, so a re-vendor that lands one empties this.
 AHEAD_OF_THE_CATALOGUE: dict[str, set[str]] = {}
+# Jobs the catalogue names only as `__JOB__` in a section whose policies the root writes once per job (the sign-in
+# robots' five, signinrobots.tf), so never by name: held to the root's own list by tests/cloud/test_signin.py.
+WRITTEN_PER_JOB: dict[str, set[str]] = {"job_name": set(gen.ROBOT_JOBS)}
 
 
 def queries(paths=None):
@@ -230,12 +237,24 @@ class CatalogueTest(unittest.TestCase):
         # The synthetic journeys' section is read, as the app role's (their result lines land in the app project).
         self.assertEqual(set(self.catalogue.synthetics), {"synthetic_results"})
         # The importer's two sections (OWNER-EV-12): records' count is the PHI role's, the failed run's policy and its
-        # runs' own counters (not whole, and each whole-book run's employers and people) the app section's, and the
+        # runs' own counters (not whole, and each whole-book run's employers and people) the app section's; the
+        # sign-in row's three (SR-OR-1, D-335), the app role's: the robots' secret read and their policies, each
+        # texted code's delivery as Twilio reported it back, and the emails the messenger could not hand on. The
         # others are not read.
-        self.assertEqual(cat.SECTIONS, {"feed_ingest": "app", "feed_ingest_records": "phi"})
+        self.assertEqual(cat.SECTIONS, {"feed_ingest": "app", "feed_ingest_records": "phi", "signin_robots": "app",
+                                        "auth_texts": "app", "auth_email_everyone": "app"})
         self.assertEqual({k: set(v) for k, v in self.catalogue.sections.items()},
                          {"feed_ingest": {"everon_runs_not_whole", "everon_book_employers", "everon_book_people"},
-                          "feed_ingest_records": {"source_sync_alerts"}})
+                          "feed_ingest_records": {"source_sync_alerts"},
+                          "signin_robots": {"signin_robot_secret_read"},
+                          "auth_texts": {"auth_texts_reported", "auth_texts_not_sent", "auth_text_delivery_faults",
+                                         "auth_twilio_connections"},
+                          "auth_email_everyone": {"auth_email_undeliverable", "auth_message_to_synthetic_login"}})
+        self.assertEqual(self.catalogue.roles["app"]["auth_texts_reported"]["labels"], {"code"})
+        self.assertEqual(set(self.catalogue.tree["signin_robots"]["alert_policies"]),
+                         {"signin-failing", "signin-robot-locked-out", "signin-silent", "signin-robot-broken",
+                          "signin-checks-off", "signin-robot-secret-read"})
+        self.assertTrue(self.catalogue.promql("signin-silent", "signin_robots").startswith("absent_over_time("))
         self.assertTrue(self.catalogue.roles["app"]["everon_book_people"]["distribution"])
         self.assertEqual(self.catalogue.roles["phi"]["source_sync_alerts"]["labels"], set())
         self.assertFalse(self.catalogue.roles["phi"]["source_sync_alerts"]["distribution"])
@@ -339,7 +358,10 @@ class CatalogueTest(unittest.TestCase):
             self.assertFalse(ahead.get(label, set()) & named,
                              f"the vendored catalogue names {sorted(ahead.get(label, set()) & named)} now: drop them "
                              "from AHEAD_OF_THE_CATALOGUE")
-        self.assertEqual(jobs - ahead.get("job_name", set()), self.catalogue.jobs_named())
+        self.assertFalse(WRITTEN_PER_JOB["job_name"] & self.catalogue.jobs_named(), "the catalogue names a robot now")
+        self.assertIn('job_name="__JOB__"', self.catalogue.promql("signin-failing", "signin_robots"))
+        self.assertEqual(jobs - ahead.get("job_name", set()) - WRITTEN_PER_JOB["job_name"],
+                         self.catalogue.jobs_named())
         self.assertEqual(schedules - ahead.get("job_id", set()), self.catalogue.schedules_named())
         self.assertEqual(databases - ahead.get("database_id", set()), self.catalogue.databases_named())
 
@@ -382,10 +404,10 @@ class CatalogueTest(unittest.TestCase):
             self.assertEqual(cat.Catalogue(path).unanchored_labels("crm", "errors"), {"class"})
 
     def test_every_quiet_token_names_a_known_job_or_database(self):
-        known = set(gen.PAUSABLE) | set(gen.SWITCHED) | set(gen.DATABASES)
+        known = set(gen.PAUSABLE) | set(gen.SWITCHED) | set(gen.DATABASES) | set(gen.ROBOT_JOBS) | {gen.ROBOT_SECRETS}
         problems = []
         for path in DASHBOARDS:
-            for token in re.findall(r"@@[RF](,[a-z0-9,-]*,)@@", path.read_text()):
+            for token in re.findall(r"@@[RFH](,[a-z0-9,-]*,)@@", path.read_text()):
                 unknown = set(token.strip(",").split(",")) - known
                 if unknown:
                     problems.append(f"{path.name}: {sorted(unknown)}")
@@ -395,6 +417,15 @@ class CatalogueTest(unittest.TestCase):
         script = (ROOT / "cloud" / "render-dashboards.sh").read_text()
         paused = re.search(r'^KNOWN_PAUSED_JOBS="([^"]*)"', script, re.M).group(1).split()
         not_deployed = re.search(r'^KNOWN_NOT_DEPLOYED_JOBS="([^"]*)"', script, re.M).group(1).split()
+        robots = re.search(r'^KNOWN_SIGNIN_ROBOTS="([^"]*)"', script, re.M).group(1).split()
+        self.assertEqual(robots, [gen.ROBOT_SECRETS, *gen.ROBOT_JOBS])
+        self.assertLessEqual(set(gen.ROBOT_JOBS), set(gen.PAUSABLE), "a built robot can be paused")
+        self.assertNotIn(gen.ROBOT_SECRETS, gen.PAUSABLE)
+        # A hidden query names the robots' secrets or a robot alone: nothing else is ever not asked.
+        for path in DASHBOARDS:
+            for token in re.findall(r'"@@H(,[a-z0-9,-]*,)@@"', path.read_text()):
+                self.assertLessEqual(set(token.strip(",").split(",")), {gen.ROBOT_SECRETS, *gen.ROBOT_JOBS},
+                                     path.name)
         databases = re.search(r'^KNOWN_DATABASES="([^"]*)"', script, re.M).group(1).split()
         cc_only = re.search(r'^CC_ONLY_PAGES="([^"]*)"', script, re.M).group(1).split()
         self.assertEqual(paused, list(gen.PAUSABLE))

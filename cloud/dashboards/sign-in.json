@@ -104,7 +104,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Sign-in",
+      "title": "Sign-in robots: a member and a broker sign in on the portal every five minutes (SR-OR-1)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -117,13 +117,327 @@
     },
     {
       "type": "timeseries",
+      "title": "Member robot: its checks, by outcome and code",
+      "description": "`synthetics-member-sign-in`'s result lines (`synthetic_results`), one per run, by outcome (pass; fail, the portal's or auth's answer; skipped, `disabled` while auth's switch is off; error, the runner's own fault) and its closed code: members signing in on the public portal with a software passkey, to `/auth/me` and out. The overview's tile reads these as its policies do.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/synthetic_results",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=",
+              "synthetics-member-sign-in"
+            ],
+            "groupBys": [
+              "metric.label.outcome",
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.outcome}} {{metric.label.code}}",
+          "hide": "@@H,synthetics-member-sign-in,@@"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,synthetics-member-sign-in,auth-db,@@Missing: no check in this range (one every five minutes while it runs)@@",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 2
+    },
+    {
+      "type": "timeseries",
+      "title": "Broker robot: its checks, by outcome and code",
+      "description": "`synthetics-broker-sign-in`'s result lines (`synthetic_results`), one per run, by outcome (pass; fail, the portal's or auth's answer; skipped, `disabled` while auth's switch is off; error, the runner's own fault) and its closed code: brokers signing in on the public portal with an authenticator code, to `/auth/me` and out. The overview's tile reads these as its policies do.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/synthetic_results",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job",
+              "AND",
+              "resource.label.job_name",
+              "=",
+              "synthetics-broker-sign-in"
+            ],
+            "groupBys": [
+              "metric.label.outcome",
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.outcome}} {{metric.label.code}}",
+          "hide": "@@H,synthetics-broker-sign-in,@@"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "@@R,synthetics-broker-sign-in,auth-db,@@Missing: no check in this range (one every five minutes while it runs)@@",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 3
+    },
+    {
+      "type": "timeseries",
+      "title": "A robot's secret read by anyone else",
+      "description": "A read, or a refused try, of a version of either robot's secret by anyone but the robots' own account, or by someone acting as it (`signin_robot_secret_read`, from the Data Access audit log; `signin-robot-secret-read`, urgent). The entry says who; whoever reads one holds a robot login. None while the robots' secrets do not exist yet (before tpa-platform's stage 1).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/signin_robot_secret_read"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "reads",
+          "hide": "@@H,signin-robot-secrets,@@"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 4
+    },
+    {
+      "type": "row",
+      "title": "Sign-in",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 5
+    },
+    {
+      "type": "timeseries",
       "title": "Requests, by service and status class",
       "description": "Requests Cloud Run answered per interval for auth and its messenger.",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 1
+        "y": 9
       },
       "datasource": {
         "type": "stackdriver",
@@ -216,7 +530,7 @@
           "sort": "desc"
         }
       },
-      "id": 2
+      "id": 6
     },
     {
       "type": "timeseries",
@@ -226,7 +540,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 1
+        "y": 9
       },
       "datasource": {
         "type": "stackdriver",
@@ -322,7 +636,7 @@
           "sort": "desc"
         }
       },
-      "id": 3
+      "id": 7
     },
     {
       "type": "timeseries",
@@ -332,7 +646,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 9
+        "y": 17
       },
       "datasource": {
         "type": "stackdriver",
@@ -445,7 +759,7 @@
           "sort": "desc"
         }
       },
-      "id": 4
+      "id": 8
     },
     {
       "type": "timeseries",
@@ -455,7 +769,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 9
+        "y": 17
       },
       "datasource": {
         "type": "stackdriver",
@@ -543,7 +857,7 @@
           "sort": "desc"
         }
       },
-      "id": 5
+      "id": 9
     },
     {
       "type": "timeseries",
@@ -553,7 +867,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 17
+        "y": 25
       },
       "datasource": {
         "type": "stackdriver",
@@ -645,7 +959,7 @@
           "sort": "desc"
         }
       },
-      "id": 6
+      "id": 10
     },
     {
       "type": "stat",
@@ -655,7 +969,7 @@
         "h": 8,
         "w": 4,
         "x": 12,
-        "y": 17
+        "y": 25
       },
       "datasource": {
         "type": "stackdriver",
@@ -861,7 +1175,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 7
+      "id": 11
     },
     {
       "type": "timeseries",
@@ -871,7 +1185,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 17
+        "y": 25
       },
       "datasource": {
         "type": "stackdriver",
@@ -967,7 +1281,7 @@
           "sort": "desc"
         }
       },
-      "id": 8
+      "id": 12
     },
     {
       "type": "row",
@@ -978,9 +1292,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 33
       },
-      "id": 9
+      "id": 13
     },
     {
       "type": "text",
@@ -989,7 +1303,7 @@
         "h": 3,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 34
       },
       "options": {
         "mode": "markdown",
@@ -1000,7 +1314,7 @@
           "showMiniMap": false
         }
       },
-      "id": 10
+      "id": 14
     },
     {
       "type": "row",
@@ -1015,7 +1329,7 @@
             "h": 7,
             "w": 6,
             "x": 0,
-            "y": 30
+            "y": 38
           },
           "links": [
             {
@@ -1179,7 +1493,7 @@
               "sort": "desc"
             }
           },
-          "id": 12
+          "id": 16
         },
         {
           "type": "timeseries",
@@ -1189,7 +1503,7 @@
             "h": 7,
             "w": 6,
             "x": 6,
-            "y": 30
+            "y": 38
           },
           "datasource": {
             "type": "stackdriver",
@@ -1346,7 +1660,7 @@
               "sort": "desc"
             }
           },
-          "id": 13
+          "id": 17
         },
         {
           "type": "timeseries",
@@ -1356,7 +1670,7 @@
             "h": 7,
             "w": 6,
             "x": 12,
-            "y": 30
+            "y": 38
           },
           "datasource": {
             "type": "stackdriver",
@@ -1491,7 +1805,7 @@
               "sort": "desc"
             }
           },
-          "id": 14
+          "id": 18
         },
         {
           "type": "timeseries",
@@ -1501,7 +1815,7 @@
             "h": 7,
             "w": 6,
             "x": 18,
-            "y": 30
+            "y": 38
           },
           "datasource": {
             "type": "stackdriver",
@@ -1631,7 +1945,7 @@
               "sort": "desc"
             }
           },
-          "id": 15
+          "id": 19
         },
         {
           "type": "timeseries",
@@ -1641,7 +1955,7 @@
             "h": 7,
             "w": 8,
             "x": 0,
-            "y": 37
+            "y": 45
           },
           "datasource": {
             "type": "stackdriver",
@@ -1763,7 +2077,7 @@
               "sort": "desc"
             }
           },
-          "id": 16
+          "id": 20
         },
         {
           "type": "timeseries",
@@ -1773,7 +2087,7 @@
             "h": 7,
             "w": 8,
             "x": 8,
-            "y": 37
+            "y": 45
           },
           "datasource": {
             "type": "stackdriver",
@@ -1864,7 +2178,7 @@
               "sort": "desc"
             }
           },
-          "id": 17
+          "id": 21
         },
         {
           "type": "timeseries",
@@ -1874,7 +2188,7 @@
             "h": 7,
             "w": 8,
             "x": 16,
-            "y": 37
+            "y": 45
           },
           "datasource": {
             "type": "stackdriver",
@@ -2026,16 +2340,16 @@
               "sort": "desc"
             }
           },
-          "id": 18
+          "id": 22
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 37
       },
-      "id": 11
+      "id": 15
     },
     {
       "type": "row",
@@ -2050,7 +2364,7 @@
             "h": 7,
             "w": 6,
             "x": 0,
-            "y": 31
+            "y": 39
           },
           "links": [
             {
@@ -2214,7 +2528,7 @@
               "sort": "desc"
             }
           },
-          "id": 20
+          "id": 24
         },
         {
           "type": "timeseries",
@@ -2224,7 +2538,7 @@
             "h": 7,
             "w": 6,
             "x": 6,
-            "y": 31
+            "y": 39
           },
           "datasource": {
             "type": "stackdriver",
@@ -2381,7 +2695,7 @@
               "sort": "desc"
             }
           },
-          "id": 21
+          "id": 25
         },
         {
           "type": "timeseries",
@@ -2391,7 +2705,7 @@
             "h": 7,
             "w": 6,
             "x": 12,
-            "y": 31
+            "y": 39
           },
           "datasource": {
             "type": "stackdriver",
@@ -2526,7 +2840,7 @@
               "sort": "desc"
             }
           },
-          "id": 22
+          "id": 26
         },
         {
           "type": "timeseries",
@@ -2536,7 +2850,7 @@
             "h": 7,
             "w": 6,
             "x": 18,
-            "y": 31
+            "y": 39
           },
           "datasource": {
             "type": "stackdriver",
@@ -2666,7 +2980,7 @@
               "sort": "desc"
             }
           },
-          "id": 23
+          "id": 27
         },
         {
           "type": "timeseries",
@@ -2676,7 +2990,7 @@
             "h": 7,
             "w": 8,
             "x": 0,
-            "y": 38
+            "y": 46
           },
           "datasource": {
             "type": "stackdriver",
@@ -2798,7 +3112,7 @@
               "sort": "desc"
             }
           },
-          "id": 24
+          "id": 28
         },
         {
           "type": "timeseries",
@@ -2808,7 +3122,7 @@
             "h": 7,
             "w": 8,
             "x": 8,
-            "y": 38
+            "y": 46
           },
           "datasource": {
             "type": "stackdriver",
@@ -2899,7 +3213,7 @@
               "sort": "desc"
             }
           },
-          "id": 25
+          "id": 29
         },
         {
           "type": "timeseries",
@@ -2909,7 +3223,7 @@
             "h": 7,
             "w": 8,
             "x": 16,
-            "y": 38
+            "y": 46
           },
           "datasource": {
             "type": "stackdriver",
@@ -3061,16 +3375,16 @@
               "sort": "desc"
             }
           },
-          "id": 26
+          "id": 30
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 38
       },
-      "id": 19
+      "id": 23
     },
     {
       "type": "row",
@@ -3085,7 +3399,7 @@
             "h": 7,
             "w": 6,
             "x": 0,
-            "y": 32
+            "y": 40
           },
           "links": [
             {
@@ -3249,7 +3563,7 @@
               "sort": "desc"
             }
           },
-          "id": 28
+          "id": 32
         },
         {
           "type": "timeseries",
@@ -3259,7 +3573,7 @@
             "h": 7,
             "w": 6,
             "x": 6,
-            "y": 32
+            "y": 40
           },
           "datasource": {
             "type": "stackdriver",
@@ -3416,7 +3730,7 @@
               "sort": "desc"
             }
           },
-          "id": 29
+          "id": 33
         },
         {
           "type": "timeseries",
@@ -3426,7 +3740,7 @@
             "h": 7,
             "w": 6,
             "x": 12,
-            "y": 32
+            "y": 40
           },
           "datasource": {
             "type": "stackdriver",
@@ -3557,7 +3871,7 @@
               "sort": "desc"
             }
           },
-          "id": 30
+          "id": 34
         },
         {
           "type": "timeseries",
@@ -3567,7 +3881,7 @@
             "h": 7,
             "w": 6,
             "x": 18,
-            "y": 32
+            "y": 40
           },
           "datasource": {
             "type": "stackdriver",
@@ -3697,7 +4011,7 @@
               "sort": "desc"
             }
           },
-          "id": 31
+          "id": 35
         },
         {
           "type": "timeseries",
@@ -3707,7 +4021,7 @@
             "h": 7,
             "w": 8,
             "x": 0,
-            "y": 39
+            "y": 47
           },
           "datasource": {
             "type": "stackdriver",
@@ -3829,7 +4143,7 @@
               "sort": "desc"
             }
           },
-          "id": 32
+          "id": 36
         },
         {
           "type": "timeseries",
@@ -3839,7 +4153,7 @@
             "h": 7,
             "w": 8,
             "x": 8,
-            "y": 39
+            "y": 47
           },
           "datasource": {
             "type": "stackdriver",
@@ -3930,7 +4244,7 @@
               "sort": "desc"
             }
           },
-          "id": 33
+          "id": 37
         },
         {
           "type": "timeseries",
@@ -3940,7 +4254,7 @@
             "h": 7,
             "w": 8,
             "x": 16,
-            "y": 39
+            "y": 47
           },
           "datasource": {
             "type": "stackdriver",
@@ -4092,16 +4406,16 @@
               "sort": "desc"
             }
           },
-          "id": 34
+          "id": 38
         }
       ],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 39
       },
-      "id": 27
+      "id": 31
     },
     {
       "type": "row",
@@ -4112,9 +4426,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 40
       },
-      "id": 35
+      "id": 39
     },
     {
       "type": "timeseries",
@@ -4124,7 +4438,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 33
+        "y": 41
       },
       "datasource": {
         "type": "stackdriver",
@@ -4221,7 +4535,7 @@
           "sort": "desc"
         }
       },
-      "id": 36
+      "id": 40
     },
     {
       "type": "timeseries",
@@ -4231,7 +4545,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 33
+        "y": 41
       },
       "datasource": {
         "type": "stackdriver",
@@ -4415,7 +4729,7 @@
           }
         }
       ],
-      "id": 37
+      "id": 41
     },
     {
       "type": "state-timeline",
@@ -4425,7 +4739,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 39
+        "y": 47
       },
       "datasource": {
         "type": "stackdriver",
@@ -4525,7 +4839,7 @@
           "sort": "none"
         }
       },
-      "id": 38
+      "id": 42
     },
     {
       "type": "timeseries",
@@ -4535,7 +4849,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 39
+        "y": 47
       },
       "datasource": {
         "type": "stackdriver",
@@ -4636,7 +4950,7 @@
           "sort": "desc"
         }
       },
-      "id": 39
+      "id": 43
     },
     {
       "type": "timeseries",
@@ -4646,7 +4960,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 39
+        "y": 47
       },
       "datasource": {
         "type": "stackdriver",
@@ -4743,7 +5057,7 @@
           "sort": "desc"
         }
       },
-      "id": 40
+      "id": 44
     },
     {
       "type": "timeseries",
@@ -4753,7 +5067,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 45
+        "y": 53
       },
       "datasource": {
         "type": "stackdriver",
@@ -4859,7 +5173,7 @@
           "sort": "desc"
         }
       },
-      "id": 41
+      "id": 45
     },
     {
       "type": "timeseries",
@@ -4869,7 +5183,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 45
+        "y": 53
       },
       "datasource": {
         "type": "stackdriver",
@@ -4990,7 +5304,7 @@
           "sort": "desc"
         }
       },
-      "id": 42
+      "id": 46
     },
     {
       "type": "timeseries",
@@ -5000,7 +5314,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 45
+        "y": 53
       },
       "datasource": {
         "type": "stackdriver",
@@ -5121,7 +5435,7 @@
           "sort": "desc"
         }
       },
-      "id": 43
+      "id": 47
     },
     {
       "type": "timeseries",
@@ -5131,7 +5445,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 45
+        "y": 53
       },
       "datasource": {
         "type": "stackdriver",
@@ -5221,7 +5535,7 @@
           "sort": "desc"
         }
       },
-      "id": 44
+      "id": 48
     },
     {
       "type": "row",
@@ -5232,9 +5546,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 59
       },
-      "id": 45
+      "id": 49
     },
     {
       "type": "stat",
@@ -5244,7 +5558,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 52
+        "y": 60
       },
       "datasource": {
         "type": "stackdriver",
@@ -6094,7 +6408,7 @@
           }
         }
       ],
-      "id": 46
+      "id": 50
     },
     {
       "type": "stat",
@@ -6104,7 +6418,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 52
+        "y": 60
       },
       "datasource": {
         "type": "stackdriver",
@@ -6698,7 +7012,7 @@
           }
         }
       ],
-      "id": 47
+      "id": 51
     },
     {
       "type": "timeseries",
@@ -6708,7 +7022,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 52
+        "y": 60
       },
       "datasource": {
         "type": "stackdriver",
@@ -6799,7 +7113,7 @@
           "sort": "desc"
         }
       },
-      "id": 48
+      "id": 52
     },
     {
       "type": "timeseries",
@@ -6809,7 +7123,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 57
+        "y": 65
       },
       "datasource": {
         "type": "stackdriver",
@@ -6900,7 +7214,7 @@
           "sort": "desc"
         }
       },
-      "id": 49
+      "id": 53
     },
     {
       "type": "timeseries",
@@ -6910,7 +7224,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 57
+        "y": 65
       },
       "datasource": {
         "type": "stackdriver",
@@ -7032,7 +7346,7 @@
           "sort": "desc"
         }
       },
-      "id": 50
+      "id": 54
     },
     {
       "type": "row",
@@ -7043,9 +7357,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 63
+        "y": 71
       },
-      "id": 51
+      "id": 55
     },
     {
       "type": "timeseries",
@@ -7055,7 +7369,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 64
+        "y": 72
       },
       "datasource": {
         "type": "stackdriver",
@@ -7145,7 +7459,7 @@
           "sort": "desc"
         }
       },
-      "id": 52
+      "id": 56
     },
     {
       "type": "timeseries",
@@ -7155,7 +7469,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 64
+        "y": 72
       },
       "datasource": {
         "type": "stackdriver",
@@ -7244,7 +7558,7 @@
           "sort": "desc"
         }
       },
-      "id": 53
+      "id": 57
     },
     {
       "type": "timeseries",
@@ -7254,7 +7568,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 72
+        "y": 80
       },
       "datasource": {
         "type": "stackdriver",
@@ -7346,7 +7660,598 @@
           "sort": "desc"
         }
       },
-      "id": 54
+      "id": 58
+    },
+    {
+      "type": "row",
+      "title": "Texted codes and emails: what happened to each",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 88
+      },
+      "id": 59
+    },
+    {
+      "type": "timeseries",
+      "title": "Texted codes reported back, by how they ended",
+      "description": "One per texted code Twilio delivered or did not deliver, as auth's messenger read it back (`auth_texts_reported`), by its closed word (`delivered`, or why not). `auth-texts-not-delivered` at five not delivered in an hour; `auth-texts-blocked` (urgent) when the carriers refuse the line.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 89
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_texts_reported",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No texted code reported in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 60
+    },
+    {
+      "type": "timeseries",
+      "title": "Texted codes not handed to Twilio, by reason",
+      "description": "A texted code the messenger did not hand over for a reason of the number's or the account's (`auth_texts_not_sent`: opted_out, bad_address, not_allowed; `auth-texts-not-sent` at five in an hour). The vendor's own failures are the refusals chart above.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 89
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_texts_not_sent",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 61
+    },
+    {
+      "type": "timeseries",
+      "title": "Delivery reads that failed, by kind",
+      "description": "The messenger's own faults reading texts' delivery back (`auth_text_delivery_faults`; `auth-text-delivery-reads-failing`): texts still go, members' Notifications stay at sent.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 89
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_text_delivery_faults",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 62
+    },
+    {
+      "type": "timeseries",
+      "title": "Connections to the text vendor",
+      "description": "Each TCP connection the messenger's firewall rule to Twilio admitted (`auth_twilio_connections`, from the rule's own log: a count alone, never an address or a name).",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 96
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_twilio_connections"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "connections"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No connection in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 63
+    },
+    {
+      "type": "timeseries",
+      "title": "Emails that could not be delivered",
+      "description": "An email the messenger could not hand on because its address cannot be delivered to (`auth_email_undeliverable`). A count alone; never the address.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 96
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_email_undeliverable",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "emails"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 64
+    },
+    {
+      "type": "timeseries",
+      "title": "Mail kept from a synthetic login",
+      "description": "Mail the messenger kept from a synthetic login (`auth_message_to_synthetic_login`): worth a look if ever above zero. A count alone; never the login.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 96
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_message_to_synthetic_login",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "kept"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 65
     },
     {
       "type": "row",
@@ -7357,9 +8262,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 80
+        "y": 103
       },
-      "id": 55
+      "id": 66
     },
     {
       "type": "timeseries",
@@ -7369,7 +8274,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 81
+        "y": 104
       },
       "datasource": {
         "type": "stackdriver",
@@ -7457,7 +8362,7 @@
           "sort": "desc"
         }
       },
-      "id": 56
+      "id": 67
     },
     {
       "type": "timeseries",
@@ -7467,7 +8372,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 81
+        "y": 104
       },
       "datasource": {
         "type": "stackdriver",
@@ -7553,7 +8458,7 @@
           "sort": "desc"
         }
       },
-      "id": 57
+      "id": 68
     },
     {
       "type": "timeseries",
@@ -7563,7 +8468,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 89
+        "y": 112
       },
       "datasource": {
         "type": "stackdriver",
@@ -7648,7 +8553,7 @@
           "sort": "desc"
         }
       },
-      "id": 58
+      "id": 69
     },
     {
       "type": "timeseries",
@@ -7658,7 +8563,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 89
+        "y": 112
       },
       "datasource": {
         "type": "stackdriver",
@@ -7773,7 +8678,7 @@
           "sort": "desc"
         }
       },
-      "id": 59
+      "id": 70
     },
     {
       "type": "timeseries",
@@ -7783,7 +8688,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 97
+        "y": 120
       },
       "datasource": {
         "type": "stackdriver",
@@ -7900,7 +8805,7 @@
           "sort": "desc"
         }
       },
-      "id": 60
+      "id": 71
     },
     {
       "type": "timeseries",
@@ -7910,7 +8815,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 97
+        "y": 120
       },
       "datasource": {
         "type": "stackdriver",
@@ -7998,7 +8903,7 @@
           "sort": "desc"
         }
       },
-      "id": 61
+      "id": 72
     },
     {
       "type": "row",
@@ -8009,9 +8914,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 105
+        "y": 128
       },
-      "id": 62
+      "id": 73
     },
     {
       "type": "timeseries",
@@ -8021,7 +8926,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 106
+        "y": 129
       },
       "datasource": {
         "type": "stackdriver",
@@ -8115,7 +9020,7 @@
           "sort": "desc"
         }
       },
-      "id": 63
+      "id": 74
     },
     {
       "type": "timeseries",
@@ -8125,7 +9030,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 106
+        "y": 129
       },
       "datasource": {
         "type": "stackdriver",
@@ -8211,7 +9116,7 @@
           "sort": "desc"
         }
       },
-      "id": 64
+      "id": 75
     },
     {
       "type": "timeseries",
@@ -8221,7 +9126,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 106
+        "y": 129
       },
       "datasource": {
         "type": "stackdriver",
@@ -8313,7 +9218,7 @@
           "sort": "desc"
         }
       },
-      "id": 65
+      "id": 76
     },
     {
       "type": "row",
@@ -8324,9 +9229,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 113
+        "y": 136
       },
-      "id": 66
+      "id": 77
     },
     {
       "type": "timeseries",
@@ -8336,7 +9241,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 114
+        "y": 137
       },
       "datasource": {
         "type": "stackdriver",
@@ -8425,7 +9330,7 @@
           "sort": "desc"
         }
       },
-      "id": 67
+      "id": 78
     },
     {
       "type": "timeseries",
@@ -8435,7 +9340,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 114
+        "y": 137
       },
       "datasource": {
         "type": "stackdriver",
@@ -8524,7 +9429,7 @@
           "sort": "desc"
         }
       },
-      "id": 68
+      "id": 79
     },
     {
       "type": "timeseries",
@@ -8534,7 +9439,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 114
+        "y": 137
       },
       "datasource": {
         "type": "stackdriver",
@@ -8652,7 +9557,7 @@
           "sort": "desc"
         }
       },
-      "id": 69
+      "id": 80
     },
     {
       "type": "timeseries",
@@ -8662,7 +9567,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 121
+        "y": 144
       },
       "datasource": {
         "type": "stackdriver",
@@ -8747,7 +9652,7 @@
           "sort": "desc"
         }
       },
-      "id": 70
+      "id": 81
     },
     {
       "type": "timeseries",
@@ -8757,7 +9662,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 121
+        "y": 144
       },
       "datasource": {
         "type": "stackdriver",
@@ -8846,7 +9751,7 @@
           "sort": "desc"
         }
       },
-      "id": 71
+      "id": 82
     },
     {
       "type": "timeseries",
@@ -8856,7 +9761,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 121
+        "y": 144
       },
       "datasource": {
         "type": "stackdriver",
@@ -8944,7 +9849,7 @@
           "sort": "desc"
         }
       },
-      "id": 72
+      "id": 83
     },
     {
       "type": "row",
@@ -8955,9 +9860,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 128
+        "y": 151
       },
-      "id": 73
+      "id": 84
     },
     {
       "type": "timeseries",
@@ -8967,7 +9872,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 129
+        "y": 152
       },
       "datasource": {
         "type": "stackdriver",
@@ -9060,7 +9965,7 @@
           "sort": "desc"
         }
       },
-      "id": 74
+      "id": 85
     },
     {
       "type": "timeseries",
@@ -9070,7 +9975,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 129
+        "y": 152
       },
       "datasource": {
         "type": "stackdriver",
@@ -9163,7 +10068,7 @@
           "sort": "desc"
         }
       },
-      "id": 75
+      "id": 86
     }
   ]
 }

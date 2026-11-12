@@ -2186,7 +2186,7 @@
     },
     {
       "type": "row",
-      "title": "Job resources: app project (tpa-jobs, auth's jobs, the synthetic journeys, and the CRM's where it shares the project) (attempts, run length, CPU, memory)",
+      "title": "Job resources: app project (tpa-jobs, auth's jobs, the sign-in robots, and the CRM's where it shares the project) (attempts, run length, CPU, memory)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
