@@ -37,6 +37,10 @@ AUTH_COMMIT = "eddeeadda804d762b7bf0e52b56b2e953a895f38"
 AUTH_LOCK = "requirements/auth.lock.txt"
 AUTH_LOCK_BLOB = "69ad035eb23fe660b2b170776b26b0d1708a675e"
 BASE = "python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f"
+#: The one list of Debian fixes the pinned base doesn't carry yet, the same pins as records-service's Dockerfile and
+#: tpa-platform's images (DSA-6613-1). Remove an entry here and in the Dockerfile together once the base has it.
+SECURITY_UPGRADES = ("zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1",)
+UPGRADE_STEP = re.compile(r'^SECURITY_UPGRADES="([^"]*)" && (.*)$')
 #: The build stage's one install: the lock's wheels alone, each checked against its hash, into a folder of its own.
 INSTALL = ('["python", "-I", "-m", "pip", "install", "--no-cache-dir", "--disable-pip-version-check", "--no-input", '
            '"--require-hashes", "--only-binary", ":all:", "--no-deps", "--target", "/deps", "-r", '
@@ -121,9 +125,41 @@ class Dockerfile(unittest.TestCase):
         self.assertNotIn("ENV", names)
 
     def test_no_other_package_installer(self):
-        # The build stage's one pip install (above) is the lock's; nothing else installs anything, anywhere.
-        text = "\n".join(args for _name, args in instructions() if args != INSTALL)
+        # The build stage's one pip install (above) is the lock's, and the final stage's one security-upgrade step
+        # (below) only upgrades packages the base has; nothing else installs anything, anywhere.
+        text = "\n".join(args for _name, args in instructions() if args != INSTALL and not UPGRADE_STEP.match(args))
         self.assertNotRegex(text, r"pip\W+install|\binstall\b|apt-get|apk add|curl|wget")
+
+    # --- security upgrades (DSA-6613-1: CVE-2026-85091, CVE-2026-76844), as records-service's ----------------------
+
+    def upgrade_steps(self):
+        _deps, image = stages()
+        return [(n, m) for n, (name, args) in enumerate(image) if name == "RUN" and (m := UPGRADE_STEP.match(args))]
+
+    def test_the_security_upgrade_step_carries_the_one_list_of_pins(self):
+        steps = self.upgrade_steps()
+        self.assertEqual(len(steps), 1, 'exactly one RUN SECURITY_UPGRADES="..." step, in the final stage')
+        pins = steps[0][1].group(1).split()
+        self.assertEqual(tuple(pins), SECURITY_UPGRADES)
+        for pin in pins:
+            self.assertRegex(pin, r"^[a-z0-9][a-z0-9+.\-]*=[A-Za-z0-9:.+~\-]+$")
+
+    def test_the_security_upgrade_step_installs_and_verifies_each_pin(self):
+        (_, match), = self.upgrade_steps()
+        body = match.group(2)
+        self.assertIn("apt-get update", body)
+        self.assertIn("apt-get install -y --no-install-recommends --only-upgrade $SECURITY_UPGRADES", body)
+        self.assertIn("dpkg-query -W -f='${Version}' \"${pin%%=*}\"", body)
+        self.assertIn('"${pin#*=}"', body)
+        self.assertIn("exit 1", body)
+        self.assertLess(body.index("apt-get install"), body.index("dpkg-query"))
+        self.assertLess(body.index("dpkg-query"), body.index("apt-get clean"))
+        self.assertTrue(body.rstrip().endswith("rm -rf /var/lib/apt/lists/*"))
+
+    def test_the_security_upgrade_step_comes_first_in_the_final_stage(self):
+        (at, _), = self.upgrade_steps()
+        _deps, image = stages()
+        self.assertEqual(at, 1, "right after the final stage's FROM, before the copies, pip check and the strip")
 
     def test_the_strip_script_is_tpa_platforms(self):
         self.assertEqual(hashlib.sha256(STRIP.read_bytes()).hexdigest(), STRIP_SHA256)

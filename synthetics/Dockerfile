@@ -32,6 +32,23 @@ RUN ["python", "-I", "-m", "pip", "install", "--no-cache-dir", "--disable-pip-ve
 
 FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
 
+# Security upgrades (CVE-2026-85091 and CVE-2026-76844, zlib, HIGH with a fix; DSA-6613-1, trixie-security), the
+# same step and pin as records-service's Dockerfile and tpa-platform's services: the scan gate refuses a HIGH finding
+# that has a fix, and Debian shipped it before python:3.12-slim carries it (the deploy session's build of 093aff85,
+# 2026-11-13, was refused for it). One installed binary package at one exact version; --only-upgrade never adds a
+# package the base lacks; the loop fails the build unless dpkg lists each at exactly its version (dpkg's status file
+# is what the scanner reads, and the strip keeps it). tests/synthetics/test_image_policy.py holds the list. Remove
+# the entry once the pinned base carries the fix.
+RUN SECURITY_UPGRADES="zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1" \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --only-upgrade $SECURITY_UPGRADES \
+    && for pin in $SECURITY_UPGRADES; do \
+         test "$(dpkg-query -W -f='${Version}' "${pin%%=*}")" = "${pin#*=}" \
+           || { echo "security upgrade $pin isn't installed at that version" >&2; exit 1; }; \
+       done \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=deps /deps/ /usr/local/lib/python3.12/site-packages/
 COPY synthetics/__init__.py synthetics/__main__.py synthetics/client.py synthetics/iap.py synthetics/journeys.py \
      synthetics/passkey.py synthetics/result.py synthetics/totp.py /usr/local/lib/python3.12/site-packages/synthetics/
