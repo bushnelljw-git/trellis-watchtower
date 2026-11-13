@@ -183,7 +183,7 @@ class TheTitleRules(Base):
         (subject, names, kept) = self.rules(self.sid, "titles")
         incident = "event.custom_details.incident"
         self.assertEqual(subject["conditions"], [{"expression": (
-            f"{incident}.documentation.subject matches regex '^(?:[[][^]]*[]] )?[a-z][a-z-]* · '")}])
+            f"{incident}.documentation.subject matches regex '^(?:[[][^]]*[]] )?[A-Za-z][A-Za-z-]* · '")}])
         self.assertEqual(names["conditions"], [{"expression": (
             f"{incident}.policy_name matches regex '[^[:space:]]' and "
             f"{incident}.condition_name matches regex '[^[:space:]]'")}])

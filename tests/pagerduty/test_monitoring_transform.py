@@ -185,6 +185,11 @@ class Transform(unittest.TestCase):
              "Alert policy or channel changed: delete notification channel"),
             ("[ALERT] [x] beta · two tags", None),  # one tag at most: what is left is not our shape
             ("production-full · records 5xx", "Records 5xx"),
+            # The production root's word once it no longer reads beta (tpa-platform display_environment = "TPA").
+            ("[ALERT - Warning] TPA · URGENT missed run: tpa-jobs-workload-audit",
+             "URGENT missed run: tpa-jobs-workload-audit"),
+            ("TPA · engine p95 above 2 s", "Engine p95 above 2 s"),
+            ("[ALERT - Warning] Something on a resource", None),  # Monitoring's own subject is still not ours
         ]:
             with self.subTest(subject=subject):
                 got = self.event(notification(documentation__subject=subject))["description"]
@@ -237,6 +242,7 @@ class Transform(unittest.TestCase):
         """pd_test_event.py's expected title is pdlib.transformer_title: the two must agree."""
         cases = [SAMPLE, notification(documentation=UNSET), notification(documentation=UNSET, policy_name=UNSET),
                  notification(documentation__subject="[RESOLVED] beta · x"),
+                 notification(documentation__subject="[ALERT - Warning] TPA · URGENT a thing: which"),
                  notification(documentation__subject="[ALERT - Warning] Something on a resource"),
                  notification(documentation__subject="beta · " + "y" * 400),
                  notification(documentation__subject=None, policy_name="  p ", condition_name=" c "),

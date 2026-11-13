@@ -210,7 +210,7 @@ POLICY_FIELD = f"{INCIDENT_FIELD}.policy_name"
 CONDITION_FIELD = f"{INCIDENT_FIELD}.condition_name"
 MONITORING_TAG = "(?:[[][^]]*[]] )?"
 # Our subject's shape after the tag, and the subject without it (the regex variable takes the capture group).
-OUR_SUBJECT = f"^{MONITORING_TAG}[a-z][a-z-]* · "
+OUR_SUBJECT = f"^{MONITORING_TAG}[A-Za-z][A-Za-z-]* · "   # the word may be the estate's ("TPA · "), not only an environment's
 SUBJECT_WITHOUT_TAG = f"^{MONITORING_TAG}(.+)"
 TITLES_SET = "titles"
 TITLE_SEPARATOR = " · "
@@ -261,7 +261,7 @@ CONTACT_WORDS = {
 
 TITLE_LIMIT = 250
 _TAG = re.compile(r"^\[[^\]]*\] ")
-_OUR_SUBJECT = re.compile(r"^[a-z][a-z-]* · ")
+_OUR_SUBJECT = re.compile(r"^[A-Za-z][A-Za-z-]* · ")
 
 
 _OPERATION = re.compile(r"google\.[A-Za-z0-9.]+\.([A-Z][A-Za-z]+)\b")

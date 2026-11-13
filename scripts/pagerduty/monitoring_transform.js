@@ -19,9 +19,11 @@ var TITLE_LIMIT = 250;
 
 // Monitoring's tag in front of a subject: "[ALERT - Warning] ", "[RESOLVED] ". At most one is dropped.
 var TAG = /^\[[^\]]*\] /;
-// A subject of ours after the tag: tpa-platform's "<environment> \u00b7 <what happened>". Monitoring's own subject
-// for a policy without one ("<condition> on <resource>") has no such shape and is not used.
-var OUR_SUBJECT = /^[a-z][a-z-]* \u00b7 /;
+// A subject of ours after the tag: tpa-platform's "<word> \u00b7 <what happened>", the word the environment's
+// ("beta", "production-full") or the estate's name where the environment word must not show ("TPA": the production
+// root is named beta, the owner, 2026-11-12: "We are NOT in beta"). Monitoring's own subject for a policy without
+// one ("<condition> on <resource>") has no such shape and is not used.
+var OUR_SUBJECT = /^[A-Za-z][A-Za-z-]* \u00b7 /;
 
 // The watchtower's pages (cloud/dashboards: each is at <watchtower>/d/<uid>).
 var OVERVIEW = { uid: "tw-cloud-overview", name: "overview" };
