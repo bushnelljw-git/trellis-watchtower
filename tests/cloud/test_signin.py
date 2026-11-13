@@ -214,8 +214,28 @@ class RowTest(unittest.TestCase):
             self.assertEqual((head["type"], head["title"], head["collapsed"]), ("row", gen.SIGNIN_ROW, False), env)
             self.assertTrue(head["title"].startswith("Can people sign in?"), env)
             self.assertEqual([p["title"] for p in tiles], PRODUCTION_TILES if env == "production" else BETA_TILES, env)
-            self.assertEqual(sum(p["gridPos"]["w"] for p in tiles), 24, env)
-            self.assertEqual({p["gridPos"]["y"] for p in tiles}, {1}, env)
+            if env == "production":
+                self.assertEqual(sum(p["gridPos"]["w"] for p in tiles), 24, env)
+                self.assertEqual({p["gridPos"]["y"] for p in tiles}, {1}, env)
+                continue
+            # The five tiles fill one line; the alerts take the whole width under them.
+            *line, alerts = tiles
+            self.assertEqual(sum(p["gridPos"]["w"] for p in line), 24, env)
+            self.assertEqual({p["gridPos"]["y"] for p in line}, {1}, env)
+            self.assertEqual((alerts["title"], alerts["gridPos"]["x"], alerts["gridPos"]["w"], alerts["gridPos"]["y"]),
+                             ("Sign-in alerts", 0, 24, 1 + line[0]["gridPos"]["h"]), env)
+
+    def test_every_tile_in_the_row_reads_at_the_rows_fixed_sizes(self):
+        # Left to size itself, Grafana drew a robot's three lines a few pixels high in a four-column tile (the owner,
+        # 2026-11-13: "I cant even read the text on this"); and no tile narrower than four columns, where a title is
+        # cut short ("Emails (2...").
+        for env in ("beta", "production"):
+            for p in row_tiles(RENDERED[env]["overview"])[1]:
+                if p["type"] != "stat":
+                    continue
+                self.assertEqual(p["options"].get("text"), {"valueSize": gen.SIGNIN_VALUE_SIZE,
+                                                            "titleSize": gen.SIGNIN_NAME_SIZE}, (env, p["title"]))
+                self.assertGreaterEqual(p["gridPos"]["w"], 4, (env, p["title"]))
 
     def test_the_old_journey_tiles_are_gone_and_nothing_reads_the_staff_journeys(self):
         for env, pages in {**RENDERED, "built": render(TPA_SIGNIN_ROBOTS=BUILT)}.items():

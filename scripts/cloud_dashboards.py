@@ -450,10 +450,15 @@ def panel(kind: str, title: str, ds: str | None, queries, description: str, *, w
     return p
 
 
-def stat(title, ds, queries, description, *, w=4, h=5, calc="sum", text_mode="auto", value_size=None, deps=(), **kw):
+def stat(title, ds, queries, description, *, w=4, h=5, calc="sum", text_mode="auto", value_size=None, title_size=None,
+         deps=(), **kw):
+    """A stat tile. `value_size` and `title_size` fix its values' and its field names' text in pixels; left out,
+    Grafana sizes each to the room it finds, and a tile of several values in a narrow column gets names it cannot
+    show readably (the robots' tiles, 2026-11-13: the owner, "I cant even read the text on this")."""
+    text = {**({"valueSize": value_size} if value_size else {}), **({"titleSize": title_size} if title_size else {})}
     p = panel("stat", title, ds, queries, description, w=w, h=h, options={
         "reduceOptions": {"calcs": [calc], "fields": "", "values": False},
-        **({"text": {"valueSize": value_size}} if value_size else {}),
+        **({"text": text} if text else {}),
         "orientation": "auto", "textMode": text_mode, "colorMode": "value", "graphMode": "none",
         "justifyMode": "auto", "wideLayout": True, "showPercentChange": False}, **kw)
     return quieten(p, deps) if deps else p
@@ -1280,6 +1285,12 @@ def uptime_tile(w=4, h=5) -> dict:
 # pass, its day's pass rate), the sign-in codes going out (texts, emails), the two outside checks on the portal host,
 # and the sign-in alerts, each read as its own policy reads it (Grafana's Cloud Monitoring datasource cannot list
 # incidents: the incidents are PagerDuty's).
+# Every tile in the row shows its names and values at these sizes, fixed, never Grafana's own: left to size itself, a
+# robot's three lines in a four-column tile came out a few pixels high (the owner, 2026-11-13: "I cant even read the
+# text on this") while the two-line tiles beside it ran their words off the edge. Rendered at 1470 px wide (a laptop),
+# each tile's longest name and value fit its width at these sizes.
+SIGNIN_NAME_SIZE = 16
+SIGNIN_VALUE_SIZE = 22
 #
 # How a window that ends now is read. Cloud Monitoring places an aligned point at the request's end time, then one
 # alignment period back, and so on, and Grafana's frame takes each point's end time; a counter writes no point for a
@@ -1548,6 +1559,7 @@ def robot_tile(key: str, who: str, title: str, factor: str, job: str, w: int = 5
              "\"database stopped\" while auth-db is: in no colour, and nothing is asked of Cloud Monitoring while it "
              "is not deployed. The link opens its runs on the Sign-in page.",
              w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from=f"{s['off_hours']}h",
+             value_size=SIGNIN_VALUE_SIZE, title_size=SIGNIN_NAME_SIZE,
              no_value=when_quiet(deps, f"✕ Not reporting: no result in {s['off_hours']} h"),
              steps=_quiet_steps(deps, [(None, RED)]),
              links=[{"title": f"{title}: its runs by outcome (Sign-in page)",
@@ -1625,6 +1637,7 @@ def outside_checks_tile(w: int = 3, h: int = 5) -> dict:
              "not page); ✓ passing, teal; missing when a check reported nothing in that window (not built, or not "
              "reporting).", w=w, h=h, calc="lastNotNull", text_mode="value_and_name",
              time_from=f"{seconds(UPTIME_POLICY['period']) // 60}m", no_value=UPTIME_MISSING,
+             value_size=SIGNIN_VALUE_SIZE, title_size=SIGNIN_NAME_SIZE,
              transformations=_window_steps() + a.steps + [
                  {"id": "organize", "options": {"includeByName": {n: True for n in shown},
                                                 "indexByName": {n: i for i, n in enumerate(shown)}}}],
@@ -1663,7 +1676,8 @@ def texts_tile(w: int = 4, h: int = 5) -> dict:
              "(`auth_message_vendor_failures` on the sms lane; `sign-in-message-vendor`, urgent, at five in 15 "
              "minutes). A text whose delivery is never read back counts in none of these. Each member's own status "
              "is in their Notifications in ops.", w=w, h=h, calc="lastNotNull", text_mode="value_and_name",
-             time_from="24h", no_value="No texted code in 24 h",
+             time_from="24h", no_value="No texted code in 24 h", value_size=SIGNIN_VALUE_SIZE,
+             title_size=SIGNIN_NAME_SIZE,
              transformations=_window_steps() + a.steps + [
                  {"id": "organize", "options": {"includeByName": {n: True for n in shown},
                                                 "indexByName": {n: i for i, n in enumerate(shown)}}}],
@@ -1693,7 +1707,8 @@ def emails_tile(env: str, w: int = 3, h: int = 5) -> dict:
               else "") + ". No counter counts the emails sent: auth writes no line per email, so none going wrong "
              "reads as none here. A message of either kind waiting too long is the Sign-in alerts tile's (`auth-"
              "messages-stalled`).", w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from="24h",
-             no_value="None refused in 24 h", steps=thresholds(NEUTRAL, (1, AMBER)), decimals=0,
+             value_size=SIGNIN_VALUE_SIZE, title_size=SIGNIN_NAME_SIZE, no_value="None refused in 24 h",
+             steps=thresholds(NEUTRAL, (1, AMBER)), decimals=0,
              transformations=_window_steps() + a.steps + [
                  {"id": "organize", "options": {"includeByName": {n: True for n in shown},
                                                 "indexByName": {n: i for i, n in enumerate(shown)}}}])
@@ -2765,8 +2780,10 @@ def signin_row(env: str) -> list[dict]:
     if env != "beta":
         return [row(SIGNIN_ROW), emails_tile(env, w=6), alerts_table(env, w=18)]
     member, broker = ((key, who, title, factor, job) for (key, who, title, factor), job in zip(SIGNIN_ROBOTS, ROBOT_JOBS))
-    return [row(SIGNIN_ROW), robot_tile(*member, w=4), robot_tile(*broker, w=4), texts_tile(w=4), emails_tile(env, w=3),
-            outside_checks_tile(w=3), alerts_table(env, w=6)]
+    # Five tiles on one line, each wide enough for its title and its words at the row's sizes (at three columns a
+    # title was cut to "Emails (2..."), and the alerts the whole width under them, a line each.
+    return [row(SIGNIN_ROW), robot_tile(*member, w=5), robot_tile(*broker, w=5), texts_tile(w=5),
+            emails_tile(env, w=4), outside_checks_tile(w=5), alerts_table(env, w=24, h=4)]
 
 
 def overview(cc: bool = True, env: str = "beta") -> dict:
