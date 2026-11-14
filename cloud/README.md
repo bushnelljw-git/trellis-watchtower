@@ -174,20 +174,23 @@ three tiles for it on a line under the sign-in tiles (`email_checks_tile`, `last
 | Tile | Reads | Says |
 |---|---|---|
 | Email checks | `mail_check_arrived` by lane over the urgent policies' 2 h 15 min window, any arrival in the day (the newest row's anchor), and `mail_check_refused` in the day; the app datasource | invites and notices: ✓ arriving, teal, or ✕ none in 2 h 15 min, red, as `mail-check-invites-missing` and `mail-check-notices-missing` read it; refused (24 h), amber from one; "No check arrived in 24 h" |
-| Last check | `mail_check_arrived` by lane, each minute it arrived; the app datasource | each lane's newest arrival as a time ago; a lane with none in 24 h is missing here (Email checks says ✕) |
+| Last check | `mail_check_arrived` by lane, each minute it arrived; the app datasource | each lane's newest arrival as a time ago, or "none in 24 h", red, for a lane with none (the first day both do) |
 | Email delivery (24 h) | records' `records_vendor_events` by SendGrid's event; the PHI datasource | delivered (every email), teal; bounced or dropped, and spam reports, of real emails alone (the kinds `email-delivery-failed` counts), amber from one |
 
 The inbox's two counters live in its own project, which the app project's metrics scope reads, so the app datasource
 charts them with no new grant; records' counter is the PHI project's. Three tiles, because a panel never mixes
 datasources, and a status read the pager's way (the window that ends now, below) cannot share a frame with a time ago.
 The status reads its window from the vendored catalogue's PromQL and the amber counts their kinds from the delivery
-policy's filter (`test_the_window_and_the_real_kinds_are_the_policies`).
+policy's filter (`test_the_window_and_the_real_kinds_are_the_policies`). Email checks and Last check also ask for every
+uptime check result in the app project in the day (`seeing`, as the database tiles read it; never shown): a series that
+always has a point at the range's end, so each lane keeps its row when it has no arrival at all, the first day
+included, and reads red rather than leaving the tile.
 
 **Deploy order.** The three counters exist from tpa-platform's mail check `inbox` stage on (`mail_check_stage`, beta's
 `mailcheck.tf`; never back to `off` once made, since the inbox's App Engine application is permanent). Before that,
 Cloud Monitoring answers these queries "Cannot find metric(s)" and the three tiles show Grafana's error triangle. So
 this image's digest moves after the `inbox` stage is applied (tpa-platform's deploy NOTICE orders it so); until the
-first check arrives, Email checks reads "No check arrived in 24 h".
+first check arrives, Email checks reads ✕ and Last check "none in 24 h" for both lanes.
 
 **A window that ends now.** Each rule's count is a query whose alignment period is the policy's window. Cloud
 Monitoring places an aligned point at the request's end time and then one period back at a time (read on production,

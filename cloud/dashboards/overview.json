@@ -6412,7 +6412,7 @@
     {
       "type": "stat",
       "title": "Email checks",
-      "description": "The hourly mail check (tpa-platform D-400): records sends one check email an hour on each lane through the queues real emails take, invites through the opening-email chain and auth's messenger, notices through records' outbox and connectors, both to SendGrid; a Google-managed inbox counts each one whose DKIM signature proves we sent it (`mail_check_arrived`). invites and notices: ✓ arriving while a check of that lane arrived in the last 2 h 15 min, ✕ none in 2 h 15 min, red, as the urgent `mail-check-invites-missing` and `mail-check-notices-missing` read it (two hourly checks in a row; one late check is not a failure). refused (24 h): deliveries the inbox refused (`mail_check_refused`, by reason: not one of its addresses, not the check's subject, a signature missing, not ours or not verifying, a check older than a day or ahead of the clock, any request but Google's mail delivery). When each lane last arrived is Last check, beside this tile.",
+      "description": "The hourly mail check (tpa-platform D-400): records sends one check email an hour on each lane through the queues real emails take, invites through the opening-email chain and auth's messenger, notices through records' outbox and connectors, both to SendGrid; a Google-managed inbox counts each one whose DKIM signature proves we sent it (`mail_check_arrived`). invites and notices: ✓ arriving while a check of that lane arrived in the last 2 h 15 min, ✕ none in 2 h 15 min, red, as the urgent `mail-check-invites-missing` and `mail-check-notices-missing` read it (two hourly checks in a row; one late check is not a failure). refused (24 h): deliveries the inbox refused (`mail_check_refused`, by reason: not one of its addresses, not the check's subject, a signature missing, not ours or not verifying, a check older than a day or ahead of the clock, any request but Google's mail delivery). Before any check has arrived (the first day) both lanes read ✕. When each lane last arrived is Last check, beside this tile.",
       "gridPos": {
         "h": 5,
         "w": 8,
@@ -6539,6 +6539,33 @@
             "preprocessor": "none"
           },
           "aliasBy": "refused count"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "monitoring.googleapis.com/uptime_check/check_passed",
+              "AND",
+              "resource.type",
+              "=",
+              "uptime_url"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "seeing"
         }
       ],
       "interval": "1m",
@@ -6915,7 +6942,7 @@
     {
       "type": "stat",
       "title": "Last check",
-      "description": "When each lane's newest mail check arrived in the inbox (`mail_check_arrived`, tpa-platform D-400), as a time ago: about an hour at most while it runs. A lane with none in 24 hours is missing here; Email checks beside it then reads ✕ and its urgent policy has opened.",
+      "description": "When each lane's newest mail check arrived in the inbox (`mail_check_arrived`, tpa-platform D-400), as a time ago: about an hour at most while it runs. A lane with no check in 24 hours reads \"none in 24 h\", red (the first day, before any check, both do); Email checks beside it reads ✕, and its urgent policy opens 2 h 15 min after a lane's last check once it has arrived at least once.",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -6988,6 +7015,33 @@
             "preprocessor": "none"
           },
           "aliasBy": "notices"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "monitoring.googleapis.com/uptime_check/check_passed",
+              "AND",
+              "resource.type",
+              "=",
+              "uptime_url"
+            ],
+            "groupBys": [],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "alignmentPeriod": "+86400s",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "seeing"
         }
       ],
       "interval": "1m",
@@ -7021,6 +7075,50 @@
               {
                 "id": "unit",
                 "value": "dateTimeFromNow"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null+nan",
+                      "result": {
+                        "text": "none in 24 h",
+                        "color": "#d03b3b",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": -1.7976931348623157e+308,
+                      "to": 1,
+                      "result": {
+                        "text": "none in 24 h",
+                        "color": "#d03b3b",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#d03b3b",
+                      "value": null
+                    },
+                    {
+                      "color": "text",
+                      "value": 1
+                    }
+                  ]
+                }
               }
             ]
           },
@@ -7033,6 +7131,50 @@
               {
                 "id": "unit",
                 "value": "dateTimeFromNow"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null+nan",
+                      "result": {
+                        "text": "none in 24 h",
+                        "color": "#d03b3b",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": -1.7976931348623157e+308,
+                      "to": 1,
+                      "result": {
+                        "text": "none in 24 h",
+                        "color": "#d03b3b",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#d03b3b",
+                      "value": null
+                    },
+                    {
+                      "color": "text",
+                      "value": 1
+                    }
+                  ]
+                }
               }
             ]
           }
@@ -7180,25 +7322,67 @@
           }
         },
         {
+          "id": "reduce",
+          "filter": {
+            "id": "byRefId",
+            "options": "C"
+          },
+          "options": {
+            "mode": "reduceFields",
+            "reducers": [
+              "max"
+            ],
+            "includeTimeField": false
+          }
+        },
+        {
           "id": "concatenate",
           "options": {
             "frameNameMode": "drop"
           }
         },
         {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "invites last",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "max",
+              "include": [
+                "invites at"
+              ]
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "reduceRow",
+            "alias": "notices last",
+            "replaceFields": false,
+            "reduce": {
+              "reducer": "max",
+              "include": [
+                "notices at"
+              ]
+            }
+          }
+        },
+        {
           "id": "organize",
           "options": {
             "includeByName": {
-              "invites at": true,
-              "notices at": true
+              "invites last": true,
+              "notices last": true
             },
             "renameByName": {
-              "invites at": "invites",
-              "notices at": "notices"
+              "invites last": "invites",
+              "notices last": "notices"
             },
             "indexByName": {
-              "invites at": 0,
-              "notices at": 1
+              "invites last": 0,
+              "notices last": 1
             }
           }
         }

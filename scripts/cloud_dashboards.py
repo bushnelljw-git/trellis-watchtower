@@ -1735,6 +1735,16 @@ MAIL_CHECK_WINDOW = "2 h 15 min"
 # The kinds of email records matches a report to that are real emails, as email-delivery-failed counts them (the mail
 # checks' own left out).
 REAL_EMAIL_KINDS = "opening|notice|auth_message|unmatched"
+# The rows' anchor: every uptime check result in the app project in the day (they arrive every minute from three regions,
+# as the database tiles' "seeing" reads them), a series that always holds a point at the range's end. With it each lane
+# keeps its row when it has no arrival at all (the first day, before any check), and reads red, never vanishing (the
+# coordinator's check of the first render, 2026-11-13). It is never shown.
+MAIL_ANCHOR = "seeing"
+LANE_NONE = "none in 24 h"
+
+
+def mail_anchor() -> dict:
+    return q(UPTIME, URL, align="ALIGN_COUNT", period="+86400s", reduce="REDUCE_SUM", name=MAIL_ANCHOR)
 
 
 def email_checks_tile(w: int = 8, h: int = 5) -> dict:
@@ -1746,7 +1756,7 @@ def email_checks_tile(w: int = 8, h: int = 5) -> dict:
     # Any arrival in the day, a window that always ends now when there was one: it holds the newest row at the range's
     # end, so a lane with nothing in the newest window reads 0 there, never an older window's count.
     queries += [q(log("mail_check_arrived"), GAE, period=day, by=(), name="arrivals count"),
-                q(log("mail_check_refused"), GAE, period=day, by=(), name="refused count")]
+                q(log("mail_check_refused"), GAE, period=day, by=(), name="refused count"), mail_anchor()]
     shown = {**{a.at_least(a.count(f"{lane} window")): lane for lane in MAIL_LANES},
              a.total("refused (24 h)", [a.count("refused count")]): "refused (24 h)"}
     status = [{"type": "value", "options": {"0": {"text": f"✕ none in {MAIL_CHECK_WINDOW}", "color": RED, "index": 0},
@@ -1761,7 +1771,8 @@ def email_checks_tile(w: int = 8, h: int = 5) -> dict:
              "late check is not a failure). refused (24 h): deliveries the inbox refused (`mail_check_refused`, by "
              "reason: not one of its addresses, not the check's subject, a signature missing, not ours or not "
              "verifying, a check older than a day or ahead of the clock, any request but Google's mail delivery). "
-             "When each lane last arrived is Last check, beside this tile.",
+             "Before any check has arrived (the first day) both lanes read ✕. When each lane last arrived is Last "
+             "check, beside this tile.",
              w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from="24h",
              value_size=SIGNIN_VALUE_SIZE, title_size=SIGNIN_NAME_SIZE, no_value="No check arrived in 24 h",
              decimals=0,
@@ -1781,10 +1792,11 @@ def email_checks_tile(w: int = 8, h: int = 5) -> dict:
 def last_check_tile(w: int = 6, h: int = 5) -> dict:
     """When each lane's newest check arrived, as a time ago."""
     queries = [q(log("mail_check_arrived"), GAE, period="+60s", by=(), name=lane, lane=lane) for lane in MAIL_LANES]
+    queries.append(mail_anchor())
     steps: list[dict] = []
     # Each lane's frame alone: its minutes with an arrival, each minute's time as a number, the newest of them. A lane
-    # with no arrival in the range has no frame, so it is missing here rather than read as some old time (Email checks
-    # beside it says ✕).
+    # with no arrival in the range has no frame; the anchor's frame (query C, reduced to its one row) still makes a row,
+    # where each lane's newest time is read across what arrived, none for a lane with no frame: "none in 24 h", red.
     for ref, lane in zip("AB", MAIL_LANES):
         only = {"id": "byRefId", "options": ref}
         steps += [{"id": "filterByValue", "filter": only, "options": {"type": "include", "match": "any", "filters": [
@@ -1792,12 +1804,21 @@ def last_check_tile(w: int = 6, h: int = 5) -> dict:
                   {**calc(f"{lane} at", "Time", "*", 1), "filter": only},
                   {"id": "reduce", "filter": only,
                    "options": {"mode": "reduceFields", "reducers": ["max"], "includeTimeField": False}}]
-    steps.append({"id": "concatenate", "options": {"frameNameMode": "drop"}})
-    names = {f"{lane} at": lane for lane in MAIL_LANES}
+    steps += [{"id": "reduce", "filter": {"id": "byRefId", "options": "C"},
+               "options": {"mode": "reduceFields", "reducers": ["max"], "includeTimeField": False}},
+              {"id": "concatenate", "options": {"frameNameMode": "drop"}},
+              *[reduce_row(f"{lane} last", "max", [f"{lane} at"]) for lane in MAIL_LANES]]
+    names = {f"{lane} last": lane for lane in MAIL_LANES}
+    # No time, or none Grafana can draw as one (its reduce over nothing): the lane's red words, as Email checks' ✕.
+    none = [{"type": "special", "options": {"match": "null+nan", "result": {"text": LANE_NONE, "color": RED,
+                                                                            "index": 0}}},
+            {"type": "range", "options": {"from": -sys.float_info.max, "to": 1,
+                                          "result": {"text": LANE_NONE, "color": RED, "index": 1}}}]
     p = stat("Last check", APP, queries,
              "When each lane's newest mail check arrived in the inbox (`mail_check_arrived`, tpa-platform D-400), as a "
-             "time ago: about an hour at most while it runs. A lane with none in 24 hours is missing here; Email "
-             "checks beside it then reads ✕ and its urgent policy has opened.",
+             "time ago: about an hour at most while it runs. A lane with no check in 24 hours reads \"none in 24 h\", "
+             "red (the first day, before any check, both do); Email checks beside it reads ✕, and its urgent policy "
+             "opens 2 h 15 min after a lane's last check once it has arrived at least once.",
              w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from="24h",
              value_size=SIGNIN_VALUE_SIZE, title_size=SIGNIN_NAME_SIZE, no_value="No check in 24 h",
              transformations=steps + [
@@ -1805,7 +1826,9 @@ def last_check_tile(w: int = 6, h: int = 5) -> dict:
                                                 "renameByName": names,
                                                 "indexByName": {n: i for i, n in enumerate(names)}}}],
              overrides=[{"matcher": {"id": "byName", "options": lane}, "properties": [
-                            {"id": "unit", "value": "dateTimeFromNow"}]} for lane in MAIL_LANES])
+                            {"id": "unit", "value": "dateTimeFromNow"},
+                            {"id": "mappings", "value": none},
+                            {"id": "thresholds", "value": thresholds(RED, (1, NEUTRAL))}]} for lane in MAIL_LANES])
     p["options"]["orientation"] = "horizontal"
     return p
 
