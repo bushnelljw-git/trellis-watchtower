@@ -260,6 +260,7 @@ CONTACT_WORDS = {
 }
 
 TITLE_LIMIT = 250
+ACTION_LIMIT = 80
 _TAG = re.compile(r"^\[[^\]]*\] ")
 _OUR_SUBJECT = re.compile(r"^[A-Za-z][A-Za-z-]* · ")
 
@@ -267,24 +268,42 @@ _OUR_SUBJECT = re.compile(r"^[A-Za-z][A-Za-z-]* · ")
 _OPERATION = re.compile(r"google\.[A-Za-z0-9.]+\.([A-Z][A-Za-z]+)\b")
 
 
-def transformer_title(incident: dict) -> str:
-    """The title monitoring_transform.js gives Monitoring's incident object: the same rules, written again here so
-    pd_test_event.py knows what to expect. tests/pagerduty/test_monitoring_transform.py holds the two to each other."""
+ACT_NOW, ACT_TODAY = "check now", "look today"
+
+
+def transformer_heading(incident: dict) -> tuple[str, str]:
+    """(what happened, whether to act) as monitoring_transform.js reads them from Monitoring's incident object, for an
+    alert outside its groups: the same rules, written again here so pd_test_event.py knows what to expect.
+    tests/pagerduty/test_monitoring_transform.py holds the two to each other."""
     def text(value) -> str:
         return "" if value is None else str(value).strip()
 
+    act = ACT_TODAY if text(incident.get("severity")).lower() == "warning" else ACT_NOW
     subject = _TAG.sub("", text((incident.get("documentation") or {}).get("subject")), count=1)
     policy, condition = text(incident.get("policy_name")), text(incident.get("condition_name"))
+    body = ""
     if _OUR_SUBJECT.match(subject):
         # The environment word is dropped and a Google operation name becomes its last part in words (the .js file).
-        title = _OPERATION.sub(lambda m: re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", m.group(1)).lower(),
-                               _OUR_SUBJECT.sub("", subject, count=1))
-        title = title[:1].upper() + title[1:]
-    elif policy and condition:
-        title = policy + TITLE_SEPARATOR + condition
-    else:
-        title = text(incident.get("summary")) or "Cloud Monitoring alert"
-    return title if len(title) <= TITLE_LIMIT else title[:TITLE_LIMIT - 3] + "..."
+        body = _OPERATION.sub(lambda m: re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", m.group(1)).lower(),
+                              _OUR_SUBJECT.sub("", subject, count=1))
+        body = (body[:1].upper() + body[1:]).strip()
+    if body:
+        what, sep, action = body.rpartition(TITLE_SEPARATOR)
+        return (what, action) if sep else (body, act)
+    if policy and condition:
+        return policy + TITLE_SEPARATOR + condition, act
+    return text(incident.get("summary")) or "Cloud Monitoring alert", act
+
+
+def transformer_title(incident: dict) -> str:
+    """The title monitoring_transform.js gives an alert outside its groups: what happened, cut so that whether to act
+    always shows, then whether to act."""
+    what, action = transformer_heading(incident)
+    if len(action) > ACTION_LIMIT:
+        action = action[:ACTION_LIMIT - 3] + "..."
+    end = f"{TITLE_SEPARATOR}{action}" if action else ""
+    limit = TITLE_LIMIT - len(end)
+    return (what if len(what) <= limit else what[:limit - 3] + "...") + end
 
 
 def normalise_code(code: str | None) -> str:

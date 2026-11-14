@@ -51,20 +51,20 @@ class TestEvents(Base):
     def test_summaries_say_test(self):
         self.event("--role", "app", "--severity", "error", "--send", "--wait", "5")
         (incident,) = self.state.incidents.values()
-        self.assertEqual(incident["title"], "test · PagerDuty setup check, please ignore (error, TPA · Portal & "
-                                            "API)", "the subject, without Monitoring's tag")
+        self.assertEqual(incident["title"], "TPA · TEST (ignore): PagerDuty setup check (error, TPA · Portal & "
+                                            "API) · no action needed", "the subject, without Monitoring's tag")
 
     def test_the_title_is_the_events_subject_and_the_resolve_still_finds_it(self):
         result = self.event("--role", "cc", "--severity", "warning", "--send", "--wait", "5")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('title "test · PagerDuty setup check, please ignore (warning, TPA · Call centre)"',
-                      result.stdout)
+        self.assertIn('title "TPA · TEST (ignore): PagerDuty setup check (warning, TPA · Call centre) · no action '
+                      'needed"', result.stdout)
         self.assertIn("status resolved", result.stdout, "the resolve is matched by the incident key alone")
 
     def test_monitorings_own_subject_titles_policy_and_condition(self):
         result = self.event("--role", "app", "--severity", "Critical", "--monitoring-subject", "--send", "--wait", "5")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('title "TEST — PagerDuty setup check, please ignore · test condition"', result.stdout)
+        self.assertIn('title "TEST (ignore): PagerDuty setup check · test condition"', result.stdout)
         self.assertIn("as designed", result.stdout)
 
     def test_without_the_title_rules_the_check_fails(self):
@@ -77,9 +77,9 @@ class TestEvents(Base):
         result = self.event("--role", "app", "--severity", "warning", "--send", "--wait", "5")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("urgency low, alert severity warning, priority P3", result.stdout)
-        self.assertIn('NOT as designed: wanted urgency low, severity warning, priority P3, title "test · ',
+        self.assertIn('NOT as designed: wanted urgency low, severity warning, priority P3, title "TPA · TEST (ignore): ',
                       result.stdout)
-        self.assertIn('title "TEST — PagerDuty setup check, please ignore: Monitoring\'s own summary', result.stdout)
+        self.assertIn('title "TEST (ignore): PagerDuty setup check: Monitoring\'s own summary', result.stdout)
 
 
 if __name__ == "__main__":

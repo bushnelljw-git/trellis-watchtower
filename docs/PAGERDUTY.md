@@ -43,8 +43,8 @@ PagerDuty deleted the TPA's first account. The owner made a new one and the same
   `pagerduty.com:slack:reply-in-incident-thread:1`; made through `POST /incident_workflows`, by hand, not yet by
   `pd_setup.py`). Started by hand through the API it posts as designed. Its **trigger** could not be made through the
   API (`POST /incident_workflows/triggers` answered 500 "Reduce of empty array with no initial value" for every
-  shape tried with the account key), so a person adds it in PagerDuty: the workflow → Triggers → "Conditional
-  trigger", the three "TPA beta ·" services, condition "incident status is triggered".
+  shape tried with the account key), so a person adds it in PagerDuty: the steps are in "Slack", "The thread
+  reply" below. Until then the workflow never runs (the owner, 2026-11-14: "why is there not link to watchtower").
 - **No "beta" in what people read (the owner, 2026-11-12: "We are NOT in beta").** The Terraform root is named
   `beta` but it is the production estate. The services are "TPA · Portal & API", "TPA · Member records" and
   "TPA · Call centre", the business service "Trellis TPA", and the titled integration drops the subject's
@@ -134,13 +134,32 @@ in the app, by email and in Slack. Incident #31's title was:
 > labels {code=workload_orphan, job=workload_audit} is above the threshold of 0.000 with a value of 2.000. | Violation
 > started: … | Policy: beta: a job raised an alert | Condition: from a scheduled run | View incident: https://…
 
-The title, either way, is the same three rules, the first that fits:
+**Plain words and whether to act (2026-11-14).** The owner, of two posts in the incidents channel ("Cloud Armor
+refusals spiked: armor-web" and "Changes, 10:00 to 12:00 UTC: Log metric changed: update log metric"): *"Why am i
+seeing these in my slack channel? I have no idea what these are, why are they not descriptive on the problem, why is
+there not link to watchtower"*. PagerDuty's Slack card shows only the title, status and priority, so the title is the
+only text read in the channel. Every title now says what happened in plain words and ends with whether anyone needs
+to act: "<what happened> · <whether to act>".
+
+- **tpa-platform writes both halves** in the policy's subject (its `infra/monitoring.yml` and monitoring module):
+  "TPA · [URGENT ]<what happened>[: <which>] · <whether to act>", the policy's own words ("check it's not real
+  people", "expected during a deploy; check the deploy notes") or its tier's ("check now" p1, "look today" p2,
+  "no action needed" p3 and notices). The last ` · ` is the one before whether to act (what happened may hold one).
+- **A subject without whether to act** (written before that change, until DEPLOY CHANNEL applies it; or Monitoring's
+  own words) is given one by the alert's severity: Warning "look today"; Critical, Error and anything else "check
+  now" (an unmapped severity pages at high urgency).
+- **A long title** is cut in what happened, never in whether to act (itself at most 80 characters).
+
+The title is the first of these that fits, then whether to act:
 
 | Rule | Fits when | Title |
 |---|---|---|
-| The policy's own subject | `documentation.subject`, after at most one leading `[…] ` tag, starts with a word and ` · ` (tpa-platform's "<environment> · <what happened>") | the subject without the tag, e.g. "beta · tpa-jobs cutoff_freeze behind: cutoff_freeze_behind" |
-| policy · condition | `policy_name` and `condition_name` both have one | "beta: a job raised an alert · from a scheduled run" |
-| As Monitoring wrote it | otherwise | Monitoring's summary (or "Cloud Monitoring alert" when there is none) |
+| The policy's own subject | `documentation.subject`, after at most one leading `[…] ` tag, starts with a word and ` · ` (tpa-platform's "TPA · <what happened> · <whether to act>") | the subject without the tag and the word, e.g. "Portal firewall blocked a burst of suspicious requests: armor-web · check it's not real people"; an old one gains whether to act: "Cloud Armor refusals spiked: armor-web · look today" |
+| policy · condition | `policy_name` and `condition_name` both have one | "beta: a job raised an alert · from a scheduled run · look today" |
+| As Monitoring wrote it | otherwise | Monitoring's summary (or "Cloud Monitoring alert" when there is none), then whether to act |
+
+A test event's subject begins "TPA · TEST (ignore): ", and every title keeps that mark in front, a group's included,
+so a test reads as one in Slack.
 
 ### The titled integration (how the account runs, 2026-11-12)
 
@@ -167,7 +186,11 @@ of the plan the account has, with no add-on.
   nothing is downgraded:
   - **Control-plane changes**: one change counter (`iam_policy_changes`, `network_control_changes`,
     `monitoring_changes` or `log_metric_changes`) within one two-hour UTC slot (from `started_at`) is one incident,
-    titled "Changes, 02:00 to 04:00 UTC: <the first change>". The counter is in the key (the review), so a change of
+    titled in plain words from the counter and the first change's operation, e.g. "Portal & API settings changed
+    during 02:00–04:00 UTC (an alert counter was updated) · expected during a deploy; check the deploy notes" (the
+    area from the project, "Production" for another; the operation label's method as "a firewall rule was added",
+    "access rights were changed on a secret", "an alert policy was deleted"; whether to act the subject's own, else
+    those deploy words). The counter is in the key (the review), so a change of
     another kind during an apply still pages on its own. An approved apply made 4 to 8 change incidents per project,
     one per method (105 incidents from 11-07 to 11-14, most of them changes); now it is at most one per kind per
     project per slot. These policies send no close (#202), so a person resolves the incident after reading the
@@ -175,8 +198,10 @@ of the plan the account has, with no add-on.
     `started_at` is when Google opened its incident, a few minutes after the change: read the slot against the deploy
     NOTICE's START and DONE with that slack.
   - **One Cloud Run service failing**: `run_system_errors`, `run_crash_exits`, `run_oom_kills` and
-    `sql_proxy_errors` for one service (or job) within one half-hour UTC slot are one incident, titled "<service>
-    failing, from 02:00 to 02:30 UTC: <the first alert>". A Google close of one of them is dropped (no event): one
+    `sql_proxy_errors` for one service (or job) within one half-hour UTC slot are one incident, titled "The records
+    service is failing during 02:00–02:30 UTC (it crashed) · look today" (the first alert's counter in plain words:
+    could not start or failed a health check, crashed, ran out of memory, could not reach its database; whether to
+    act the subject's own, else by severity). A Google close of one of them is dropped (no event): one
     counter going quiet must not resolve an incident whose other counters still fire, so a person resolves it, after
     checking each one's Cloud Monitoring incident (PagerDuty is not told when a counter goes quiet). tpa-platform's
     catalogue keeps these four policies on its waiting list (D-402).
@@ -194,8 +219,9 @@ of the plan the account has, with no add-on.
 
   | Detail | From |
   |---|---|
-  | `what_happened` | the title |
-  | `what_to_check` | `documentation.content`: the policy's own words on what happened and what to read |
+  | `what_happened` | what happened, in plain words: the alert's own title without its whether to act (in a group, this alert's, not the group's) |
+  | `what_to_do` | whether anyone needs to act, as the title ends |
+  | `what_to_check` | `documentation.content`: the policy's own words on what the alert means and what to read |
   | `dashboard` | the watchtower page that best fits the alert (below) |
   | `overview` | the watchtower's overview page |
   | `project` | `resource.labels.project_id` |
@@ -244,7 +270,7 @@ of the plan the account has, with no add-on.
 1. `make pagerduty-plan`: three creates, the titled integration on each service.
 2. `python3 scripts/pagerduty/pd_setup.py --apply`, then `make pagerduty-plan` again: "0 to create, 0 to update".
 3. `python3 scripts/pagerduty/pd_test_event.py --role app --severity Warning --send`, then `phi` and `cc`. Each must
-   print "as designed" with the title "test · PagerDuty setup check, please ignore (…)". It pages whoever is on call
+   print "as designed" with the title "TEST (ignore): PagerDuty setup check (…) · no action needed". It pages whoever is on call
    at low urgency, and resolves itself.
 4. The "Rotation" apply below, for all three channels, then the test page.
 
@@ -378,7 +404,7 @@ Slack user. Steps for a person:
 
 1. The channel is **#obatpa-incidents** (2026-11-12). A different channel needs **@PagerDuty** invited to it and
    `SLACK_CHANNEL` in `pdlib.py` changed.
-2. Connect each of the three "TPA beta ·" services to that channel. Either run `/pd connect` in the channel, or go
+2. Connect each of the three "TPA · …" services to that channel. Either run `/pd connect` in the channel, or go
    to PagerDuty → Integrations → Slack. Choose:
    - urgency: **all** (high and low);
    - priorities: **all** (no filter). An empty priority filter is reported as a gap;
@@ -392,6 +418,52 @@ Slack is reached **through PagerDuty**, not through Google's own Slack channel. 
 Acknowledge and Resolve buttons and every update in its thread. tpa-platform's `alert_slack_channel_ids` stays empty,
 so alerts aren't posted twice. `pd_setup.py` only reads the connections, through PagerDuty's Slack integration API on
 `app.pagerduty.com` (the same path on `api.pagerduty.com` answers 401 to an account key). It never makes one.
+
+### The thread reply (incident workflow "TPA: Slack thread with watchtower links")
+
+PagerDuty's card in the channel shows the title, status and priority only. The workflow replies in each incident's
+thread. Its message (updated 2026-11-14 through `PUT /incident_workflows/PBP4Q0H`, read back the same):
+
+```
+*What happened:* {{incident.title}}
+:pager:  <{{incident.url}}|Open the incident>: its *Watchtower* link opens the page that fits this alert best.
+:bar_chart:  *Watchtower* for _{{incident.service.name}}_:  Portal & API · Member records · Call centre (links)
+:mag:  *More:*  Overview · Jobs · Errors · Databases · Sign-in (links)
+```
+
+- **What a workflow can read.** PagerDuty's field references are the incident's own fields (`incident.title`,
+  `incident.url`, `incident.service.name`, `incident.urgency`, `incident.priority`, `incident.incident_key`,
+  `incident.custom_fields.<name>`, …; docs.pagerduty.com, "Incident Workflows", "Field References"). None reads an
+  alert's details, so the incident-specific words are the title, which says what happened and whether to act; the
+  best-fit watchtower page is the incident's own link ("Watchtower: <page>", the event's `client_url`).
+- **No branch on the service.** The workflow "Condition" step (`pagerduty.com:logic:incident-workflows-conditional-block:1`)
+  is for the Enterprise plan for Incident Management alone (its own entitlement note), so the message names each
+  area's page beside the service's name instead of choosing one. Three workflows, each triggered on one service,
+  would choose; each would need its own trigger made by hand.
+- **The trigger is still a person's step** (`POST /incident_workflows/triggers` answers 500 for every shape). Conditional
+  triggers are for the Business and Enterprise plans (PagerDuty's docs); if the screen shows "Conditional Trigger"
+  as locked, this plan cannot run the workflow by itself. The steps:
+  1. PagerDuty → **Automation** → **Incident Workflows** → "TPA: Slack thread with watchtower links" → **Open in
+     Builder**.
+  2. **Add Trigger** → **Conditional Trigger** → **When an incident is created**, with no condition.
+  3. Services: choose the three, "TPA · Portal & API", "TPA · Member records" and "TPA · Call centre" (not "Default
+     Service").
+  4. **Publish**, and confirm.
+  5. Check: `GET /incident_workflows/triggers?workflow_id=PBP4Q0H` lists one trigger with the three services, and the
+     next incident's thread has the reply.
+
+## Every source
+
+Everything that can post in #obatpa-incidents (read 2026-11-14: `GET /services?include[]=integrations`, the Slack
+connections, `/extensions`, `/webhook_subscriptions`, `/event_orchestrations`). There is no other integration: no
+Events API key, no Grafana or watchtower alerting, no CRM, call-centre or tpa-jobs sender.
+
+| Source | Title | Details and watchtower link |
+|---|---|---|
+| Each TPA service's "Google Cloud Monitoring (titled)" (the route every Monitoring channel uses) | "<what happened> · <whether to act>", above; the two groups their own | yes: `what_happened`, `what_to_do`, `what_to_check`, `measured`, `dashboard` and the links |
+| Each TPA service's plain "Google Cloud Monitoring" (the way back, `TW_PAGERDUTY_ROUTE=monitoring`; no channel uses it) | Monitoring's own long summary | Monitoring's payload only. Its title cannot change without the AIOps add-on (the owner: "We are not using AIops"), so it stays the way back alone |
+| "Default Service" (PagerDuty's own; no integration, connected to the channel) | whatever a person types when making an incident by hand | none. It was used for Slack checks; a person can disconnect it |
+| The thread reply (workflow above) | not a title: replies under the incident's card | the title and the incident's links; per-service branching needs Enterprise |
 
 ## Silencing
 

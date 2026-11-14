@@ -15,7 +15,21 @@
 
 var WATCHTOWER = "__WATCHTOWER_URL__";
 var SEPARATOR = " \u00b7 ";
+var DASH = "\u2013";
 var TITLE_LIMIT = 250;
+var ACTION_LIMIT = 80;
+
+// Whether anyone needs to act (the owner, 2026-11-14: "why are they not descriptive on the problem"). tpa-platform's
+// subject ends with it: "<what happened> \u00b7 <whether to act>", the policy's own words or its tier's ("check now",
+// "look today", "no action needed"). A title without one (a subject from before that, Monitoring's own words) is
+// given one by the alert's severity: Warning can wait for the day; Critical, Error and anything else page now (an
+// unmapped severity pages at high urgency, PagerDuty's default).
+var ACT_NOW = "check now";
+var ACT_TODAY = "look today";
+var DEPLOY_ACTION = "expected during a deploy; check the deploy notes";
+// A test event's mark, kept at the front of every title so a test reads as one in Slack.
+var TEST_MARK = /^TEST \(ignore\): /;
+var URGENT_MARK = /^URGENT /;
 
 // Monitoring's tag in front of a subject: "[ALERT - Warning] ", "[RESOLVED] ". At most one is dropped.
 var TAG = /^\[[^\]]*\] /;
@@ -63,6 +77,10 @@ var PAGES_BY_PROJECT = [
 //      not resolve an incident whose other counters still fire (an open real problem stays open).
 // A slot starts on the hour (or the half hour, or the even hour) in UTC, from Monitoring's started_at; a group that
 // crosses a slot's end is two incidents, never none. An event with no started_at is not grouped.
+// A group's title is its own, in plain words (the owner, 2026-11-14: "I have no idea what these are"): "Portal & API
+// settings changed during 10:00-12:00 UTC (an alert counter was updated) \u00b7 expected during a deploy; check the
+// deploy notes", and "The records service is failing during 02:00-02:30 UTC (it crashed) \u00b7 look today". Its
+// whether-to-act is the subject's own, else the deploy words for a change and the severity's for a failure.
 var GROUP_PREFIX = "logging.googleapis.com/user/";
 var CHANGE_METRICS = ["iam_policy_changes", "network_control_changes", "monitoring_changes", "log_metric_changes"];
 var CHANGE_SLOT_SECONDS = 2 * 3600;
@@ -103,20 +121,45 @@ function plain(subject) {
   return out.charAt(0).toUpperCase() + out.substring(1);
 }
 
-function title(i) {
+function cut(value, limit) {
+  return value.length > limit ? value.substring(0, limit - 3) + "..." : value;
+}
+
+function bySeverity(i) {
+  return text(i.severity).toLowerCase() === "warning" ? ACT_TODAY : ACT_NOW;
+}
+
+// Our subject after its word, in plain words, or null when the subject is not ours.
+function ours(i) {
   var subject = text(field(i.documentation, "subject")).replace(TAG, "");
+  if (!OUR_SUBJECT.test(subject)) { return null; }
+  return text(plain(subject.replace(OUR_SUBJECT, ""))) || null;
+}
+
+// What a person reads, as { what, action, own }: what happened, and whether anyone needs to act. `own` is true when
+// the action is the subject's own last part (after the last separator: what happened may hold one, as in
+// "TPA \u00b7 Portal & API").
+function heading(i) {
+  var body = ours(i);
   var policy = text(i.policy_name);
   var condition = text(i.condition_name);
-  var chosen = "Cloud Monitoring alert";
-  if (OUR_SUBJECT.test(subject)) {
-    chosen = plain(subject.replace(OUR_SUBJECT, ""));
-  } else if (policy && condition) {
-    chosen = policy + SEPARATOR + condition;
-  } else if (text(i.summary)) {
-    chosen = text(i.summary);
+  var at;
+  if (body !== null) {
+    at = body.lastIndexOf(SEPARATOR);
+    if (at !== -1) {
+      return { what: body.substring(0, at), action: body.substring(at + SEPARATOR.length), own: true };
+    }
+    return { what: body, action: bySeverity(i), own: false };
   }
-  if (chosen.length > TITLE_LIMIT) { chosen = chosen.substring(0, TITLE_LIMIT - 3) + "..."; }
-  return chosen;
+  if (policy && condition) { return { what: policy + SEPARATOR + condition, action: bySeverity(i), own: false }; }
+  return { what: text(i.summary) || "Cloud Monitoring alert", action: bySeverity(i), own: false };
+}
+
+// The title: what happened, cut so that whether to act always shows, then whether to act (itself cut at
+// ACTION_LIMIT, so what happened always has room).
+function titled(what, action) {
+  var end = action ? SEPARATOR + cut(action, ACTION_LIMIT) : "";
+  return cut(what, TITLE_LIMIT - end.length) + end;
 }
 
 function page(i) {
@@ -183,9 +226,11 @@ function metric(i) {
 
 // The details, in reading order. A field with nothing to say is left out. `incident` is Monitoring's own object,
 // unchanged: the services' severity rules read event.custom_details.incident.severity (pdlib.SEVERITY_FIELD).
-function details(i, what, best) {
+// `what_to_check` is the policy's own documentation: what the alert means and what to read.
+function details(i, h, best) {
   var all = [
-    ["what_happened", what],
+    ["what_happened", h.what],
+    ["what_to_do", h.action],
     ["what_to_check", text(field(i.documentation, "content"))],
     ["dashboard", link(best.uid)],
     ["overview", link(OVERVIEW.uid)],
@@ -239,41 +284,135 @@ function clock(seconds) {
   return two(d.getUTCHours()) + ":" + two(d.getUTCMinutes());
 }
 
-// The group an event belongs to (above), or null: { key, title, detail, keepOpen }.
-function group(i, what) {
+// The part of the estate a project is, in the words the watchtower's pages use; "Production" when it is none of them.
+function area(project) {
+  var n;
+  for (n = 0; n < PAGES_BY_PROJECT.length; n++) {
+    if (endsWith(project, PAGES_BY_PROJECT[n].ending)) { return PAGES_BY_PROJECT[n].name; }
+  }
+  return "Production";
+}
+
+// A Google method's name in lower-case words: "SetIAMPolicy" is ["set", "iam", "policy"], "addRule" ["add", "rule"].
+function words(name) {
+  return name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").toLowerCase()
+    .split(" ");
+}
+
+// A method's first word as what happened to the thing; "changed" for any other.
+var DONE = {
+  create: "created", insert: "created", add: "added", update: "updated", patch: "changed", set: "changed",
+  "delete": "deleted", remove: "removed", undelete: "restored", enable: "turned on", disable: "turned off",
+  destroy: "destroyed", replace: "replaced", rename: "renamed"
+};
+
+function done(verb) {
+  return Object.prototype.hasOwnProperty.call(DONE, verb) ? DONE[verb] : "changed";
+}
+
+// Where an IAM change was made, from the service in its operation's name; "" when it does not say.
+var IAM_PLACES = [
+  [".run.", " on a Cloud Run service"], ["secretmanager", " on a secret"], ["storage.", " on a storage bucket"],
+  ["iam.admin", " on a service account"], ["cloudkms", " on an encryption key"]
+];
+
+// One control-plane change in plain words, from its counter and its operation label (the method Google logged:
+// "google.logging.v2.MetricsServiceV2.UpdateLogMetric", "v1.compute.networkFirewallPolicies.addRule",
+// "storage.setIamPermissions", or a bare "SetIamPolicy"). A method these words do not know reads as its kind of
+// change: the operation itself is in the alert's details either way.
+function changed(name, operation) {
+  var parts = operation.split(".");
+  var method = parts[parts.length - 1] || "";
+  var collection = parts.length > 1 ? parts[parts.length - 2] : "";
+  var w = words(method);
+  var thing = w.slice(1).join(" ");
+  var verb = done(w[0]);
+  var n;
+  if (name === "log_metric_changes") { return "an alert counter was " + verb; }
+  if (name === "monitoring_changes") {
+    if (thing === "alert policy") { return "an alert policy was " + verb; }
+    if (thing === "notification channel") { return "an alert channel was " + verb; }
+    return "an alert policy or channel was " + verb;
+  }
+  if (name === "iam_policy_changes") {
+    if (contains(w, "role")) { return "an access role was " + verb; }
+    for (n = 0; n < IAM_PLACES.length; n++) {
+      if (operation.indexOf(IAM_PLACES[n][0]) !== -1) { return "access rights were changed" + IAM_PLACES[n][1]; }
+    }
+    return "access rights were changed";
+  }
+  if (contains(w, "rule")) {
+    return (collection === "securityPolicies" ? "a Cloud Armor rule" : "a firewall rule") + " was " + verb;
+  }
+  if (collection === "securityPolicies") { return "a Cloud Armor policy was " + verb; }
+  if (collection === "backendServices" && thing === "security policy") { return "a site's Cloud Armor policy was changed"; }
+  if (collection === "firewalls") { return "a firewall rule was " + verb; }
+  if (collection.toLowerCase().indexOf("firewall") !== -1) { return "a firewall policy was " + verb; }
+  return "a firewall or Cloud Armor rule was changed";
+}
+
+// What one failing counter means, in plain words.
+var FAILING = {
+  run_system_errors: "it could not start or failed a health check",
+  run_crash_exits: "it crashed",
+  run_oom_kills: "it ran out of memory",
+  sql_proxy_errors: "it could not reach its database"
+};
+
+// The marks our subject puts in front ("TEST (ignore): ", "URGENT "), kept in front of a group's own title.
+function marks(i) {
+  var body = ours(i) || "";
+  var test = "";
+  var urgent = "";
+  var n;
+  for (n = 0; n < 2; n++) {
+    if (TEST_MARK.test(body)) { test = "TEST (ignore): "; body = body.replace(TEST_MARK, ""); }
+    if (URGENT_MARK.test(body)) { urgent = "URGENT "; body = body.replace(URGENT_MARK, ""); }
+  }
+  return test + urgent;
+}
+
+// The group an event belongs to (above), or null: { key, what, action, detail, keepOpen }.
+function group(i, h) {
   var metricType = text(field(i.metric, "type"));
   var labels = field(field(i, "resource"), "labels");
   var project = text(field(labels, "project_id")) || text(i.scoping_project_id);
   var severity = text(i.severity).toLowerCase() || "none";
   var started = Number(i.started_at);
-  var name, slot, size, service, span;
+  var name, slot, size, service, span, kind;
   if (metricType.indexOf(GROUP_PREFIX) !== 0 || !isFinite(started) || started <= 0 || !project) { return null; }
   name = metricType.substring(GROUP_PREFIX.length);
   if (contains(CHANGE_METRICS, name)) {
     size = CHANGE_SLOT_SECONDS;
     slot = started - (started % size);
-    span = clock(slot) + " to " + clock(slot + size) + " UTC";
+    span = clock(slot) + DASH + clock(slot + size) + " UTC";
     return {
       key: "changes" + SEPARATOR + project + SEPARATOR + name + SEPARATOR + severity + SEPARATOR + slot,
-      title: "Changes, " + span + ": " + what,
-      detail: "One incident for this kind of change (" + name + ") in this project at this severity from " + span +
-        " (an apply makes many). Later ones in the slot are in this alert's log and page nobody: read the project's " +
-        "Admin Activity log for the whole slot before resolving.",
+      what: marks(i) + area(project) + " settings changed during " + span + " (" +
+        changed(name, text(field(field(i.metric, "labels"), "operation"))) + ")",
+      action: h.own ? h.action : DEPLOY_ACTION,
+      detail: "One incident for this kind of change (" + name + ") in this project at this severity during " + span +
+        ": a deploy makes many. Later ones in the slot are in this alert's log and page nobody. Compare the slot " +
+        "with the deploy notes (the NOTICE's START and DONE); if no deploy was running, read the project's Admin " +
+        "Activity log for the whole slot before resolving.",
       keepOpen: false
     };
   }
   if (contains(SERVICE_METRICS, name)) {
-    service = text(field(labels, "service_name")) || text(field(labels, "job_name"));
+    service = text(field(labels, "service_name"));
+    kind = " service";
+    if (!service) { service = text(field(labels, "job_name")); kind = " job"; }
     if (!service) { return null; }
     size = SERVICE_SLOT_SECONDS;
     slot = started - (started % size);
-    span = clock(slot) + " to " + clock(slot + size) + " UTC";
+    span = clock(slot) + DASH + clock(slot + size) + " UTC";
     return {
       key: "service" + SEPARATOR + project + SEPARATOR + service + SEPARATOR + severity + SEPARATOR + slot,
-      title: service + " failing, from " + span + ": " + what,
-      detail: "One incident for " + service + "'s start-up, crash, memory and database-dial alerts at this severity " +
-        "from " + span + ". Later ones in the slot are in this alert's log and page nobody. PagerDuty is not told " +
-        "when one goes quiet: check each one's Cloud Monitoring incident before resolving it by hand.",
+      what: marks(i) + "The " + service + kind + " is failing during " + span + " (" + FAILING[name] + ")",
+      action: h.own ? h.action : bySeverity(i),
+      detail: "One incident for the " + service + kind + "'s start-up, crash, memory and database alerts at this " +
+        "severity during " + span + ". Later ones in the slot are in this alert's log and page nobody. PagerDuty is " +
+        "not told when one goes quiet: check each one's Cloud Monitoring incident before resolving it by hand.",
       keepOpen: true
     };
   }
@@ -282,15 +421,15 @@ function group(i, what) {
 
 function main() {
   var i = incidentOf(PD.inputRequest.body);
-  var what, best, key, event, grouped, closed;
+  var h, best, key, event, grouped, closed;
   if (!i) {
     PD.fail("not a Cloud Monitoring notification: no incident object in the body");
     return;
   }
-  what = title(i);
+  h = heading(i);
   best = page(i);
   closed = text(i.state).toLowerCase() === "closed";
-  grouped = group(i, what);
+  grouped = group(i, h);
   if (grouped && grouped.keepOpen && closed) {
     // One member of a service's group closed: the incident stays open for a person (above).
     return;
@@ -301,16 +440,13 @@ function main() {
   }
   event = {
     event_type: closed ? PD.Resolve : PD.Trigger,
-    description: grouped ? grouped.title : what,
-    details: details(i, what, best),
+    description: grouped ? titled(grouped.what, grouped.action) : titled(h.what, h.action),
+    details: details(i, grouped ? { what: h.what, action: grouped.action } : h, best),
     client: "Watchtower: " + best.name,
     client_url: link(best.uid),
     contexts: contexts(i, best)
   };
   if (grouped) {
-    if (event.description.length > TITLE_LIMIT) {
-      event.description = event.description.substring(0, TITLE_LIMIT - 3) + "...";
-    }
     event.details.grouped = grouped.detail;
     key = grouped.key;
   }

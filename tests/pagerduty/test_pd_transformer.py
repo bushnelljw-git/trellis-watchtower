@@ -217,7 +217,7 @@ class DryTestEvent(Live):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([r for r in self.state.requests if r["path"].startswith("/events")], [])
         self.assertIn(f'route transformer (the "{NAME}" integration)', result.stdout)
-        self.assertIn('title "PagerDuty setup check, please ignore (Warning, TPA · Member records)"',
+        self.assertIn('title "TEST (ignore): PagerDuty setup check (Warning, TPA · Member records) · no action needed"',
                       result.stdout)
         shown = json.loads(result.stdout[result.stdout.index("{"):])
         self.assertEqual(sorted(shown), ["incident", "version"])
@@ -246,8 +246,8 @@ class TestEvents(Live):
                 result = self.event("--role", role, "--severity", severity, "--send", "--wait", "5")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn(outcome, result.stdout)
-                self.assertIn(f'title "PagerDuty setup check, please ignore ({severity}, {service})"',
-                              result.stdout)
+                self.assertIn(f'title "TEST (ignore): PagerDuty setup check ({severity}, {service}) · no action '
+                              f'needed"', result.stdout)
                 self.assertIn("\nas designed\n", result.stdout)
                 self.assertIn("status resolved", result.stdout, "closed by a notification with state closed")
         self.assertEqual(self.state.transformer_failures, [])
@@ -272,8 +272,9 @@ class TestEvents(Live):
         ((alert,),) = self.state.alerts.values()
         details = alert["body"]["details"]
         base = pdlib.WATCHTOWER_URL
-        self.assertEqual(list(details)[:4], ["what_happened", "what_to_check", "dashboard", "overview"])
-        self.assertEqual(details["what_happened"], alert["summary"])
+        self.assertEqual(list(details)[:5], ["what_happened", "what_to_do", "what_to_check", "dashboard", "overview"])
+        self.assertEqual(f'{details["what_happened"]} · {details["what_to_do"]}', alert["summary"])
+        self.assertEqual(details["what_to_do"], "no action needed", "the test subject's own")
         self.assertEqual(details["incident"]["severity"], "error")
         self.assertEqual(details["overview"], f"{base}/d/tw-cloud-overview")
         self.assertEqual(alert["body"]["contexts"],
@@ -284,14 +285,14 @@ class TestEvents(Live):
     def test_monitorings_own_subject_titles_policy_and_condition(self):
         result = self.event("--role", "app", "--severity", "Critical", "--monitoring-subject", "--send", "--wait", "5")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('title "TEST — PagerDuty setup check, please ignore · test condition"', result.stdout)
+        self.assertIn('title "TEST (ignore): PagerDuty setup check · test condition · check now"', result.stdout)
         self.assertIn("as designed", result.stdout)
 
     def test_the_way_back_goes_through_the_plain_integration_with_monitorings_summary(self):
         result = self.event("--role", "app", "--severity", "warning", "--send", "--wait", "5", route="monitoring")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('route monitoring (the "Google Cloud Monitoring" integration)', result.stdout)
-        self.assertIn('title "TEST — PagerDuty setup check, please ignore: Monitoring\'s own summary', result.stdout)
+        self.assertIn('title "TEST (ignore): PagerDuty setup check: Monitoring\'s own summary', result.stdout)
         self.assertIn("\nas designed\n", result.stdout)
         self.assertEqual({r["path"] for r in self.posts()}, {"/events/generic/2010-04-15/create_event.json"})
 

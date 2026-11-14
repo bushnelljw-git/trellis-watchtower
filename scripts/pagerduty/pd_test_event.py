@@ -12,8 +12,9 @@ overrides it for one run):
 Either way `incident.severity` is set as a Monitoring alert policy sets it, with a subject of its own in
 `incident.documentation.subject`. The script then finds the incident, prints its urgency, the alert's severity, the
 priority and the title, compares them with the design (docs/PAGERDUTY.md), and resolves it through the same
-integration, so the escalation's second level never fires. Every title says
-"PagerDuty setup check, please ignore". The test pages whoever is on call, the way a real alert would: that is the
+integration, so the escalation's second level never fires. Every title begins "TEST (ignore): PagerDuty setup
+check", and the test's own subject is in tpa-platform's shape, "TPA · <what happened> · <whether to act>"
+(2026-11-14). The test pages whoever is on call, the way a real alert would: that is the
 point.
 
 Usage:
@@ -43,8 +44,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pdlib as d  # noqa: E402
 from pdlib import PagerDuty, Refused, out  # noqa: E402
 
-SUMMARY = "TEST — PagerDuty setup check, please ignore"
-TITLE = f"test{d.TITLE_SEPARATOR}PagerDuty setup check, please ignore"
+SUMMARY = "TEST (ignore): PagerDuty setup check"
+WORD = "TPA"
+ACTION = "no action needed"
 CONDITION = "test condition"
 
 
@@ -58,10 +60,15 @@ def expected(severity: str) -> tuple[str, str, str | None]:
 
 def subject(severity: str, service_name: str, monitoring_subject: bool) -> str:
     """The policy's documentation.subject as Monitoring sends it, its tag in front: the test's own, in tpa-platform's
-    "<environment> · <what happened>" shape, or one shaped like Monitoring's default."""
+    "<word> · <what happened> · <whether to act>" shape, or one shaped like Monitoring's default."""
     if monitoring_subject:
         return f"[ALERT - {severity}] {CONDITION} on trellis-watchtower test"
-    return f"[ALERT - {severity}] {TITLE} ({severity}, {service_name})"
+    return f"[ALERT - {severity}] {ours(severity, service_name)}"
+
+
+def ours(severity: str, service_name: str) -> str:
+    """The test's subject without Monitoring's tag."""
+    return f"{WORD}{d.TITLE_SEPARATOR}{SUMMARY} ({severity}, {service_name}){d.TITLE_SEPARATOR}{ACTION}"
 
 
 def expected_title(severity: str, service_name: str, monitoring_subject: bool, route: str = "monitoring") -> str:
@@ -74,7 +81,7 @@ def expected_title(severity: str, service_name: str, monitoring_subject: bool, r
         return description(severity, service_name)
     if monitoring_subject:
         return f"{SUMMARY}{d.TITLE_SEPARATOR}{CONDITION}"
-    return f"{TITLE} ({severity}, {service_name})"
+    return ours(severity, service_name)
 
 
 def description(severity: str, service_name: str) -> str:

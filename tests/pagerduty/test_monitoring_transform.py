@@ -59,7 +59,11 @@ SAMPLE = {
     },
     "version": "1.2",
 }
-TITLE = "Tpa-jobs cutoff_freeze behind: cutoff_freeze_behind"
+WHAT = "Tpa-jobs cutoff_freeze behind: cutoff_freeze_behind"
+# An old subject has no whether-to-act of its own: a Warning can wait for the day.
+TITLE = WHAT + " · look today"
+NAMES = ("beta: a job stayed behind for thirty minutes · a lag raised in every five minutes for thirty, from a drain "
+         "tick")
 UNSET = object()
 
 
@@ -114,7 +118,8 @@ class Transform(unittest.TestCase):
         details = self.event(SAMPLE)["details"]
         i = SAMPLE["incident"]
         self.assertEqual(list(details.items()), [
-            ("what_happened", TITLE),
+            ("what_happened", WHAT),
+            ("what_to_do", "look today"),
             ("what_to_check", i["documentation"]["content"]),
             ("dashboard", f"{BASE}/d/tw-cloud-jobs"),
             ("overview", f"{BASE}/d/tw-cloud-overview"),
@@ -162,8 +167,7 @@ class Transform(unittest.TestCase):
         self.assertEqual(self.event(notification(state=" Closed "))["event_type"], "resolve")
 
     def test_without_a_subject_the_title_is_policy_and_condition(self):
-        names = ("beta: a job stayed behind for thirty minutes · a lag raised in every five minutes for thirty, "
-                 "from a drain tick")
+        names = NAMES + " · look today"
         self.assertEqual(self.event(notification(documentation__subject=UNSET))["description"], names)
         self.assertEqual(self.event(notification(documentation=UNSET))["description"], names)
         self.assertEqual(self.event(notification(documentation__subject="  "))["description"], names)
@@ -172,8 +176,7 @@ class Transform(unittest.TestCase):
         """A policy without a subject is sent Monitoring's, "<condition> on <resource>": long, and not ours."""
         own = "[ALERT - Warning] from a scheduled run on trellistpa-beta-tpa-app Cloud Run Job labels {project_id=x}"
         event = self.event(notification(documentation__subject=own))
-        self.assertEqual(event["description"], "beta: a job stayed behind for thirty minutes · a lag raised in "
-                                               "every five minutes for thirty, from a drain tick")
+        self.assertEqual(event["description"], NAMES + " · look today")
 
     def test_one_leading_tag_is_dropped_whatever_it_says(self):
         for subject, title in [
@@ -193,20 +196,22 @@ class Transform(unittest.TestCase):
         ]:
             with self.subTest(subject=subject):
                 got = self.event(notification(documentation__subject=subject))["description"]
-                self.assertEqual(got, title or "beta: a job stayed behind for thirty minutes · a lag raised in "
-                                               "every five minutes for thirty, from a drain tick")
+                self.assertEqual(got, (title or NAMES) + " · look today")
 
     def test_without_names_the_title_is_monitorings_summary_then_a_plain_one(self):
         bare = notification(documentation=UNSET, policy_name=UNSET)
-        self.assertEqual(self.event(bare)["description"], SAMPLE["incident"]["summary"])
+        self.assertEqual(self.event(bare)["description"], SAMPLE["incident"]["summary"] + " · look today")
         event = self.event({"incident": {"state": "open"}})
-        self.assertEqual(event["description"], "Cloud Monitoring alert")
+        self.assertEqual(event["description"], "Cloud Monitoring alert · check now", "no severity pages now")
         self.assertNotIn("incident_key", event, "with nothing to key on, PagerDuty makes the key")
 
     def test_a_long_title_is_cut(self):
         event = self.event(notification(documentation__subject="beta · " + "x" * 2000))
         self.assertEqual(len(event["description"]), 250)
-        self.assertTrue(event["description"].endswith("x..."))
+        self.assertTrue(event["description"].endswith("x... · look today"), "whether to act always shows")
+        own = self.event(notification(documentation__subject="TPA · " + "x" * 2000 + " · no action needed"))
+        self.assertEqual(len(own["description"]), 250)
+        self.assertTrue(own["description"].endswith("x... · no action needed"))
         self.assertLess(250, 1024, "PagerDuty's limit for a v1 description")
 
     def test_without_an_incident_id_the_key_is_policy_and_condition(self):
@@ -234,13 +239,23 @@ class Transform(unittest.TestCase):
         details = self.event({"incident": {"incident_id": "x", "policy_name": "p", "condition_name": "c", "url": " ",
                                            "observed_value": "3", "started_at": "soon",
                                            "metric": {"labels": {}}}})["details"]
-        self.assertEqual(list(details), ["what_happened", "dashboard", "overview", "measured", "policy", "condition",
-                                         "incident"])
+        self.assertEqual(list(details), ["what_happened", "what_to_do", "dashboard", "overview", "measured", "policy",
+                                         "condition", "incident"])
+        self.assertEqual(details["what_to_do"], "check now", "no severity pages at high urgency")
         self.assertEqual(details["measured"], "3")
 
     def test_python_expects_the_title_the_code_gives(self):
         """pd_test_event.py's expected title is pdlib.transformer_title: the two must agree."""
         cases = [SAMPLE, notification(documentation=UNSET), notification(documentation=UNSET, policy_name=UNSET),
+                 notification(documentation__subject="TPA · Portal firewall blocked requests: armor-web · look today"),
+                 notification(documentation__subject="TPA · TEST (ignore): a check (Warning, TPA · Call centre) · "
+                                                     "no action needed", severity="Critical"),
+                 notification(documentation__subject="TPA · x" + "z" * 400 + " · check now"),
+                 notification(documentation__subject="TPA · a thing", severity="Critical"),
+                 notification(documentation__subject="TPA · a thing", severity=" ERROR "),
+                 notification(documentation__subject="TPA · a thing", severity=UNSET),
+                 notification(documentation__subject="TPA ·  spaced · ", severity="warning"),
+                 notification(documentation__subject="TPA · " + "w" * 300 + " · " + "a" * 300),
                  notification(documentation__subject="[RESOLVED] beta · x"),
                  notification(documentation__subject="[ALERT - Warning] TPA · URGENT a thing: which"),
                  notification(documentation__subject="[ALERT - Warning] Something on a resource"),
@@ -382,6 +397,7 @@ class Es5(unittest.TestCase):
 # 2026-11-14 (deploy-safety): one problem, one page. 02:10Z on 2026-11-14, as Monitoring's seconds.
 AT_0210 = 1794622200
 CHANGE = "logging.googleapis.com/user/{}"
+DEPLOY = "expected during a deploy; check the deploy notes"
 
 
 def change(counter: str, *, started=AT_0210, severity="Warning", project="trellistpa-beta-tpa-app",
@@ -424,11 +440,15 @@ class Grouping(unittest.TestCase):
     def test_a_change_group_says_its_slot_and_still_triggers_at_its_own_severity(self):
         event = self.event(change("monitoring_changes"))
         self.assertEqual(event["event_type"], "trigger")
-        self.assertTrue(event["description"].startswith("Changes, 02:00 to 04:00 UTC: "), event["description"])
-        self.assertIn("IAM policy or role changed", event["description"])
-        self.assertIn("(monitoring_changes) in this project at this severity from 02:00 to 04:00 UTC",
+        self.assertEqual(event["description"], "Portal & API settings changed during 02:00–04:00 UTC (an alert policy "
+                                               "or channel was changed) · " + DEPLOY)
+        self.assertIn("(monitoring_changes) in this project at this severity during 02:00–04:00 UTC",
                       event["details"]["grouped"])
+        self.assertIn("deploy notes", event["details"]["grouped"])
         self.assertIn("Admin Activity log", event["details"]["grouped"])
+        self.assertEqual(event["details"]["what_to_do"], DEPLOY)
+        self.assertEqual(event["details"]["what_happened"], "IAM policy or role changed: SetIamPolicy",
+                         "the alert's own words stay in its details")
         self.assertEqual(event["details"]["incident"]["severity"], "Warning")
 
     def test_another_slot_project_or_severity_is_another_incident(self):
@@ -451,8 +471,8 @@ class Grouping(unittest.TestCase):
                 for c in ("run_system_errors", "run_crash_exits", "run_oom_kills", "sql_proxy_errors")}
         self.assertEqual(len(keys), 1)
         event = self.event(failing("run_crash_exits"))
-        self.assertTrue(event["description"].startswith("records failing, from 02:00 to 02:30 UTC: "),
-                        event["description"])
+        self.assertEqual(event["description"], "The records service is failing during 02:00–02:30 UTC (it crashed) · "
+                                               "look today")
         self.assertIn("check each one's Cloud Monitoring incident before resolving it by hand",
                       event["details"]["grouped"])
 
@@ -481,6 +501,119 @@ class Grouping(unittest.TestCase):
                                   resource={"type": "cloud_run_revision", "labels": {"project_id": "p-tpa-phi"}},
                                   incident_id="svc-x")
         self.assertEqual(self.event(no_service)["incident_key"], "svc-x")
+
+
+@unittest.skipIf(fakes.NODE is None, NO_NODE)
+class PlainWords(unittest.TestCase):
+    """The owner, 2026-11-14, of two posts in the incidents channel: "I have no idea what these are, why are they not
+    descriptive on the problem". Every title says what happened and ends with whether anyone needs to act."""
+
+    run_js = Transform.run_js
+    event = Transform.event
+
+    def test_the_subjects_own_whether_to_act_is_kept_and_split_into_the_details(self):
+        subject = "[ALERT - Warning] TPA · Portal firewall blocked a burst of suspicious requests: armor-web · check " \
+                  "it's not real people"
+        event = self.event(notification(documentation__subject=subject))
+        self.assertEqual(event["description"], "Portal firewall blocked a burst of suspicious requests: armor-web · "
+                                               "check it's not real people")
+        self.assertEqual(event["details"]["what_happened"], "Portal firewall blocked a burst of suspicious requests: "
+                                                            "armor-web")
+        self.assertEqual(event["details"]["what_to_do"], "check it's not real people")
+
+    def test_the_last_separator_is_the_one_before_whether_to_act(self):
+        event = self.event(notification(documentation__subject="TPA · TEST (ignore): a check (Warning, TPA · Call "
+                                                               "centre) · no action needed"))
+        self.assertEqual(event["details"]["what_happened"], "TEST (ignore): a check (Warning, TPA · Call centre)")
+        self.assertEqual(event["details"]["what_to_do"], "no action needed")
+
+    def test_an_old_subject_is_given_whether_to_act_by_its_severity(self):
+        for severity, action in [("Warning", "look today"), (" WARNING ", "look today"), ("Critical", "check now"),
+                                 ("Error", "check now"), ("No severity", "check now"), (UNSET, "check now")]:
+            with self.subTest(severity=severity):
+                event = self.event(notification(documentation__subject="TPA · URGENT records: audit flush failed",
+                                                severity=severity))
+                self.assertEqual(event["description"], "URGENT records: audit flush failed · " + action)
+
+    def test_a_test_mark_and_urgent_stay_in_front_of_a_groups_title(self):
+        marked = change("log_metric_changes")
+        marked["incident"]["metric"]["labels"]["operation"] = "google.logging.v2.MetricsServiceV2.UpdateLogMetric"
+        marked["incident"]["documentation"]["subject"] = "[ALERT - Warning] TPA · TEST (ignore): Alert counter " \
+                                                         "changed · " + DEPLOY
+        self.assertEqual(self.event(marked)["description"], "TEST (ignore): Portal & API settings changed during "
+                                                            "02:00–04:00 UTC (an alert counter was updated) · " + DEPLOY)
+        urgent = change("iam_policy_changes", severity="Critical", project="trellistpa-beta-tpa-phi")
+        urgent["incident"]["documentation"]["subject"] = "TPA · URGENT Access rights changed · check now"
+        self.assertEqual(self.event(urgent)["description"], "URGENT Member records settings changed during "
+                                                            "02:00–04:00 UTC (access rights were changed) · check now")
+        job = failing("run_oom_kills", job="tpa-jobs-sweeps")
+        job["incident"]["documentation"]["subject"] = "TPA · TEST (ignore): URGENT Ran out of memory · check now"
+        self.assertEqual(self.event(job)["description"], "TEST (ignore): URGENT The tpa-jobs-sweeps job is failing "
+                                                         "during 02:00–02:30 UTC (it ran out of memory) · check now")
+
+    def test_a_failing_group_takes_its_severitys_whether_to_act_from_an_old_subject(self):
+        self.assertTrue(self.event(failing("sql_proxy_errors", severity="Critical"))["description"].endswith(
+            "(it could not reach its database) · check now"))
+        self.assertTrue(self.event(failing("run_system_errors"))["description"].endswith(
+            "(it could not start or failed a health check) · look today"))
+
+    def test_each_change_in_plain_words(self):
+        """The operation labels production's alerts carried from 2026-11-12 to 11-14, and a few more of each kind."""
+        for counter, operation, words in [
+            ("log_metric_changes", "google.logging.v2.MetricsServiceV2.UpdateLogMetric", "an alert counter was updated"),
+            ("log_metric_changes", "google.logging.v2.MetricsServiceV2.CreateLogMetric", "an alert counter was created"),
+            ("log_metric_changes", "google.logging.v2.MetricsServiceV2.DeleteLogMetric", "an alert counter was deleted"),
+            ("monitoring_changes", "google.monitoring.v3.AlertPolicyService.UpdateAlertPolicy",
+             "an alert policy was updated"),
+            ("monitoring_changes", "google.monitoring.v3.AlertPolicyService.CreateAlertPolicy",
+             "an alert policy was created"),
+            ("monitoring_changes", "google.monitoring.v3.NotificationChannelService.DeleteNotificationChannel",
+             "an alert channel was deleted"),
+            ("monitoring_changes", "google.monitoring.v3.SnoozeService.CreateSnooze",
+             "an alert policy or channel was created"),
+            ("iam_policy_changes", "SetIamPolicy", "access rights were changed"),
+            ("iam_policy_changes", "google.cloud.run.v2.Services.SetIamPolicy",
+             "access rights were changed on a Cloud Run service"),
+            ("iam_policy_changes", "google.cloud.secretmanager.v1.SecretManagerService.SetIamPolicy",
+             "access rights were changed on a secret"),
+            ("iam_policy_changes", "google.iam.admin.v1.SetIAMPolicy", "access rights were changed on a service account"),
+            ("iam_policy_changes", "storage.setIamPermissions", "access rights were changed on a storage bucket"),
+            ("iam_policy_changes", "google.iam.admin.v1.CreateRole", "an access role was created"),
+            ("iam_policy_changes", "google.iam.admin.v1.UndeleteRole", "an access role was restored"),
+            ("network_control_changes", "v1.compute.networkFirewallPolicies.addRule", "a firewall rule was added"),
+            ("network_control_changes", "v1.compute.networkFirewallPolicies.patchRule", "a firewall rule was changed"),
+            ("network_control_changes", "v1.compute.networkFirewallPolicies.removeRule", "a firewall rule was removed"),
+            ("network_control_changes", "v1.compute.securityPolicies.insert", "a Cloud Armor policy was created"),
+            ("network_control_changes", "v1.compute.securityPolicies.delete", "a Cloud Armor policy was deleted"),
+            ("network_control_changes", "v1.compute.securityPolicies.patchRule", "a Cloud Armor rule was changed"),
+            ("network_control_changes", "v1.compute.backendServices.setSecurityPolicy",
+             "a site's Cloud Armor policy was changed"),
+            ("network_control_changes", "v1.compute.firewalls.insert", "a firewall rule was created"),
+            ("network_control_changes", "beta.compute.firewallPolicies.patch", "a firewall policy was changed"),
+            ("network_control_changes", "", "a firewall or Cloud Armor rule was changed"),
+            ("network_control_changes", "something.else", "a firewall or Cloud Armor rule was changed"),
+        ]:
+            with self.subTest(operation=operation):
+                body = change(counter)
+                body["incident"]["metric"]["labels"]["operation"] = operation
+                self.assertEqual(self.event(body)["description"], f"Portal & API settings changed during 02:00–04:00 "
+                                                                  f"UTC ({words}) · {DEPLOY}")
+
+    def test_the_area_is_named_by_the_project_or_production(self):
+        for project, name in [("trellistpa-beta-tpa-phi", "Member records"), ("trellistpa-beta-cc", "Call centre"),
+                              ("trellistpa-beta-tpa-app", "Portal & API"), ("someone-elses", "Production")]:
+            with self.subTest(project=project):
+                self.assertTrue(self.event(change("log_metric_changes", project=project))["description"].startswith(
+                    f"{name} settings changed during "))
+
+    def test_a_groups_title_ends_with_whether_to_act_even_when_cut(self):
+        body = change("log_metric_changes")
+        body["incident"]["documentation"]["subject"] = "TPA · x · " + "y" * 400
+        event = self.event(body)
+        self.assertTrue(event["description"].startswith("Portal & API settings changed during 02:00–04:00 UTC ("))
+        self.assertTrue(event["description"].endswith(") · " + "y" * 77 + "..."), "a long action is cut at 80")
+        long_what = notification(documentation__subject="TPA · " + "w" * 400 + " · " + "z" * 400)
+        self.assertEqual(len(self.event(long_what)["description"]), 250)
 
 if __name__ == "__main__":
     unittest.main()
