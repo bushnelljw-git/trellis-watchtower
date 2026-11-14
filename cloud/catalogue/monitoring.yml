@@ -41,6 +41,22 @@
 #   threshold, an absence or PromQL over a counter or a distribution (never a
 #   log-match condition), and no documentation names a label or a value with
 #   Cloud Monitoring's ${...} variables.
+# - **Which p2 incidents close themselves** (2026-11-14, deploy-safety; the coordinator's review
+#   of PagerDuty: #29 open two days, #94 to #96 eleven hours). A p2 policy is told when its
+#   incident opens and not when it closes (#202), and its channels include PagerDuty, so
+#   PagerDuty never hears Google close it and keeps the incident open until a person resolves
+#   it. An OPERATIONAL p2 policy, whose incident ends by itself (a counter that stops, a metric
+#   back under its line, a job that runs again, a lane that drains), says
+#   `notification_prompts: ["OPENED", "CLOSED"]` and its `auto_close`, so Google's close (the
+#   condition clearing, or 30 minutes with no new line) resolves the PagerDuty incident; an
+#   absence-only one takes seven days, so a recovery resolves it and an outage stays open.
+#   Security, compliance and access policies (control-plane changes, attacks, abuse ceilings,
+#   sign-in and laptop events, PHI reads and refusals, the audit chain, dead letters, notices
+#   and emails owed) keep OPENED alone: open until a person looks, as do the four Cloud Run
+#   failure counters trellis-watchtower's transformer groups into one incident per service.
+#   The CLOSED prompt is the policy's, not a channel's: a close also reaches Slack (and email
+#   where p2 is emailed). tests/infra/test_alerts_close_themselves.py holds both lists, so a new
+#   p2 policy is placed in one of them before it lands; D-402. p1 keeps Google's default (both).
 # - `subject` (2026-10-13, the owner: "Arent all of these messages supposed to
 #   be formatted better?") is the notification's subject line, which
 #   PagerDuty titles the incident with: what is wrong, then which, plain. The
@@ -50,6 +66,17 @@
 #   ${metric_or_resource.label.KEY}, never a raw resource string such as a
 #   database_id; at most 255 bytes once written in
 #   (tests/infra/test_alert_subjects.py; docs/infra/monitoring.md §9a).
+# - **Every policy writes its `subject` in plain words** (2026-11-14, the
+#   owner, of two Slack posts that showed only a title: "I have no idea what
+#   these are, why are they not descriptive on the problem, why is there not
+#   link to watchtower"): what happened and where, as a person who is not an
+#   engineer would say it, with any technical name in brackets beside its
+#   plain words ("An alert counter (log metric) changed"). The module ends it
+#   with " · " and whether anyone needs to act: the policy's own `action`, or
+#   by its tier "check now" (p1), "look today" (p2), "no action needed" (p3
+#   and a notice). `action` is for a policy whose tier's words would mislead:
+#   the four change alarms our own applies open say "expected during a
+#   deploy; check the deploy notes". Never "beta" (the owner, 2026-11-12).
 
 # Added to every project's own lists below.
 shared:
@@ -485,7 +512,9 @@ shared:
     canary-5xx:
       display_name: "5xx above 2% of requests"
       tier: p2
-      subject: "5xx above 2% of requests: ${metric_or_resource.label.service_name}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "A service is failing requests (over 2% errors): ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service answered 20 or more of its requests with a 5xx,
         and more than 2 percent of them, in every ten minutes for ten minutes.
@@ -505,7 +534,7 @@ shared:
     canary-latency:
       display_name: "p95 latency above 2 s"
       tier: p3
-      subject: "p95 above 2 s: ${metric_or_resource.label.service_name}"
+      subject: "A service is answering slowly (1 in 20 requests over 2 s): ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service's 95th percentile request latency stayed above two
         seconds for ten minutes. The canary compares a new revision with the
@@ -522,7 +551,7 @@ shared:
     canary-startup:
       display_name: "container startup or runtime failure"
       tier: p2
-      subject: "container failing to start or run: ${metric_or_resource.label.service_name}${metric_or_resource.label.job_name}"
+      subject: "A service or job won't start or stay up: ${metric_or_resource.label.service_name}${metric_or_resource.label.job_name}"
       # #202 (T-5080): a service's alone, three lines in fifteen minutes. One
       # failed probe at a deploy or a cold start opened it in three projects
       # (12 of its 17 live incidents were one every-minute job on 10-15); a
@@ -550,7 +579,7 @@ shared:
     canary-sql:
       display_name: "database connection errors"
       tier: p2
-      subject: "database connection refused: ${metric_or_resource.label.service_name}${metric_or_resource.label.job_name}"
+      subject: "A service or job can't reach its database: ${metric_or_resource.label.service_name}${metric_or_resource.label.job_name}"
       documentation: >-
         The Cloud SQL Auth Proxy beside a service or a job could not reach its
         database or log in to it. The canary's "Cloud SQL connection errors:
@@ -590,7 +619,7 @@ shared:
     run-cpu-high:
       display_name: "a Cloud Run service's CPU above 90% for 15 minutes"
       tier: p3
-      subject: "CPU above 90%: ${metric_or_resource.label.service_name}"
+      subject: "A service is running near full CPU (over 90%): ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service's 99th percentile container CPU stayed above 90
         percent for fifteen minutes: its instances are saturated, so requests
@@ -613,7 +642,9 @@ shared:
     run-memory-high:
       display_name: "a Cloud Run service's memory above 90% for 30 minutes"
       tier: p2
-      subject: "memory above 90%: ${metric_or_resource.label.service_name}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "A service is close to running out of memory (over 90%): ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service's 99th percentile container memory stayed above
         90 percent of its limit for thirty minutes: the next allocation may kill
@@ -645,7 +676,7 @@ shared:
     run-concurrency-high:
       display_name: "a Cloud Run service's instances near their request concurrency"
       tier: p3
-      subject: "near its request concurrency: ${metric_or_resource.label.service_name}"
+      subject: "A service is near its limit of requests at once: ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service's 99th percentile of the most requests one
         instance served at once stayed at 72 or more (90 percent of the
@@ -670,7 +701,10 @@ shared:
     # until its own quota is read. 68 is 80 percent of it.
     run-instances-near-quota:
       display_name: "the project's Cloud Run instances near the regional quota (85)"
+      subject: "Nearly out of room to start servers (over 68 of 85 Cloud Run instances)"
       tier: p2
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
       documentation: >-
         Every Cloud Run instance in this project, summed, stayed above 68 (80
         percent of the regional quota of 85) for ten minutes. At the quota a
@@ -692,7 +726,7 @@ shared:
     run-oom:
       display_name: "a container was killed for exceeding its memory limit"
       tier: p2
-      subject: "killed for memory: ${metric_or_resource.label.service_name}${metric_or_resource.label.job_name}"
+      subject: "A service or job ran out of memory: ${metric_or_resource.label.service_name}${metric_or_resource.label.job_name}"
       documentation: >-
         Cloud Run killed a container that exceeded its memory limit (its
         system log's "Memory limit of ... exceeded"). The request it was
@@ -714,7 +748,7 @@ shared:
     run-crash-loop:
       display_name: "a Cloud Run service's containers keep crashing"
       tier: p2
-      subject: "containers crashing: ${metric_or_resource.label.service_name}"
+      subject: "A service keeps crashing and restarting: ${metric_or_resource.label.service_name}"
       documentation: >-
         A Cloud Run service's containers exited non-zero, or were killed by a
         signal other than a shutdown's, three times or more in fifteen
@@ -751,7 +785,9 @@ shared:
     edge-5xx:
       display_name: "a load balancer answered 5xx no backend sent"
       tier: p2
-      subject: "load balancer 5xx no backend sent: ${metric_or_resource.label.url_map_name}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "The site's front door (load balancer) could not reach its service: ${metric_or_resource.label.url_map_name}"
       documentation: >-
         An external load balancer (by its URL map: um-app, um-crm, um-cc,
         um-watch) answered five or more 5xx in ten minutes that no backend
@@ -777,7 +813,8 @@ shared:
     armor-deny-spike:
       display_name: "Cloud Armor refusals spiked"
       tier: p2
-      subject: "Cloud Armor refusals spiked: ${metric_or_resource.label.policy_name}"
+      subject: "Website firewall blocked a sudden burst of requests: ${metric_or_resource.label.policy_name}"
+      action: "check it's not real people"
       # #202: a scan flapped this five times in three hours (10-21/22); held
       # open an hour of quiet where its counter stops reporting.
       auto_close: "3600s"
@@ -805,7 +842,7 @@ shared:
     armor-adaptive-protection:
       display_name: "Cloud Armor Adaptive Protection saw an attack"
       tier: p2
-      subject: "Cloud Armor Adaptive Protection alert: ${metric_or_resource.label.policy_name}"
+      subject: "Website firewall sees a possible attack building: ${metric_or_resource.label.policy_name}"
       documentation: >-
         Cloud Armor's Adaptive Protection raised or updated an alert on a
         policy: it reads a layer-7 attack building against a backend (a flood,
@@ -833,7 +870,8 @@ shared:
     armor-waf-refusals:
       display_name: "Cloud Armor's attack rules are refusing requests"
       tier: p2
-      subject: "Cloud Armor attack rules refusing: ${metric_or_resource.label.class}"
+      subject: "Website firewall blocked attack-like requests: ${metric_or_resource.label.class}"
+      action: "check it's not real people"
       documentation: >-
         More than twenty requests in ten minutes were refused by one set of
         Cloud Armor's preconfigured attack rules (the incident's `class`: sqli,
@@ -863,7 +901,9 @@ shared:
     nat-port-exhaustion:
       display_name: "Cloud NAT is running out of ports"
       tier: p2
-      subject: "Cloud NAT running out of ports: ${metric_or_resource.label.gateway_name}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "Outside calls may fail: the network exit (Cloud NAT) is short of ports: ${metric_or_resource.label.gateway_name}"
       documentation: >-
         A Cloud NAT gateway could not allocate addresses or ports, or dropped
         outgoing packets for want of them, for five minutes: calls to the
@@ -893,7 +933,9 @@ shared:
     quota-exceeded:
       display_name: "a Google Cloud quota is refusing requests"
       tier: p2
-      subject: "quota refusing requests: ${metric_or_resource.label.service} ${metric_or_resource.label.quota_metric}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "Over a Google usage limit: ${metric_or_resource.label.service} ${metric_or_resource.label.quota_metric}"
       documentation: >-
         A Google API refused this project's requests for exceeding a quota in
         three minutes or more of ten. The incident's labels are the service
@@ -918,7 +960,7 @@ shared:
       display_name: "URGENT a log sink cannot export (the audit trail)"
       tier: p1
       urgent: true
-      subject: "log sink cannot export: ${metric_or_resource.label.name}"
+      subject: "Audit logs are not reaching their safe copy (log export failing): ${metric_or_resource.label.name}"
       documentation: >-
         A log sink failed to export entries in every five minutes for fifteen:
         whatever it routes (the audit logs into the vault, the call centre's
@@ -949,7 +991,7 @@ shared:
       display_name: "URGENT a Secret Manager version was disabled or destroyed"
       tier: p1
       urgent: true
-      subject: "secret version disabled or destroyed: ${metric_or_resource.label.operation}"
+      subject: "A secret was switched off or destroyed: ${metric_or_resource.label.operation}"
       documentation: >-
         A secret's version was disabled or destroyed (the Admin Activity
         log; the incident's label is the method). A service that mounts it,
@@ -978,7 +1020,7 @@ shared:
       display_name: "URGENT a KMS key version was disabled or scheduled for destruction"
       tier: p1
       urgent: true
-      subject: "KMS key version disabled or destroyed: ${metric_or_resource.label.operation}"
+      subject: "An encryption key was switched off or set to be destroyed: ${metric_or_resource.label.operation}"
       documentation: >-
         A Cloud KMS key version was disabled or scheduled for destruction
         (the Admin Activity log; the incident's label is the method). What it
@@ -1019,7 +1061,8 @@ shared:
     iam-changed:
       display_name: "an IAM policy or custom role changed"
       tier: p2
-      subject: "IAM policy or role changed: ${metric_or_resource.label.operation}"
+      subject: "Access rights (IAM) changed: ${metric_or_resource.label.operation}"
+      action: "expected during a deploy; check the deploy notes"
       documentation: >-
         An IAM policy was set on a resource in this project, or a custom role
         created, changed or deleted (the Admin Activity log; the incident's
@@ -1076,7 +1119,7 @@ shared:
       display_name: "URGENT a service account key was created"
       tier: p1
       urgent: true
-      subject: "service account key created or attempted: ${metric_or_resource.label.operation}"
+      subject: "A service account key was made, or someone tried: ${metric_or_resource.label.operation}"
       documentation: >-
         Somebody created, uploaded or enabled a service account key, or tried
         to (the Admin Activity log; refused attempts count too). No key
@@ -1104,7 +1147,7 @@ shared:
       display_name: "URGENT an audit log setting changed"
       tier: p1
       urgent: true
-      subject: "audit log setting changed: ${metric_or_resource.label.operation}"
+      subject: "The audit log of who read what was changed: ${metric_or_resource.label.operation}"
       documentation: >-
         A policy change in this project touched its audit configs: the Data
         Access logs (who read what) turned on or off for a service (the Admin
@@ -1131,7 +1174,7 @@ shared:
       display_name: "URGENT a log sink, bucket or exclusion changed, or logs were deleted"
       tier: p1
       urgent: true
-      subject: "logging changed: ${metric_or_resource.label.operation}"
+      subject: "Logging settings changed (where logs go or what is dropped): ${metric_or_resource.label.operation}"
       documentation: >-
         This project's logging changed (the Admin Activity log; the label is
         the method): a sink (the audit trail's way to the vault or cc-audit),
@@ -1166,7 +1209,8 @@ shared:
     network-control-changed:
       display_name: "a firewall or Cloud Armor rule changed"
       tier: p2
-      subject: "firewall or Cloud Armor changed: ${metric_or_resource.label.operation}"
+      subject: "A firewall or Cloud Armor rule changed: ${metric_or_resource.label.operation}"
+      action: "expected during a deploy; check the deploy notes"
       documentation: >-
         A firewall rule, a network firewall policy or rule, or a Cloud Armor
         policy or rule was created, changed or deleted, or a backend's Cloud
@@ -1209,7 +1253,7 @@ shared:
       display_name: "URGENT the IAP gate's settings changed"
       tier: p1
       urgent: true
-      subject: "IAP settings changed: ${metric_or_resource.label.operation}"
+      subject: "The Google sign-in gate (IAP) in front of the portals changed: ${metric_or_resource.label.operation}"
       documentation: >-
         IAP's settings on a resource were updated, or a backend service was
         updated with IAP turned off (the Admin Activity log). IAP is the front
@@ -1238,7 +1282,7 @@ shared:
       display_name: "URGENT a Cloud Run service was made public"
       tier: p1
       urgent: true
-      subject: "a Cloud Run service was made public: ${metric_or_resource.label.operation}"
+      subject: "A service was opened to the whole internet: ${metric_or_resource.label.operation}"
       documentation: >-
         A Cloud Run service's or job's IAM policy was set with allUsers or
         allAuthenticatedUsers on it, and it is not one of the four whose
@@ -1280,7 +1324,7 @@ shared:
       display_name: "URGENT an organization policy changed on the project"
       tier: p1
       urgent: true
-      subject: "organization policy changed: ${metric_or_resource.label.operation}"
+      subject: "A project security rule (organization policy) changed: ${metric_or_resource.label.operation}"
       documentation: >-
         An organization policy was set, cleared or deleted on this project
         (the Admin Activity log). The project's pins (POL-2's exception, POL-4,
@@ -1308,7 +1352,7 @@ shared:
       display_name: "URGENT a database was exported or cloned by hand"
       tier: p1
       urgent: true
-      subject: "database exported or cloned by hand: ${metric_or_resource.label.operation}"
+      subject: "A database was exported or copied by a person, not the system: ${metric_or_resource.label.operation}"
       documentation: >-
         A Cloud SQL instance in this project was exported or cloned by a
         person or an unknown principal, not a service account (the Admin
@@ -1341,7 +1385,7 @@ shared:
       display_name: "URGENT a service account changed IAM, a firewall or Cloud Armor"
       tier: p1
       urgent: true
-      subject: "a service account changed a security control: ${metric_or_resource.label.operation}"
+      subject: "A robot account changed a security control (access or firewall): ${metric_or_resource.label.operation}"
       documentation: >-
         One of our service accounts (not one of Google's own service agents)
         set an IAM policy, changed a custom role, or changed a firewall rule
@@ -1517,6 +1561,29 @@ projects:
         labels:
           job: 'EXTRACT(jsonPayload.job)'
           code: 'EXTRACT(jsonPayload.alert)'
+
+      # TP-193 (2026-11-14, D-405): the waiting line alone, with the group's id,
+      # so each group with a month waiting for "Freeze now" opens its own
+      # incident (`jobs-cutoff-waiting`). A metric of its own, never a label on
+      # `tpa_jobs_alerts`: a log metric's label keys are part of its
+      # descriptor, so adding one replaces the metric (provider 6.50: -/+ on
+      # metric_descriptor.0.labels) and every policy reading it would see a
+      # delete and a create (tests/infra/test_log_metrics_are_never_replaced.py).
+      # The same line still counts in `tpa_jobs_alerts` as code
+      # `cutoff_freeze_waiting`, which no policy there selects.
+      tpa_jobs_waiting:
+        description: >-
+          One per cutoff_freeze_waiting record a run raises (tpa_jobs/jobs/
+          cutoff_freeze.py): the job and the group whose month waits for a
+          person (detail.sponsor_id, an employer, never a person). The record's
+          tenant and the rest of its detail are never read.
+        filter: |
+          (resource.type="cloud_run_job" OR resource.type="cloud_run_revision")
+          AND jsonPayload.run_id:*
+          AND jsonPayload.alert="cutoff_freeze_waiting"
+        labels:
+          job: 'EXTRACT(jsonPayload.job)'
+          sponsor_id: 'EXTRACT(jsonPayload.detail.sponsor_id)'
 
       # tpa-jobs.md §5.5: "an outstanding-reconciliation count that grows".
       # accumulator_reconcile raises `accumulator_backlog_growing` with the
@@ -2125,7 +2192,7 @@ projects:
         display_name: "URGENT audit chain (auth)"
         tier: p1
         urgent: true
-        subject: "auth audit chain: ${metric_or_resource.label.job_name}${metric_or_resource.label.job_id}"
+        subject: "Sign-in audit trail check failed: ${metric_or_resource.label.job_name}${metric_or_resource.label.job_id}"
         documentation: >-
           The issuer's audit chain did not verify, or the job that verifies or
           heads it could not run. A break is never assumed to be tampering or a
@@ -2153,6 +2220,7 @@ projects:
 
       audit-reconcile:
         display_name: "URGENT membership reconcile (auth)"
+        subject: "Sign-in audit check found a break or an account it cannot explain"
         tier: p1
         urgent: true
         documentation: >-
@@ -2183,6 +2251,7 @@ projects:
       # (10-15, 26 minutes, urgent); a break or a finding still pages above.
       audit-reconcile-absent:
         display_name: "membership reconcile not running (auth)"
+        subject: "Sign-in audit check has not run for 90 minutes"
         tier: p2
         documentation: >-
           The issuer's membership reconcile has not run for 90 minutes: the
@@ -2202,7 +2271,7 @@ projects:
         display_name: "URGENT credential or workload tag invalid (auth)"
         tier: p1
         urgent: true
-        subject: "auth credential or workload tag invalid: ${metric_or_resource.label.code}"
+        subject: "A stored sign-in credential failed its tamper check: ${metric_or_resource.label.code}"
         documentation: >-
           A stored factor, workload or key failed its tag at use, meaning a
           writer without the bearer key: a swapped password, a copied row, an
@@ -2235,6 +2304,8 @@ projects:
       # happened: never a person, a laptop or a tenant.
       auth-sign-in-pass-issued:
         display_name: "staff sign-in: a one-time sign-in was issued"
+        subject: "An admin issued a one-time sign-in for a staff member"
+        action: "check it was expected"
         tier: p2
         documentation: >-
           A TPA administrator issued a one-time sign-in for a member of staff
@@ -2254,6 +2325,7 @@ projects:
 
       auth-sign-in-pass-used:
         display_name: "staff sign-in: a one-time sign-in was used"
+        subject: "A staff member signed in with a one-time sign-in"
         tier: p3
         documentation: >-
           A member of staff signed in with a one-time sign-in an administrator
@@ -2271,6 +2343,7 @@ projects:
 
       auth-device-pending:
         display_name: "staff laptop: a laptop is waiting for approval"
+        subject: "A staff laptop is waiting for an admin's approval"
         tier: p2
         documentation: >-
           A member of staff signed in on a laptop no TPA administrator has
@@ -2290,6 +2363,7 @@ projects:
 
       auth-device-approved-by-operator:
         display_name: "URGENT staff laptop: the first laptop was approved from the server"
+        subject: "The first staff laptop was approved from the server, not the portal"
         tier: p1
         urgent: true
         documentation: >-
@@ -2309,6 +2383,7 @@ projects:
 
       auth-device-tag-mismatch:
         display_name: "URGENT staff laptop: an approval auth did not write"
+        subject: "A staff laptop approval failed its tamper check"
         tier: p1
         urgent: true
         documentation: >-
@@ -2336,6 +2411,7 @@ projects:
 
       auth-device-cookie-superseded:
         display_name: "staff laptop: copied laptop cookies are being used"
+        subject: "Copied staff laptop cookies are being used"
         tier: p2
         documentation: >-
           More than three times in an hour a browser presented a laptop cookie
@@ -2362,6 +2438,7 @@ projects:
       # dashboard's charts (trellis-watchtower's W1b).
       auth-binding-guessed:
         display_name: "staff laptop: a session ended after wrong laptop proofs"
+        subject: "A staff session was ended after wrong laptop proofs"
         tier: p2
         documentation: >-
           auth ended a member of staff's laptop-bound session after five
@@ -2384,7 +2461,10 @@ projects:
       # `backend-down`, `inside-down: auth`, all p1).
       auth-database:
         display_name: "auth cannot reach its database"
+        subject: "Sign-in cannot reach its database, so sign-in is failing"
         tier: p2
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
         documentation: >-
           auth's readiness check found auth-db unreachable (`not_ready`, reason
           `database`) three times or more in five minutes: sign-in is failing.
@@ -2409,6 +2489,7 @@ projects:
       # trellis-security text). Off in beta while the publisher is.
       auth-messages-lag:
         display_name: "sign-in messages (texts and emails) waiting"
+        subject: "Sign-in texts and emails are waiting to be sent"
         tier: p2
         documentation: >-
           A person is waiting for a sign-in message, a text code or an email
@@ -2480,6 +2561,7 @@ projects:
       # notary-outbox-lag-by-channel.md, `lag_text`); with it this reads that.
       auth-messages-stalled:
         display_name: "URGENT sign-in messages stuck: one has waited about four minutes"
+        subject: "Sign-in texts and emails are stuck (one has waited 4 minutes)"
         tier: p1
         urgent: true
         documentation: >-
@@ -2515,6 +2597,7 @@ projects:
       # nothing.
       auth-events-lag:
         display_name: "events waiting for the publisher (first sign-ins wait)"
+        subject: "First sign-ins are slow: sign-in events are waiting to be passed on"
         tier: p2
         documentation: >-
           auth's event publisher (the auth-event-publisher service) is behind: the
@@ -2552,6 +2635,7 @@ projects:
       # the three days read (2026-11-09 to -12) the lag never passed 30 s.
       auth-events-stalled:
         display_name: "URGENT events stuck for 15 minutes (first sign-ins refused)"
+        subject: "First sign-ins are refused: sign-in events stuck for 15 minutes"
         tier: p1
         urgent: true
         documentation: >-
@@ -2584,7 +2668,7 @@ projects:
         display_name: "URGENT IAP assertion under a key the image does not pin (auth, tpa-api)"
         tier: p1
         urgent: true
-        subject: "IAP assertion under an unpinned key: ${metric_or_resource.label.service_name}"
+        subject: "A sign-in gate (IAP) pass was signed by an unknown key (rotated or forged): ${metric_or_resource.label.service_name}"
         # An outage of the browser's way in, the owner's first urgent kind: once
         # Google retires the old key every portal request is refused (the
         # re-check, 2026-10-05).
@@ -2616,7 +2700,7 @@ projects:
         display_name: "URGENT a forged or malformed IAP assertion (auth, tpa-api)"
         tier: p1
         urgent: true
-        subject: "forged or malformed IAP assertion: ${metric_or_resource.label.service_name}"
+        subject: "A forged pass for the Google sign-in gate (IAP) was seen: ${metric_or_resource.label.service_name}"
         # Somebody wrote an assertion IAP never signed, or one in a shape IAP
         # never writes: in report mode it was still served.
         documentation: >-
@@ -2641,7 +2725,7 @@ projects:
       iap-mismatch:
         display_name: "a browser request's IAP assertion was missing, old or for the other site (auth, tpa-api)"
         tier: p2
-        subject: "IAP assertion missing or mismatched: ${metric_or_resource.label.service_name}, ${metric_or_resource.label.site}"
+        subject: "Missing or bad sign-in gate (IAP) pass: ${metric_or_resource.label.service_name}, ${metric_or_resource.label.site}"
         # Told when it opens, never when it closes, and held open for a day of
         # quiet, so a chronic harmless source opens one incident a day per
         # service and site (T-5080).
@@ -2672,7 +2756,7 @@ projects:
         display_name: "URGENT browser requests refused by the IAP check (auth, tpa-api)"
         tier: p1
         urgent: true
-        subject: "browser requests refused by the IAP check: ${metric_or_resource.label.service_name}"
+        subject: "Browser requests refused at the Google sign-in gate (IAP) check: ${metric_or_resource.label.service_name}"
         # An outage of the portals' way in, as iap-unknown-key is: in enforce
         # a broken hop or an unpinned key refuses everyone. Silent in report
         # mode, which refuses nothing.
@@ -2703,7 +2787,7 @@ projects:
       iap-report-daily:
         display_name: "IAP report mode: what enforce would have refused (the day's count)"
         tier: p2
-        subject: "IAP report mode: requests enforce would have refused in the last 24 hours"
+        subject: "Daily report: requests the Google sign-in gate (IAP) check would have refused"
         notification_prompts: ["OPENED"]
         documentation: >-
           IAP option B in report mode: in the 24 hours before about 14:00 UTC
@@ -2727,7 +2811,7 @@ projects:
       iap-pinned-keys-stale:
         display_name: "IAP keys pinned in an image are stale (auth, tpa-api)"
         tier: p2
-        subject: "IAP keys pinned in an image are stale: ${metric_or_resource.label.service_name}"
+        subject: "Google sign-in gate (IAP) keys in a service image are out of date: ${metric_or_resource.label.service_name}"
         documentation: >-
           auth or tpa-api warned that the IAP keys pinned in its image are
           stale (R187's header check). Rebuild both images with the current
@@ -2742,6 +2826,7 @@ projects:
 
       auth-lockouts:
         display_name: "sign-in lockouts"
+        subject: "Many sign-ins locked out in 5 minutes (likely password guessing)"
         tier: p2
         documentation: >-
           More than 20 `423 locked` answers in five minutes: credential
@@ -2761,6 +2846,7 @@ projects:
       # from (auth's per-address allowance answers 423, `auth-lockouts`).
       auth-password-spray:
         display_name: "URGENT refused password sign-ins surging (a password spray)"
+        subject: "Many wrong passwords across many accounts (a password-guessing attack)"
         tier: p1
         urgent: true
         documentation: >-
@@ -2784,6 +2870,7 @@ projects:
       # the estate is someone working at stolen sessions.
       auth-stepup-failures:
         display_name: "refused step-ups surging"
+        subject: "Many failed identity re-checks (step-ups) in 15 minutes"
         tier: p2
         documentation: >-
           auth refused more than five step-ups (POST /auth/step-up answering
@@ -2813,7 +2900,7 @@ projects:
       auth-sign-in-ceiling:
         display_name: "an account hit the 30-day second-step limit"
         tier: p2
-        subject: "an account hit the 30-day second-step limit: ${metric_or_resource.label.class}"
+        subject: "An account's sign-in was paused for 30 days after too many wrong codes: ${metric_or_resource.label.class}"
         documentation: >-
           Somebody holding an account's password entered so many wrong
           second-step codes that auth paused its sign-in for up to 30 days, and
@@ -2834,6 +2921,7 @@ projects:
       # something I do want to know right away"): a staff account's pages.
       auth-sign-in-staff-ceiling:
         display_name: "URGENT a staff account hit the 30-day second-step limit"
+        subject: "A staff account's sign-in was paused for 30 days after too many wrong codes"
         tier: p1
         urgent: true
         documentation: >-
@@ -2852,6 +2940,7 @@ projects:
 
       auth-sign-in-staff-codes:
         display_name: "URGENT second-step codes guessed on a staff account"
+        subject: "Wrong codes after a right password on a staff account (password likely stolen)"
         tier: p1
         urgent: true
         documentation: >-
@@ -2870,7 +2959,7 @@ projects:
         display_name: "URGENT one account's second step paused three times in a day"
         tier: p1
         urgent: true
-        subject: "one account's second step paused three times in a day: ${metric_or_resource.label.class}"
+        subject: "One account was paused three times today after a right password: ${metric_or_resource.label.class}"
         documentation: >-
           auth paused the same account's second step for the third time in a
           day, each after a correct password: somebody holding the password is
@@ -2886,6 +2975,7 @@ projects:
 
       auth-sign-in-staff-password:
         display_name: "wrong passwords paused a staff account"
+        subject: "A staff account's sign-in was paused after wrong passwords"
         tier: p2
         documentation: >-
           auth paused a member of staff's sign-in after wrong passwords. Anybody
@@ -2901,6 +2991,7 @@ projects:
 
       auth-sign-in-code-surge:
         display_name: "URGENT five or more second-step pauses in an hour"
+        subject: "Five or more accounts paused in an hour after right passwords (a leaked list)"
         tier: p1
         urgent: true
         documentation: >-
@@ -2920,7 +3011,7 @@ projects:
       auth-unhandled:
         display_name: "auth answered 500 (unhandled)"
         tier: p3
-        subject: "auth answered 500: ${metric_or_resource.label.class}"
+        subject: "Sign-in service hit an unexpected error: ${metric_or_resource.label.class}"
         documentation: >-
           An exception reached auth's catch-all handler (`unhandled`). The line
           names the class; the error-tracking policies say whether it is new.
@@ -2942,7 +3033,9 @@ projects:
       jobs-failed:
         display_name: "a job failed twice in a row"
         tier: p2
-        subject: "job failed twice in a row: ${metric_or_resource.label.job_name}"
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "A scheduled job failed twice in a row: ${metric_or_resource.label.job_name}"
         documentation: >-
           The same Cloud Run job's last two executions both failed after their
           retries: within a window of two of its schedules (a day for a job a
@@ -2972,7 +3065,9 @@ projects:
       scheduler-failed:
         display_name: "a schedule could not start its job"
         tier: p2
-        subject: "schedule could not start its job: ${metric_or_resource.label.job_id}"
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "A schedule could not start its job: ${metric_or_resource.label.job_id}"
         documentation: >-
           Cloud Scheduler failed to start a job: three times in fifteen minutes
           for a schedule every minute or two (`auth-publish` while D-314's
@@ -3028,16 +3123,17 @@ projects:
       jobs-alerts:
         display_name: "a job raised an alert"
         tier: p2
-        subject: "tpa-jobs ${metric_or_resource.label.job} raised ${metric_or_resource.label.code}"
+        subject: "A background job needs a person: ${metric_or_resource.label.job} reported ${metric_or_resource.label.code}"
         documentation: >-
           A tpa-jobs run or drain tick raised an operational alert from its
-          registry (tpa_jobs/registry.py): a dead letter (an outbox row or a CRM
-          transition that will never be sent), the revocation mirror stale for
-          a run, more abandoned sign-ups to end in one tenant than the
-          member-access sweep may, a catalogue the CRM cannot take (too large
-          or invalid), or a drain tick's failed tenant. The incident's labels
-          are the job and the alert's name; the run's own line carries the
-          rest, never a body. A scheduled run's failed tenants are told by
+          registry (tpa_jobs/registry.py) that waits for a person: a dead
+          letter (an outbox row or a CRM transition that will never be sent:
+          replay or settle it), the revocation mirror stale for a run, or more
+          abandoned sign-ups to end in one tenant than the member-access sweep
+          may. The incident's labels are the job and the alert's name; the
+          run's own line carries the rest, never a body. A drain tick's failed
+          tenant and a catalogue the CRM cannot take are `jobs-alerts-cleared`,
+          which closes itself; a scheduled run's failed tenants are told by
           `jobs-failed`, on the second failed run in a row (R380). Lags are
           `jobs-lagging`, the compliance codes `jobs-compliance`.
         conditions:
@@ -3045,13 +3141,46 @@ projects:
             threshold:
               filter: >-
                 metric.type = "logging.googleapis.com/user/tpa_jobs_alerts" AND resource.type = "cloud_run_job"
-                AND metric.labels.code = one_of("mirror_stale_run", "outbox_dead_letter", "crm_transition_dead", "member_access_mass_registration_end", "catalogue_too_large", "catalogue_invalid")
+                AND metric.labels.code = one_of("mirror_stale_run", "outbox_dead_letter", "crm_transition_dead", "member_access_mass_registration_end")
               group_by_fields: ["metric.label.job", "metric.label.code"]
           - name: "from a drain tick"
             threshold:
               filter: >-
                 metric.type = "logging.googleapis.com/user/tpa_jobs_alerts" AND resource.type = "cloud_run_revision"
-                AND metric.labels.code = one_of("tenants_failed", "mirror_stale_run", "outbox_dead_letter", "crm_transition_dead", "member_access_mass_registration_end", "catalogue_too_large", "catalogue_invalid")
+                AND metric.labels.code = one_of("mirror_stale_run", "outbox_dead_letter", "crm_transition_dead", "member_access_mass_registration_end")
+              group_by_fields: ["metric.label.job", "metric.label.code"]
+
+      # 2026-11-14 (deploy-safety; the review of the alerts that close themselves): the codes
+      # whose trouble ends with the lines, split from `jobs-alerts` so its incident closes in
+      # PagerDuty when Google closes it (#29, a drain tick's alert, sat open two days).
+      jobs-alerts-cleared:
+        display_name: "a job raised an alert that clears by itself"
+        tier: p2
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "A background job hit a problem it will retry: ${metric_or_resource.label.job} reported ${metric_or_resource.label.code}"
+        documentation: >-
+          A tpa-jobs drain tick failed for a tenant (`tenants_failed`: the next
+          tick tries it again), or a run or tick found a catalogue the CRM cannot
+          take (`catalogue_too_large`, `catalogue_invalid`: raised on every run
+          until the catalogue is fixed). The incident closes itself, in
+          PagerDuty too, thirty minutes after the last one. The incident's
+          labels are the job and the alert's name; the run's own line carries
+          the rest, never a body. A scheduled run's failed tenants are
+          `jobs-failed`'s (R380); dead letters and a stale mirror are
+          `jobs-alerts`', which wait for a person.
+        conditions:
+          - name: "from a scheduled run"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/tpa_jobs_alerts" AND resource.type = "cloud_run_job"
+                AND metric.labels.code = one_of("catalogue_too_large", "catalogue_invalid")
+              group_by_fields: ["metric.label.job", "metric.label.code"]
+          - name: "from a drain tick"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/tpa_jobs_alerts" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = one_of("tenants_failed", "catalogue_too_large", "catalogue_invalid")
               group_by_fields: ["metric.label.job", "metric.label.code"]
 
       # Lags: a drain raises one every tick it is behind, so held thirty
@@ -3059,7 +3188,9 @@ projects:
       jobs-lagging:
         display_name: "a job stayed behind for thirty minutes"
         tier: p2
-        subject: "tpa-jobs ${metric_or_resource.label.job} behind: ${metric_or_resource.label.code}"
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "A background job stayed behind for 30 minutes: ${metric_or_resource.label.job} (${metric_or_resource.label.code})"
         documentation: >-
           A tpa-jobs drain or run raised a lag alert in every five minutes for
           thirty: the outbox (messages and webhooks waiting), the CRM lane's
@@ -3067,12 +3198,11 @@ projects:
           (tpa_jobs/registry.py). Something downstream is refusing or slow: read
           the job's lines for the tenant's oldest row and the destination's
           answers (connectors' dead letters, the CRM lane's refusals). A
-          `cutoff_freeze_behind` whose every tick answers ok is most often a
-          group's month waiting for a person (records' RS-406: its cut-off was
-          written after the month's instant, so the drain never freezes it):
-          the operations portal's billing lists the waiting months; freeze the
-          month there ("Freeze now"), or hide the group if it is a test. It
-          closes once no tick raises it.
+          `cutoff_freeze_behind` line names the months the job should have
+          frozen and did not (`detail.months`, each `<group id>:<month>`, oldest
+          first): read the drain's lines for records' refusal on the call. A
+          month waiting for a person ("Freeze now") is never this alert; it is
+          `jobs-cutoff-waiting`'s (TP-193). It closes once no tick raises it.
         conditions:
           - name: "a lag raised in every five minutes for thirty, from a run"
             threshold:
@@ -3089,6 +3219,51 @@ projects:
               duration: "1800s"
               group_by_fields: ["metric.label.job", "metric.label.code"]
 
+      # TP-193 (2026-11-14): a group's month waiting for a person, which the
+      # drain must never freeze (records' RS-406), is no longer told as the job
+      # being behind. One incident per group (`tpa_jobs_waiting`'s `sponsor_id`,
+      # the record's group id), opened on the first tick that names it and
+      # closed by itself thirty minutes after the last (D-402), once the month is
+      # frozen or the group hidden. Its own metric, so `tpa_jobs_alerts` is never
+      # replaced, and the only policy that sees the code (D-405).
+      jobs-cutoff-waiting:
+        display_name: "a group's month waits for Freeze now"
+        tier: p2
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "A group's month is waiting for someone to press Freeze now: ${metric_or_resource.label.sponsor_id}"
+        documentation: >-
+          A group's month has passed its cut-off and no job may freeze it,
+          because the group's cut-off was written after that moment (most often
+          a group made from a won deal after its first month's cut-off; records'
+          RS-406). Nothing is broken: billing for that month waits for a person.
+          The incident's label is the group's id; the cutoff_freeze line
+          (`cutoff_freeze_waiting`) also names its months (`detail.periods`) and
+          the oldest cut-off (`detail.oldest_cutoff_at`). What to do: a TPA
+          administrator opens the group in the operations portal at
+          /ops/employers/<the incident's group id> (Employers, the group,
+          Overview) and presses "Freeze now" on the waiting month. If the group
+          is a test that Everon sends, hide it instead with "Block…" on Admin,
+          Feeds & connections, Everon employers (a hidden group's months are
+          neither frozen nor counted). A test group made from a won deal cannot
+          be hidden: freeze it the same way (a frozen month bills nothing until
+          an invoice run is signed) or ask the owner. Either way the drain stops
+          naming the group and the incident closes by itself thirty minutes
+          later. A `detail.more_waiting` count means more waiting months than
+          the line names; each is named, with its own incident, once older ones
+          are frozen.
+        conditions:
+          - name: "a month waiting for a person, from a run"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/tpa_jobs_waiting" AND resource.type = "cloud_run_job"
+              group_by_fields: ["metric.label.job", "metric.label.sponsor_id"]
+          - name: "a month waiting for a person, from a drain tick"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/tpa_jobs_waiting" AND resource.type = "cloud_run_revision"
+              group_by_fields: ["metric.label.job", "metric.label.sponsor_id"]
+
       # Compliance codes: a standing finding, told once while it stands. The
       # job raises `erisa_breach_count` every run a clock is past: the
       # incident stays open while any run in the last 24 hours 30 minutes
@@ -3104,7 +3279,7 @@ projects:
       jobs-compliance:
         display_name: "a job raised a compliance finding (a deadline breached)"
         tier: p2
-        subject: "tpa-jobs ${metric_or_resource.label.job} compliance finding: ${metric_or_resource.label.code}"
+        subject: "Missed legal deadline found by tpa-jobs: ${metric_or_resource.label.job} (${metric_or_resource.label.code})"
         documentation: >-
           A tpa-jobs run raised a compliance finding: `erisa_breach_count` (a
           statutory deadline clock past its date: erisa_clocks). It stays open
@@ -3126,7 +3301,7 @@ projects:
       jobs-information:
         display_name: "a job reported information (skipped tenants, member access, orphans)"
         tier: p3
-        subject: "tpa-jobs ${metric_or_resource.label.job} reported ${metric_or_resource.label.code}"
+        subject: "For information: ${metric_or_resource.label.job} reported ${metric_or_resource.label.code}"
         documentation: >-
           A tpa-jobs run reported a fact nobody needs to act on at once: tenants
           skipped by design (`tenants_skipped`), the member-access sweep's
@@ -3156,7 +3331,7 @@ projects:
         display_name: "URGENT a job raised a paging alert"
         tier: p1
         urgent: true
-        subject: "tpa-jobs ${metric_or_resource.label.job} raised ${metric_or_resource.label.code}"
+        subject: "A background job raised a serious alert: ${metric_or_resource.label.job} reported ${metric_or_resource.label.code}"
         documentation: >-
           A tpa-jobs alert whose registry entry pages: an anomaly at the
           `freeze` level (a security freeze), a CRM lane signature failure (a
@@ -3179,7 +3354,9 @@ projects:
       jobs-partial-recurring:
         display_name: "a job ran partial twice"
         tier: p2
-        subject: "tpa-jobs ${metric_or_resource.label.job} ran partial twice"
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "A background job (tpa-jobs) finished only part of its work twice in a day: ${metric_or_resource.label.job}"
         documentation: >-
           A job reported `partial` tenants twice within a day and a half hour
           (tpa-jobs.md §6: one slow run is a slow run, two is a capacity
@@ -3201,7 +3378,9 @@ projects:
       drain-raised:
         display_name: "a drain tick raised"
         tier: p2
-        subject: "drain tick raised: ${metric_or_resource.label.job} (${metric_or_resource.label.class})"
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "Background worker keeps failing: ${metric_or_resource.label.job} (${metric_or_resource.label.class})"
         documentation: >-
           Three or more ticks of tpa-jobs-drains raised instead of finishing
           in fifteen minutes: most often a scope never granted or an address
@@ -3227,7 +3406,7 @@ projects:
       accumulator-backlog-growing:
         display_name: "accumulator reconciliations outstanding grew"
         tier: p3
-        subject: "accumulator backlog grew: ${metric_or_resource.label.job}"
+        subject: "More deductible-total checks left open than last night: ${metric_or_resource.label.job}"
         documentation: >-
           accumulator_reconcile left more reconciliations open tonight than
           it did the night before (the sum of every tenant's open count).
@@ -3257,7 +3436,7 @@ projects:
         display_name: "URGENT a core service answered only errors (web, ops-web, auth, tpa-api)"
         tier: p1
         urgent: true
-        subject: "answering only errors: ${metric_or_resource.label.service_name}"
+        subject: "A service is down, answering only errors: ${metric_or_resource.label.service_name}"
         documentation: >-
           Every request web, ops-web, auth or tpa-api answered in the last ten minutes
           was a 5xx (two or more, none answered otherwise): the service is
@@ -3277,7 +3456,7 @@ projects:
       tpa-api-latency:
         display_name: "tpa-api p95 latency above 2 s (its own request line)"
         tier: p3
-        subject: "tpa-api p95 above 2 s"
+        subject: "The portal's API is slow (1 in 20 answers over 2 s)"
         documentation: >-
           tpa-api's 95th percentile time to answer stayed above two seconds
           for ten minutes, read from its own request line without the streams,
@@ -3303,6 +3482,7 @@ projects:
       # (database_activation_policy NEVER, B8).
       auth-db-down:
         display_name: "URGENT auth-db is down"
+        subject: "Sign-in database (auth-db) is down: nobody can sign in"
         tier: p1
         urgent: true
         documentation: >-
@@ -3326,7 +3506,10 @@ projects:
 
       auth-db-disk:
         display_name: "auth-db disk above 85%"
+        subject: "Sign-in database (auth-db) disk is over 85% full"
         tier: p2
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
         documentation: >-
           auth-db's disk has stayed above 85 percent full for ten minutes.
           Automatic growth stops at the instance's disk_autoresize_limit
@@ -3350,7 +3533,10 @@ projects:
       # the gateway's checks set aside is the model's content, not an outage.
       model-vendor-errors:
         display_name: "model-gateway: the model vendor is failing"
+        subject: "The AI model provider is failing requests (Ask answers affected)"
         tier: p2
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
         documentation: >-
           The model vendor failed three or more of model-gateway's calls, and
           more than a fifth of them, in fifteen minutes (vendor_error,
@@ -3384,7 +3570,7 @@ projects:
         display_name: "URGENT sign-in messages: the email or text vendor is failing"
         tier: p1
         urgent: true
-        subject: "sign-in messages not going out: the ${metric_or_resource.label.lane} vendor is failing"
+        subject: "Sign-in messages are not going out: the ${metric_or_resource.label.lane} provider is failing"
         documentation: >-
           auth's messenger had five or more sends refused or unanswered by a
           vendor or the network in fifteen minutes, on one channel (the
@@ -3414,7 +3600,7 @@ projects:
       auth-texted-codes-ceiling:
         display_name: "texted codes refused: the estate's daily ceiling is spent"
         tier: p2
-        subject: "texted codes refused at the estate's ceiling: ${metric_or_resource.label.class}"
+        subject: "Texted sign-in codes refused: today's limit is spent: ${metric_or_resource.label.class}"
         documentation: >-
           auth refused a member's texted code because the estate's day is spent
           (auth's `sms_codes_estate_ceiling`, outcome refused; the incident's
@@ -3443,7 +3629,7 @@ projects:
       auth-registration-codes-ceiling:
         display_name: "applicants' set-up codes refused: their daily ceiling is spent"
         tier: p2
-        subject: "applicants' set-up codes refused at their ceiling: ${metric_or_resource.label.code}"
+        subject: "Applicants' set-up codes refused: today's limit is spent: ${metric_or_resource.label.code}"
         documentation: >-
           auth refused an Enroll applicant's set-up code because the applicants'
           day is spent (auth's `sms_codes_registration_ceiling`;
@@ -3467,7 +3653,9 @@ projects:
       auth-breach-corpus-unavailable:
         display_name: "sign-ins refused: the breached-password list gives no answer"
         tier: p2
-        subject: "breached-password list not answering: ${metric_or_resource.label.class}"
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "The breached-password check is not answering: ${metric_or_resource.label.class}"
         documentation: >-
           auth's lookup in the full breached-password list gave no answer in two
           seconds, or its read failed (auth's `breach_corpus_unavailable`; the
@@ -3492,7 +3680,8 @@ projects:
       monitoring-changed:
         display_name: "an alert policy or notification channel changed"
         tier: p2
-        subject: "alert policy or channel changed: ${metric_or_resource.label.operation}"
+        subject: "Alert settings changed: ${metric_or_resource.label.operation}"
+        action: "expected during a deploy; check the deploy notes"
         documentation: >-
           An alert policy or a notification channel in the app project was created,
           changed or deleted, a channel verified, or a snooze made or changed
@@ -3521,7 +3710,8 @@ projects:
       log-counters-changed:
         display_name: "a log metric changed"
         tier: p2
-        subject: "log metric changed: ${metric_or_resource.label.operation}"
+        subject: "An alert counter (log metric) changed: ${metric_or_resource.label.operation}"
+        action: "expected during a deploy; check the deploy notes"
         documentation: >-
           A log-based metric in the app project was created, changed or deleted (the
           Admin Activity log; the incident's label is the method). The counters
@@ -3717,7 +3907,7 @@ projects:
         description: >-
           A member read records served to staff (`operation served` at a staff
           door, `door_internal`, `door_agent`, `door_compliance` or
-          `door_finance`, for one of the twelve operations whose records entry
+          `door_finance`, for one of the thirteen operations whose records entry
           decides a read or a list of a member), by operation: the hosted
           security page's reads by hour, where night activity shows. Never
           the member, the person or the tenant; an after-hours flag on a
@@ -3727,9 +3917,9 @@ projects:
           AND jsonPayload.service="records"
           AND jsonPayload.message="operation served"
           AND jsonPayload.door=~"^door_(internal|agent|compliance|finance)$"
-          AND jsonPayload.op=~"^(eligibility[.]get_member|eligibility[.]list_members|eligibility[.]search_members|eligibility[.]member_coverage|eligibility[.]member_id_card|eligibility[.]member_card_view|claims[.]accumulators|claims[.]list_other_coverages|contactcenter[.]member|contactcenter[.]member_coverage|contactcenter[.]member_balances|implementations[.]enrollment_provenance)$"
+          AND jsonPayload.op=~"^(eligibility[.]get_member|eligibility[.]list_members|eligibility[.]search_members|eligibility[.]member_coverage|eligibility[.]member_id_card|eligibility[.]member_card_view|claims[.]accumulators|claims[.]list_other_coverages|contactcenter[.]member|contactcenter[.]member_coverage|contactcenter[.]member_balances|contactcenter[.]member_card_view|implementations[.]enrollment_provenance)$"
         labels:
-          operation: 'REGEXP_EXTRACT(jsonPayload.op, "^(eligibility\\.get_member|eligibility\\.list_members|eligibility\\.search_members|eligibility\\.member_coverage|eligibility\\.member_id_card|eligibility\\.member_card_view|claims\\.accumulators|claims\\.list_other_coverages|contactcenter\\.member|contactcenter\\.member_coverage|contactcenter\\.member_balances|implementations\\.enrollment_provenance)$")'
+          operation: 'REGEXP_EXTRACT(jsonPayload.op, "^(eligibility\\.get_member|eligibility\\.list_members|eligibility\\.search_members|eligibility\\.member_coverage|eligibility\\.member_id_card|eligibility\\.member_card_view|claims\\.accumulators|claims\\.list_other_coverages|contactcenter\\.member|contactcenter\\.member_coverage|contactcenter\\.member_balances|contactcenter\\.member_card_view|implementations\\.enrollment_provenance)$")'
 
       connectors_passes:
         description: >-
@@ -3866,7 +4056,7 @@ projects:
         display_name: "URGENT records: audit flush failed or database unreachable"
         tier: p1
         urgent: true
-        subject: "records: ${metric_or_resource.label.code}"
+        subject: "Member records hit a critical error: ${metric_or_resource.label.code}"
         documentation: >-
           The gateway logged `audit flush failed` (a refusal's audit rows did
           not land: the chain has a hole) or `database unreachable` (tpa-db did
@@ -3886,6 +4076,7 @@ projects:
 
       audit-chain:
         display_name: "URGENT audit chain (records)"
+        subject: "Member records' nightly audit seal failed"
         tier: p1
         urgent: true
         documentation: >-
@@ -3916,6 +4107,7 @@ projects:
       # --date also does, for every tenant at once; urgent, that rerun paged.
       chain-head-exists:
         display_name: "a chain head was already in the vault"
+        subject: "Member records' audit seal for the day was already in the vault"
         tier: p2
         documentation: >-
           records-chain-head found the latest closed day's head already in the
@@ -3943,7 +4135,7 @@ projects:
         display_name: "URGENT records limit: a staff account was frozen"
         tier: p1
         urgent: true
-        subject: "records limit: a ${metric_or_resource.label.role} account was frozen"
+        subject: "A ${metric_or_resource.label.role} staff account was frozen for reading too many member records"
         documentation: >-
           Records froze one staff person in one tenant: their reads reached
           twice their role's limit (or a role whose limit is 0 opened a
@@ -3967,7 +4159,7 @@ projects:
       records-velocity-hold:
         display_name: "records limit: a staff account is held"
         tier: p2
-        subject: "records limit: a ${metric_or_resource.label.role} account is held"
+        subject: "A ${metric_or_resource.label.role} staff account was held for reading many member records"
         documentation: >-
           Records held one staff person in one tenant: their reads reached one
           and a half times their role's limit, so members they have not opened
@@ -3994,6 +4186,7 @@ projects:
 
       records-velocity-raised:
         display_name: "URGENT records limit: a limit was raised"
+        subject: "An admin loosened the member-records reading limit"
         tier: p1
         urgent: true
         documentation: >-
@@ -4014,6 +4207,7 @@ projects:
 
       records-velocity-lowered:
         display_name: "records limit: a limit was lowered"
+        subject: "An admin tightened the member-records reading limit"
         tier: p3
         documentation: >-
           A TPA administrator saved a tighter records limit: a role's figure or
@@ -4038,7 +4232,7 @@ projects:
         display_name: "URGENT a backup job failed (the export to the vault, the restore drill)"
         tier: p1
         urgent: true
-        subject: "backup job failed: ${metric_or_resource.label.job_name}"
+        subject: "Tonight's member database backup or restore drill failed: ${metric_or_resource.label.job_name}"
         documentation: >-
           The nightly export of tpa-db to the vault (`tpa-db-export`) or the
           restore drill (`restore-drill`) failed after its retries: tonight's
@@ -4059,7 +4253,7 @@ projects:
       jobs-failed:
         display_name: "a protected job's execution failed"
         tier: p3
-        subject: "protected job failed: ${metric_or_resource.label.job_name}"
+        subject: "A member-records job a person runs failed: ${metric_or_resource.label.job_name}"
         documentation: >-
           A Cloud Run job in the PHI project that a person runs failed after
           its retries: the migration (`migrate-tpa`) or beta's seed of made-up
@@ -4081,7 +4275,7 @@ projects:
         display_name: "URGENT a backup schedule could not start its job"
         tier: p1
         urgent: true
-        subject: "backup schedule could not start its job: ${metric_or_resource.label.job_id} (${metric_or_resource.label.code})"
+        subject: "Tonight's member database backup could not start: ${metric_or_resource.label.job_id} (${metric_or_resource.label.code})"
         documentation: >-
           Cloud Scheduler's attempt to start the nightly export to the vault or
           the restore drill finished in error, so tonight's backup did not
@@ -4100,7 +4294,7 @@ projects:
       connectors-dead-letters:
         display_name: "connectors: a dead letter"
         tier: p2
-        subject: "connectors dead letter: ${metric_or_resource.label.code}"
+        subject: "A message was given up and will never be sent: ${metric_or_resource.label.code}"
         documentation: >-
           A row was settled dead: it will never be sent. The code says why
           (a lane mismatch or an unknown destination is a bug; a 4xx is the
@@ -4119,7 +4313,7 @@ projects:
         display_name: "URGENT connectors: a destination was refused"
         tier: p1
         urgent: true
-        subject: "connectors destination refused: ${metric_or_resource.label.lane}"
+        subject: "Blocked a send to an address not on the allowed list: ${metric_or_resource.label.lane}"
         documentation: >-
           The egress client refused a destination that is not on the
           allowlist: a configuration error, or something worse (connectors.md
@@ -4135,7 +4329,7 @@ projects:
       connectors-envelope-unsigned:
         display_name: "connectors: an envelope arrived unsigned"
         tier: p2
-        subject: "connectors envelope unsigned: ${metric_or_resource.label.lane}"
+        subject: "A message was dropped unsent because it had no signature: ${metric_or_resource.label.lane}"
         documentation: >-
           A claimed row carried no signature header: a gateway bug, not a
           network one. The row was settled dead unsent (connectors.md §6).
@@ -4149,7 +4343,10 @@ projects:
 
       connectors-stalled:
         display_name: "connectors: no delivery pass for five minutes"
+        subject: "Emails and texts are not going out: the sender stopped 5 minutes ago"
         tier: p2
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "604800s"
         documentation: >-
           The delivery loop wrote no pass line for five minutes: it is stuck,
           down, or its pass line changed format. Nothing is being delivered, so
@@ -4170,7 +4367,7 @@ projects:
       perimeter-violations:
         display_name: "perimeter violation"
         tier: p2
-        subject: "perimeter violation: ${metric_or_resource.label.service} (${metric_or_resource.label.code})"
+        subject: "Member-data security boundary violation: ${metric_or_resource.label.service} (${metric_or_resource.label.code})"
         documentation: >-
           VPC Service Controls logged a violation. In dry run nothing was
           refused: read it against network-and-perimeter.md §5.5 before the
@@ -4192,7 +4389,8 @@ projects:
       monitoring-changed:
         display_name: "an alert policy or notification channel changed"
         tier: p2
-        subject: "alert policy or channel changed: ${metric_or_resource.label.operation}"
+        subject: "Alert settings changed: ${metric_or_resource.label.operation}"
+        action: "expected during a deploy; check the deploy notes"
         documentation: >-
           An alert policy or a notification channel in the PHI project was
           created, changed or deleted, a channel verified, or a snooze made or
@@ -4223,7 +4421,8 @@ projects:
       log-counters-changed:
         display_name: "a log metric changed"
         tier: p2
-        subject: "log metric changed: ${metric_or_resource.label.operation}"
+        subject: "An alert counter (log metric) changed: ${metric_or_resource.label.operation}"
+        action: "expected during a deploy; check the deploy notes"
         documentation: >-
           A log-based metric in the PHI project was created, changed or
           deleted (D-142). Its log metric writers (row 174, grp-platform-admin)
@@ -4273,7 +4472,9 @@ projects:
       records-sql-errors:
         display_name: "records: database connection errors"
         tier: p2
-        subject: "records database connection errors: ${metric_or_resource.label.sqlstate}"
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "Member records' database connections are failing: ${metric_or_resource.label.sqlstate}"
         documentation: >-
           records logged three or more errors whose SQLSTATE is a connection
           exception (class 08) in ten minutes: it reached the proxy and the
@@ -4296,6 +4497,7 @@ projects:
       # app tier's. records answers tpa-api, the jobs and connectors only.
       records-down:
         display_name: "URGENT records answered only errors"
+        subject: "Member records is down, answering only errors"
         tier: p1
         urgent: true
         documentation: >-
@@ -4317,6 +4519,7 @@ projects:
       # down policy while the instance is stopped on purpose (B8).
       tpa-db-down:
         display_name: "URGENT tpa-db is down"
+        subject: "Member records database (tpa-db) is down"
         tier: p1
         urgent: true
         documentation: >-
@@ -4340,7 +4543,10 @@ projects:
 
       tpa-db-disk:
         display_name: "tpa-db disk above 85%"
+        subject: "Member records database (tpa-db) disk is over 85% full"
         tier: p2
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
         documentation: >-
           tpa-db's disk has stayed above 85 percent full for ten minutes.
           Automatic growth stops at the instance's disk_autoresize_limit
@@ -4366,7 +4572,10 @@ projects:
       # own policies.
       message-vendor-errors:
         display_name: "connectors: the email or text vendor is failing (the message lane)"
+        subject: "Member notices by email or text are failing at the provider"
         tier: p2
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
         documentation: >-
           Five or more of the message lane's sends, and more than a quarter of
           them, failed at the vendor in thirty minutes (settled retry,
@@ -4395,7 +4604,7 @@ projects:
       records-refusals-surge:
         display_name: "records refusals surging"
         tier: p2
-        subject: "records refusals surging: gate ${metric_or_resource.label.gate}"
+        subject: "Member records refused a burst of calls at its identity checks: gate ${metric_or_resource.label.gate}"
         documentation: >-
           records refused more than ten calls at its identity gates (1 caller,
           2 token, 3 liveness) in ten minutes, or more than a hundred at any
@@ -4427,7 +4636,7 @@ projects:
       records-reveals-surge:
         display_name: "records reveals surging"
         tier: p2
-        subject: "records reveals surging: ${metric_or_resource.label.operation}"
+        subject: "Staff revealed many SSNs or bank details in an hour: ${metric_or_resource.label.operation}"
         documentation: >-
           records served more than twenty reveals (`eligibility.reveal`, an
           SSN; `network.reveal_field`, a bank field) in an hour across the
@@ -4447,7 +4656,7 @@ projects:
       records-mirror-problems:
         display_name: "records' copy of auth's keys or revocations is failing"
         tier: p2
-        subject: "records mirror failing: gate ${metric_or_resource.label.gate}"
+        subject: "Member records cannot refresh its copy of auth's keys or revocations: gate ${metric_or_resource.label.gate}"
         documentation: >-
           records' mirror wrote more than three warnings or errors in every
           fifteen minutes for fifteen: the JWKS fetch (gate 2), or the event or
@@ -4634,7 +4843,7 @@ projects:
       jobs-failed:
         display_name: "a CRM job failed twice in a row"
         tier: p3
-        subject: "CRM job failed twice in a row: ${metric_or_resource.label.job_name}"
+        subject: "A CRM job failed twice in a row: ${metric_or_resource.label.job_name}"
         documentation: >-
           One of the CRM's jobs failed twice in a row within a day, with no
           successful run between: its migration (`migrate-crm`) or its
@@ -4653,7 +4862,7 @@ projects:
       engine-latency:
         display_name: "engine p95 latency above 2 s (its own request line)"
         tier: p3
-        subject: "engine p95 above 2 s"
+        subject: "The CRM is slow (1 in 20 answers over 2 s)"
         documentation: >-
           The CRM engine's 95th percentile time to answer stayed above two
           seconds for ten minutes, read from its own request line without its
@@ -4684,7 +4893,7 @@ projects:
       crm-sign-in-ceiling:
         display_name: "a CRM account's sign-in paused for 30 days"
         tier: p2
-        subject: "CRM sign-in paused for 30 days: ${metric_or_resource.label.class} account"
+        subject: "A CRM account's sign-in was paused for 30 days after wrong codes: ${metric_or_resource.label.class} account"
         documentation: >-
           A hundred wrong second-step codes in thirty days paused one CRM
           account's sign-in for thirty days: somebody holds that account's
@@ -4704,7 +4913,7 @@ projects:
       crm-sign-in-staff:
         display_name: "a CRM owner's or administrator's sign-in paused"
         tier: p2
-        subject: "CRM staff sign-in paused: ${metric_or_resource.label.code}"
+        subject: "A CRM admin account's sign-in was paused after wrong passwords: ${metric_or_resource.label.code}"
         documentation: >-
           Sign-in to an owner's or administrator's CRM account was paused
           after ten wrong passwords (`account`; anybody with the address can
@@ -4726,7 +4935,7 @@ projects:
         display_name: "URGENT second-step codes guessed on a CRM owner's or administrator's account"
         tier: p1
         urgent: true
-        subject: "CRM staff second step paused: ${metric_or_resource.label.code}"
+        subject: "Wrong codes after a right password on a CRM admin account: ${metric_or_resource.label.code}"
         documentation: >-
           A CRM owner's or administrator's second step was paused after ten
           wrong codes that followed a correct password (`factor`), or for the
@@ -4744,6 +4953,7 @@ projects:
 
       crm-sign-in-repeated:
         display_name: "URGENT a CRM account's second step paused three times in a day"
+        subject: "A CRM account was paused three times today (password likely stolen)"
         tier: p1
         urgent: true
         documentation: >-
@@ -4760,6 +4970,7 @@ projects:
 
       crm-sign-in-list:
         display_name: "URGENT five or more CRM second-step pauses in an hour"
+        subject: "Five or more CRM accounts paused in an hour (a leaked password list)"
         tier: p1
         urgent: true
         documentation: >-
@@ -4778,6 +4989,7 @@ projects:
 
       crm-sign-in-surge:
         display_name: "CRM sign-in refusals surging"
+        subject: "Many CRM sign-ins refused in 5 minutes (likely password guessing)"
         tier: p2
         documentation: >-
           More than twenty sign-ins refused at the CRM's door in five minutes,
@@ -4797,6 +5009,7 @@ projects:
       # on the open host's first days.
       crm-password-spray:
         display_name: "URGENT refused CRM password sign-ins surging (a password spray)"
+        subject: "Many wrong CRM passwords across many accounts (a password-guessing attack)"
         tier: p1
         urgent: true
         documentation: >-
@@ -4821,6 +5034,7 @@ projects:
       # down policy while the instance is stopped on purpose (B8).
       crm-db-down:
         display_name: "URGENT crm-db is down"
+        subject: "CRM database (crm-db) is down"
         tier: p1
         urgent: true
         documentation: >-
@@ -4843,7 +5057,10 @@ projects:
 
       crm-db-disk:
         display_name: "crm-db disk above 85%"
+        subject: "CRM database (crm-db) disk is over 85% full"
         tier: p2
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
         documentation: >-
           crm-db's disk has stayed above 85 percent full for ten minutes.
           Automatic growth stops at the instance's disk_autoresize_limit;
@@ -5038,6 +5255,7 @@ projects:
       # its minimum is one or more).
       voice-down:
         display_name: "URGENT svc-voice answered only errors"
+        subject: "The phone line's AI (svc-voice) is down, answering only errors"
         tier: p1
         urgent: true
         documentation: >-
@@ -5062,7 +5280,9 @@ projects:
       voice-model-errors:
         display_name: "svc-voice: the model vendor is failing"
         tier: p2
-        subject: "svc-voice model vendor failing: ${metric_or_resource.label.class}"
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "The phone line's AI model provider is failing; callers hear the fallback: ${metric_or_resource.label.class}"
         documentation: >-
           svc-voice logged three or more errors whose exception is the model
           vendor's (a class under `anthropic`) in ten minutes: callers to the
@@ -5088,7 +5308,9 @@ projects:
       voice-concurrency-high:
         display_name: "svc-voice: its one instance near its request concurrency"
         tier: p2
-        subject: "svc-voice near its concurrency of 40"
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "The phone line's AI (svc-voice) is near its limit of calls at once"
         documentation: >-
           svc-voice's one instance served 32 or more requests at once (80
           percent of its concurrency of 40) at the 99th percentile for five
@@ -5118,7 +5340,8 @@ projects:
       voice-loop-stall:
         display_name: "svc-voice: its event loop stalled"
         tier: p2
-        subject: "svc-voice event loop stalled"
+        notification_prompts: ["OPENED", "CLOSED"]
+        subject: "The phone line's AI (svc-voice) froze for seconds at a time"
         auto_close: "1800s"
         documentation: >-
           svc-voice's event-loop watchdog saw its own timer fire five seconds
@@ -5159,7 +5382,7 @@ projects:
       voice-keep-warm-failing:
         display_name: "svc-voice: a keep-warm step keeps failing"
         tier: p3
-        subject: "svc-voice keep-warm failing: ${metric_or_resource.label.code}"
+        subject: "The phone line's AI warm-up step keeps failing: ${metric_or_resource.label.code}"
         documentation: >-
           One of svc-voice's keep-warm steps failed or timed out more than
           three times in fifteen minutes, so the next call's first use of it
@@ -5181,7 +5404,7 @@ projects:
       jobs-failed:
         display_name: "a call-centre job execution failed"
         tier: p3
-        subject: "call-centre job failed: ${metric_or_resource.label.job_name}"
+        subject: "The call-centre database update job failed: ${metric_or_resource.label.job_name}"
         documentation: >-
           migrate-cc, cc-db's schema migration, failed (staffed desk only; a
           person runs it, row 134). It is read, never retried: read the
@@ -5200,6 +5423,7 @@ projects:
       # stopped between sessions (database_activation_policy.cc_db NEVER).
       cc-db-down:
         display_name: "URGENT cc-db is down"
+        subject: "Call-centre database (cc-db) is down"
         tier: p1
         urgent: true
         documentation: >-
@@ -5222,7 +5446,10 @@ projects:
 
       cc-db-disk:
         display_name: "cc-db disk above 85%"
+        subject: "Call-centre database (cc-db) disk is over 85% full"
         tier: p2
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
         documentation: >-
           cc-db's disk has stayed above 85 percent full for ten minutes.
           Automatic growth stops at the instance's disk_autoresize_limit
@@ -5247,7 +5474,8 @@ projects:
       monitoring-changed:
         display_name: "an alert policy or notification channel changed"
         tier: p2
-        subject: "alert policy or channel changed: ${metric_or_resource.label.operation}"
+        subject: "Alert settings changed: ${metric_or_resource.label.operation}"
+        action: "expected during a deploy; check the deploy notes"
         documentation: >-
           An alert policy or a notification channel in the call-centre project was created,
           changed or deleted, a channel verified, or a snooze made or changed
@@ -5276,7 +5504,8 @@ projects:
       log-counters-changed:
         display_name: "a log metric changed"
         tier: p2
-        subject: "log metric changed: ${metric_or_resource.label.operation}"
+        subject: "An alert counter (log metric) changed: ${metric_or_resource.label.operation}"
+        action: "expected during a deploy; check the deploy notes"
         documentation: >-
           A log-based metric in the call-centre project was created, changed or deleted (the
           Admin Activity log; the incident's label is the method). The counters
@@ -5354,7 +5583,10 @@ synthetics:
     # project's `jobs-failed` names its jobs one by one, never these).
     synthetic-failing:
       display_name: "synthetic journey failing: __JOB__"
+      subject: "A practice sign-in (robot check) failed three times in a row: __JOB__"
       tier: p2
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
       documentation: >-
         The synthetic journey `__JOB__` failed three times in sixteen minutes
         with no pass between: a person signing in the same way would fail too. The
@@ -5386,7 +5618,10 @@ synthetics:
     # not run at all (900 s with no execution).
     synthetic-broken:
       display_name: "synthetic journey broken: __JOB__"
+      subject: "A practice sign-in check is broken (its own fault, not sign-in): __JOB__"
       tier: p2
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
       documentation: >-
         The synthetic journey `__JOB__`'s runner reported `error` in the last
         eleven minutes: it is broken (code `runner`), misconfigured (code
@@ -5426,7 +5661,10 @@ synthetics:
     # (900 s), also normal.
     synthetic-blind:
       display_name: "synthetic checks not running: __JOB__"
+      subject: "Practice sign-in checks stopped reporting 15 minutes ago: __JOB__"
       tier: p2
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
       documentation: >-
         The synthetic journey `__JOB__` has written no result line for
         fifteen minutes and its schedule is not paused: nothing is checking
@@ -5448,6 +5686,7 @@ synthetics:
     # failed check is a verdict (exit 0) and never opens it.
     synthetic-job-failed:
       display_name: "synthetic job failed: __JOB__"
+      subject: "A practice sign-in check's run failed: __JOB__"
       tier: p3
       documentation: >-
         An execution of the synthetic journey's job `__JOB__` failed in the
@@ -5531,7 +5770,7 @@ signin_robots:
     # runs in a rollout are two minutes members could not sign in.
     signin-failing:
       display_name: "URGENT sign-in failing: __JOB__"
-      subject: "__WHO__ cannot sign in to the portal: two failed checks in 11 minutes"
+      subject: "__WHO__ cannot sign in to the portal (two failed checks in 11 minutes)"
       tier: p1
       urgent: true
       documentation: >-
@@ -5564,7 +5803,7 @@ signin_robots:
     # without that rule.
     signin-robot-locked-out:
       display_name: "URGENT sign-in check locked out: __JOB__"
-      subject: "__WHO__' sign-in check is locked out or rate limited: two in 11 minutes"
+      subject: "__WHO__' sign-in check is locked out, so it cannot test sign-in"
       tier: p1
       urgent: true
       documentation: >-
@@ -5606,6 +5845,8 @@ signin_robots:
       display_name: "sign-in check broken: __JOB__"
       subject: "__WHO__' sign-in check is broken (its own fault, not sign-in)"
       tier: p2
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
       documentation: >-
         The sign-in robot `__JOB__` reported `error` in the last eleven minutes: it is broken (`runner`), misconfigured (`config`, or a credentials file it cannot use), could not sign the passkey (`passkey`), or never got its own network path (`egress`: no two fresh connections in a row to the portal's load balancer within SYNTHETICS_EGRESS_WAIT_S; one such run is Cloud NAT warming, run after run is the job's network or rules 1452 and 1462). It is not checking anything until fixed. Read the job's last execution and its result line, then its environment and its pinned version (signin_robot_versions).
       conditions:
@@ -5620,6 +5861,7 @@ signin_robots:
     signin-checks-off:
       display_name: "sign-in check switched off for a day: __JOB__"
       subject: "__WHO__' sign-in check has been switched off for a day"
+      action: "turn it back on once its reason is done"
       tier: p3
       documentation: >-
         The sign-in robot `__JOB__` has been refused by auth's switch (`skipped` / `disabled`) with no pass for a day: nothing has checked that people can sign in since. Turn it back on (signin_robot_principals_enabled) once its reason is done; after an off for doubt about a secret, rotate first (infra/README.md, "Sign-in robots").
@@ -5636,7 +5878,7 @@ signin_robots:
     # deny policy's refusals included: whoever reads one holds a robot login.
     signin-robot-secret-read:
       display_name: "URGENT someone but the sign-in robots read a robot's secret"
-      subject: "Someone other than the sign-in robots read a sign-in robot's secret"
+      subject: "Someone other than the sign-in robots read a robot's password"
       tier: p1
       urgent: true
       documentation: >-
@@ -5667,7 +5909,7 @@ signin_robots:
     # refused it, so nothing was signed in. Any one in five minutes.
     signin-robot-foreign-password:
       display_name: "URGENT a sign-in robot's password used from elsewhere"
-      subject: "A sign-in robot's right password or live challenge was used from outside its runner: ${metric_or_resource.label.class}"
+      subject: "A sign-in robot's password was used from outside its runner: ${metric_or_resource.label.class}"
       tier: p1
       urgent: true
       documentation: >-
@@ -5695,7 +5937,7 @@ signin_robots:
     # meet that bucket.
     signin-robot-foreign-guess:
       display_name: "someone tried a sign-in robot's login from elsewhere"
-      subject: "Someone outside the runner tried a sign-in robot's login with a wrong password: ${metric_or_resource.label.class}"
+      subject: "Someone outside the runner tried a sign-in robot's login: ${metric_or_resource.label.class}"
       tier: p2
       documentation: >-
         auth refused a wrong password at a sign-in robot's own address, from somewhere other than the robots' runner, at least once in fifteen minutes. A robot's address is 128 random bits under sign-in-check.invalid and is published nowhere, so no internet scan reaches this: somebody learned the address from a robot's secret or from auth's database. Nothing was signed in, and the robots' own sign-ins are unaffected (auth charges these tries to the robot's separate foreign bucket). The subject names which robot (the counter's `class`); auth's audit chain holds each refused sign-in's address. Read the robots' secrets' Data Access entries (signin-robot-secret-read) and who can read auth-db; on any doubt, turn the robots off at auth (signin_robot_principals_enabled false) and rotate both logins (infra/README.md, "Sign-in robots").
@@ -5766,7 +6008,7 @@ beta_text_codes:
     beta-text-off-list:
       display_name: "beta text codes: a code was not texted, its number is not on the callers list"
       tier: p3
-      subject: "text code not texted, its number is off the callers list: ${metric_or_resource.label.code}"
+      subject: "Text code not sent: the number is not on the callers list: ${metric_or_resource.label.code}"
       documentation: >-
         Beta's text sender claimed a one-time code and did not text it,
         because the number records handed out is not on the phone line's
@@ -5791,7 +6033,7 @@ beta_text_codes:
     beta-text-not-the-named:
       display_name: "beta text codes: records handed out a challenge the code lane did not name"
       tier: p2
-      subject: "text code not sent, records handed out a challenge the lane did not name"
+      subject: "Text code not sent: records handed out a different challenge"
       documentation: >-
         Beta's text sender heard records' code lane name one challenge, claimed
         it by its id, and was handed a different challenge. It did not text
@@ -5820,7 +6062,9 @@ beta_text_codes:
     beta-text-vendor-refused:
       display_name: "beta text codes: the text vendor refused a code"
       tier: p2
-      subject: "text vendor refused a text, its error number: ${metric_or_resource.label.code}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "Text provider refused a text, its error number: ${metric_or_resource.label.code}"
       documentation: >-
         The text vendor answered one of beta's code texts with a refusal (an
         HTTP 4xx or 5xx). The incident's code is the vendor's own error
@@ -5849,7 +6093,7 @@ beta_text_codes:
     beta-text-ceiling:
       display_name: "beta text codes: the day's ceiling is reached"
       tier: p2
-      subject: "text codes: the day's ceiling is reached"
+      subject: "Text codes stopped: today's limit is reached (resets at midnight UTC)"
       documentation: >-
         Beta's text sender has started as many texts today as its ceiling
         allows (beta_text_codes_daily_ceiling, thirty at most) and claims no
@@ -5872,7 +6116,9 @@ beta_text_codes:
     beta-text-sender-stalled:
       display_name: "beta text codes: the sender wrote no pass line for five minutes"
       tier: p2
-      subject: "text codes: the sender wrote no pass line for five minutes"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "604800s"
+      subject: "Text codes are not going out: the sender stopped 5 minutes ago"
       documentation: >-
         connectors, which is beta's text sender, wrote no pass line for five
         minutes: it is down, stuck or was refused at start (a setting, the
@@ -5927,7 +6173,7 @@ sni_proxy:
       display_name: "URGENT the text sender's SNI proxy refused a connection"
       tier: p1
       urgent: true
-      subject: "the text sender's SNI proxy refused a connection for another host"
+      subject: "The text sender's network gate refused a connection to another host"
       documentation: >-
         The SNI proxy in beta's member-data project closed a connection whose
         TLS server name was not the one vendor host it passes (or that had
@@ -5952,7 +6198,9 @@ sni_proxy:
     sni-proxy-down:
       display_name: "beta text codes: the SNI proxy's VM has reported nothing for ten minutes"
       tier: p2
-      subject: "the text sender's SNI proxy VM is down"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "604800s"
+      subject: "The text sender's network gate (SNI proxy) is down: no codes are texted"
       documentation: >-
         The sni-proxy VM in beta's member-data project has reported no uptime
         for ten minutes: it is stopped, being replaced, or gone. While it is
@@ -5995,17 +6243,25 @@ crm_lane_send:
         lane on and not configured, `not_configured`; no workload token or
         identity token to send with, `unavailable`: auth, the metadata server
         or the copy's registration; a queued row off its schema, dead and never
-        signed, `schema_refused`) and its job module's (a pass that raised,
-        `failed`, the exception's type alone). By that closed outcome alone;
-        the row's transition id and path, and the exception's type, on the
-        line are never read.
+        signed, `schema_refused`; a withdrawal convenience step that raised for
+        a reason other than a dropped database, the pass going on,
+        `step_failed`) and its job module's (a pass that raised, `failed`, the
+        exception's type alone; `failed` with reason `database_unavailable` is
+        a pass whose database did not answer within the job's 120 s start-up
+        wait). By that closed outcome alone; the row's transition id and path,
+        and the exception's type, on the line are never read. Since the engine
+        of 2026-11-12 the job waits out the cold Cloud SQL proxy before its
+        pass (send_once.DATABASE_ALLOWANCE_S, 120 s; the slowest of 388 runs
+        waited 97 s) and, since 2026-11-14, a convenience step whose database
+        dropped writes a warning, which this does not count: every line counted
+        is a pass that really could not send, or a fault that repeats.
       filter: |
         resource.type="cloud_run_job"
         AND resource.labels.job_name="crm-lane-send"
         AND (jsonPayload.logger="network.partner.drain" OR jsonPayload.logger="network.partner.send_once")
         AND jsonPayload.level="ERROR"
       labels:
-        outcome: 'REGEXP_EXTRACT(jsonPayload.outcome, "^(not_configured|unavailable|schema_refused|failed)$")'
+        outcome: 'REGEXP_EXTRACT(jsonPayload.outcome, "^(not_configured|unavailable|schema_refused|step_failed|failed)$")'
 
   alert_policies:
     # R380's twice in a row (the app project's `jobs-failed`), as a policy of
@@ -6013,7 +6269,9 @@ crm_lane_send:
     crm-lane-send-failed:
       display_name: "the CRM copy's won-deal sender failed twice in a row"
       tier: p2
-      subject: "CRM copy's won-deal sender failed twice in a row: ${metric_or_resource.label.job_name}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "The CRM's won-deal sender failed twice in a row: ${metric_or_resource.label.job_name}"
       documentation: >-
         The CRM beta copy's sender job (crm-lane-send, one pass of its outbox
         drain for won deals, every few minutes) failed twice in a row with no
@@ -6034,7 +6292,7 @@ crm_lane_send:
     crm-lane-send-refused:
       display_name: "the CRM copy's won-deal sender could not send"
       tier: p3
-      subject: "CRM copy's won-deal sender could not send: ${metric_or_resource.label.outcome}"
+      subject: "The CRM's won-deal sender could not send: ${metric_or_resource.label.outcome}"
       documentation: >-
         The CRM beta copy's sender job wrote an error line: `unavailable` (no
         workload token from auth, or no identity token: the copy's partner
@@ -6043,10 +6301,13 @@ crm_lane_send:
         environment names, never their values), `schema_refused` (a queued
         won deal that is off the lane's schema, dead-lettered unsigned; the
         copy's admin "TPA lane" page shows it, and its replay route resends it
-        once fixed) or `failed` (the pass raised: its line names the
-        exception's type alone, so read the execution's other lines; crm-db
-        through the proxy is the first suspect). Nothing more was sent for
-        that pass; a row is never sent twice.
+        once fixed), `step_failed` (a held or unfinished withdrawal could not
+        be asked or finished again for a reason other than the database: a
+        fault that repeats every pass) or `failed` (the pass raised: its line
+        names the exception's type alone, so read the execution's other lines;
+        reason `database_unavailable` means crm-db did not answer within the
+        job's 120 s start-up wait, through the proxy). Nothing more was sent
+        for that pass; a row is never sent twice.
       conditions:
         - name: "an error line"
           threshold:
@@ -6105,7 +6366,9 @@ crm_lane_comp:
     crm-lane-comp-failed:
       display_name: "the CRM copy's commission pass failed twice in a row"
       tier: p2
-      subject: "CRM copy's commission pass failed twice in a row: ${metric_or_resource.label.job_name}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "The CRM's nightly commission run failed twice in a row: ${metric_or_resource.label.job_name}"
       documentation: >-
         The CRM beta copy's commission pass (crm-lane-comp, the CRM's own
         nightly commission step for its lane business, every hour at :40,
@@ -6128,7 +6391,7 @@ crm_lane_comp:
     crm-lane-comp-errors:
       display_name: "the CRM copy's commission pass wrote an error line"
       tier: p3
-      subject: "CRM copy's commission pass wrote an error line: ${metric_or_resource.label.operation}"
+      subject: "The CRM's commission run wrote an error: ${metric_or_resource.label.operation}"
       documentation: >-
         The CRM beta copy's commission pass wrote an error line: `comp_once`
         (the pass raised; its line names the exception's type alone),
@@ -6169,7 +6432,7 @@ crm_lane_statements:
     crm-lane-statement-replies:
       display_name: "the TPA rejected or misplaced a CRM copy's statement"
       tier: p2
-      subject: "CRM copy's commission statement: ${metric_or_resource.label.outcome}"
+      subject: "The TPA answered a CRM commission statement: ${metric_or_resource.label.outcome}"
       documentation: >-
         The CRM beta copy's sender job sent a commission statement and wrote
         one of three lines about the TPA's answer: "the TPA rejected a
@@ -6209,7 +6472,7 @@ perimeter_dry_run:
     perimeter-violations:
       display_name: "perimeter violations in dry run (the day's count)"
       tier: p3
-      subject: "perimeter dry run: violations in the last 24 hours"
+      subject: "Daily count of member-data boundary violations (trial mode, nothing blocked)"
       # Opened once a day and told then; its close, a few minutes later, is
       # not told (Cloud Monitoring's AlertStrategy).
       notification_prompts: ["OPENED"]
@@ -6344,7 +6607,7 @@ feed_ingest:
       display_name: "URGENT the Everon importer's run failed"
       tier: p1
       urgent: true
-      subject: "Everon importer run failed: ${metric_or_resource.label.job_name}"
+      subject: "Everon import run failed: ${metric_or_resource.label.job_name}"
       documentation: >-
         An execution of the administrator-feed importer's scheduled Everon sync
         (feed-ingest-everon-sync, 07:00 and 12:00 Chicago time, never retried)
@@ -6385,7 +6648,7 @@ feed_ingest:
       display_name: "URGENT Cloud Scheduler could not start the Everon importer"
       tier: p1
       urgent: true
-      subject: "Everon importer could not be started: ${metric_or_resource.label.job_id}"
+      subject: "Everon import could not start: ${metric_or_resource.label.job_id}"
       documentation: >-
         Cloud Scheduler tried to start the administrator-feed importer's
         scheduled Everon sync (feed-ingest-everon-sync, 07:00 and 12:00
@@ -6420,7 +6683,7 @@ feed_ingest:
       display_name: "URGENT an Everon importer live run did not end whole"
       tier: p1
       urgent: true
-      subject: "Everon importer run did not end whole: ${metric_or_resource.label.outcome}"
+      subject: "Everon import did not finish cleanly: ${metric_or_resource.label.outcome}"
       documentation: >-
         A live run of the Everon importer (feed-ingest-everon-sync) ended with
         its summary line at WARNING or ERROR, or could not write its summary
@@ -6503,7 +6766,7 @@ feed_ingest_volume:
       tier: p1
       urgent: true
       notification_prompts: ["OPENED"]
-      subject: "Everon importer read fewer employers: ${metric_or_resource.label.job_name}"
+      subject: "Everon import read fewer employers than last time: ${metric_or_resource.label.job_name}"
       documentation: >-
         A live whole-book run of the Everon importer (feed-ingest-everon-sync)
         that exited 0 had fewer employers in scope than the run before it
@@ -6539,7 +6802,7 @@ feed_ingest_volume:
       tier: p1
       urgent: true
       notification_prompts: ["OPENED"]
-      subject: "Everon importer read fewer people: ${metric_or_resource.label.job_name}"
+      subject: "Everon import read far fewer people than last time: ${metric_or_resource.label.job_name}"
       documentation: >-
         A live whole-book run of the Everon importer (feed-ingest-everon-sync)
         that exited 0 built more than __PEOPLE_DROP_PERCENT__ percent fewer
@@ -6577,7 +6840,7 @@ feed_ingest_volume:
       tier: p1
       urgent: true
       notification_prompts: ["OPENED"]
-      subject: "Everon importer read more people: ${metric_or_resource.label.job_name}"
+      subject: "Everon import read far more people than last time: ${metric_or_resource.label.job_name}"
       documentation: >-
         A live whole-book run of the Everon importer (feed-ingest-everon-sync)
         that exited 0 built more than __PEOPLE_JUMP_PERCENT__ percent more
@@ -6611,7 +6874,7 @@ feed_ingest_volume:
       tier: p1
       urgent: true
       notification_prompts: ["OPENED"]
-      subject: "Everon importer read nothing: ${metric_or_resource.label.job_name}"
+      subject: "Everon import read nothing (an empty book): ${metric_or_resource.label.job_name}"
       documentation: >-
         A live whole-book run of the Everon importer (feed-ingest-everon-sync)
         exited 0 with no employers in scope, or no people built from them: it
@@ -6659,7 +6922,7 @@ feed_ingest_records:
       display_name: "URGENT records raised an administrator sync alert"
       tier: p1
       urgent: true
-      subject: "records raised an administrator sync alert"
+      subject: "Member records flagged a problem with the Everon import"
       documentation: >-
         records ended an administrator sync run (the Everon importer's) with
         an alert for staff: a run that failed, closed incomplete or expired, or
@@ -6699,6 +6962,7 @@ enroll_db:
   alert_policies:
     enroll-db-down:
       display_name: "URGENT enroll-db is down"
+      subject: "Enrollment database (enroll-db) is down"
       tier: p1
       urgent: true
       documentation: >-
@@ -6723,7 +6987,10 @@ enroll_db:
 
     enroll-db-disk:
       display_name: "enroll-db disk above 85%"
+      subject: "Enrollment database (enroll-db) disk is over 85% full"
       tier: p2
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
       documentation: >-
         enroll-db's disk has stayed above 85 percent full for ten minutes.
         Automatic growth stops at the instance's disk_autoresize_limit
@@ -6765,6 +7032,7 @@ enroll:
     # only 5xx is it down for the portal whatever the traffic.
     enroll-down:
       display_name: "URGENT the enrollment engine answered only errors"
+      subject: "The enrollment site is down, answering only errors"
       tier: p1
       urgent: true
       documentation: >-
@@ -6787,7 +7055,7 @@ enroll:
     enroll-migrate-failed:
       display_name: "enroll-db's migration failed"
       tier: p3
-      subject: "enroll-db's migration failed: ${metric_or_resource.label.job_name}"
+      subject: "The enrollment database update job failed: ${metric_or_resource.label.job_name}"
       documentation: >-
         An execution of migrate-enroll (run by a person: the stand-in public
         lane, enroll's lane and its boundary check; or its provision and
@@ -6806,7 +7074,9 @@ enroll:
     enroll-mail-failing:
       display_name: "the enrollment engine's mail is failing"
       tier: p2
-      subject: "enrollment mail is failing: ${metric_or_resource.label.code}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "Enrollment emails are not going out: ${metric_or_resource.label.code}"
       documentation: >-
         The enrollment engine's mail loop wrote more than three error lines in
         fifteen minutes: sign-in links and notices are not leaving. The code
@@ -6871,7 +7141,10 @@ auth_reset_drain:
   alert_policies:
     auth-reset-drain-absent:
       display_name: "auth's reset drain has not run for five minutes"
+      subject: "Password-reset emails are not being sent (no run for 5 minutes)"
       tier: p2
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "604800s"
       documentation: >-
         auth wrote no reset_requests_drained line for five minutes while the
         self-service reset is on, so password-reset emails are not being sent
@@ -6900,7 +7173,10 @@ auth_reset_drain:
 
     auth-reset-queue-behind:
       display_name: "auth's reset queue is behind"
+      subject: "Password-reset emails are falling behind"
       tier: p2
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
       documentation: >-
         A reset request has waited more than 120 s after a drain pass: the
         drain is running but not keeping up (each call takes at most 200 rows
@@ -6929,7 +7205,9 @@ crm_reset_drain:
     crm-reset-drain-failed:
       display_name: "the CRM copy's reset drain failed twice in a row"
       tier: p2
-      subject: "CRM copy's reset drain failed twice in a row: ${metric_or_resource.label.job_name}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "CRM password-reset emails failed twice in a row: ${metric_or_resource.label.job_name}"
       documentation: >-
         The CRM beta copy's forgot-password drain (crm-reset-drain, one pass
         every two minutes: sweep the expired rows, then look each queued
@@ -7096,6 +7374,7 @@ sso_crm:
   alert_policies:
     sso-assertion-replayed-paging:
       display_name: "URGENT TPA sign-in: a client assertion replayed from a new place"
+      subject: "CRM sign-in with TPA: a reused login proof came from a new place"
       tier: p1
       urgent: true
       documentation: >-
@@ -7108,6 +7387,7 @@ sso_crm:
 
     sso-assertion-replayed:
       display_name: "TPA sign-in: a client assertion replayed"
+      subject: "CRM sign-in with TPA: a login proof was reused"
       tier: p2
       documentation: >-
         auth refused a CRM sign-in client assertion presented a second time (a retry that reused its assertion is a CRM bug; anything else is the paging policy's case). Read auth's lines for the route.
@@ -7119,6 +7399,7 @@ sso_crm:
 
     sso-code-replayed:
       display_name: "URGENT TPA sign-in: an authorization code replayed"
+      subject: "CRM sign-in with TPA: a one-time code was used twice"
       tier: p1
       urgent: true
       documentation: >-
@@ -7131,6 +7412,7 @@ sso_crm:
 
     sso-mass-revoke:
       display_name: "URGENT TPA sign-in: the client spent its revoke budget"
+      subject: "CRM sign-in with TPA: the CRM ended 20 sessions in 10 minutes and is now blocked"
       tier: p1
       urgent: true
       documentation: >-
@@ -7143,6 +7425,7 @@ sso_crm:
 
     sso-mass-revoke-alert:
       display_name: "TPA sign-in: the client is ending many TPA sessions"
+      subject: "CRM sign-in with TPA: the CRM is ending many sessions"
       tier: p2
       documentation: >-
         The CRM sign-in client has ended ten or more TPA sessions in ten minutes (the budget is twenty). Watch for the paging policy; read the CRM engine's lines.
@@ -7154,6 +7437,7 @@ sso_crm:
 
     sso-refused-spike:
       display_name: "TPA sign-in: the door is refusing many requests"
+      subject: "CRM sign-in with TPA: many sign-in requests refused"
       tier: p2
       documentation: >-
         auth's TPA sign-in door refused more than twenty requests in ten minutes (bad or stale hand-offs, a misconfigured client, or probing). Read auth's sso_refused lines' reasons.
@@ -7169,6 +7453,7 @@ sso_crm:
 
     sso-client-refused-spike:
       display_name: "TPA sign-in: many machine calls refused"
+      subject: "CRM sign-in with TPA: many CRM machine calls refused"
       tier: p2
       documentation: >-
         auth refused more than twenty CRM sign-in machine calls in ten minutes as invalid_client (no or a bad assertion or identity token): a broken client key, the engine on the wrong account, or someone without the key. Read auth's sso_client_refused reasons.
@@ -7184,7 +7469,10 @@ sso_crm:
 
     sso-door-saturated:
       display_name: "TPA sign-in: the door is saturated"
+      subject: "CRM sign-in with TPA: too busy, turning requests away"
       tier: p2
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
       documentation: >-
         auth turned TPA sign-in door requests away because the door is saturated (SPEC Y-7). Read auth's request rate and instances.
       conditions:
@@ -7195,6 +7483,7 @@ sso_crm:
 
     sso-activity-ignored:
       display_name: "TPA sign-in: CRM activity ignored beyond the presence horizon"
+      subject: "CRM sign-in with TPA: the CRM keeps idle sessions alive (ignored)"
       tier: p2
       documentation: >-
         auth ignored CRM activity reports beyond the presence horizon on more than ten status calls in an hour (SPEC §7.4): a CRM tab or engine keeping sessions alive. Read the CRM engine's session lines.
@@ -7210,6 +7499,7 @@ sso_crm:
 
     sso-signer-unavailable:
       display_name: "URGENT TPA sign-in: auth cannot sign with its sign-in key"
+      subject: "CRM sign-in with TPA is failing: it cannot use its signing key"
       tier: p1
       urgent: true
       documentation: >-
@@ -7222,7 +7512,10 @@ sso_crm:
 
     sso-sweep-failed:
       display_name: "TPA sign-in: the sweeper's sign-in housekeeping failed"
+      subject: "CRM sign-in with TPA: the hourly housekeeping failed"
       tier: p2
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
       documentation: >-
         auth's sweeper could not do the sign-in's housekeeping (the hourly status count, the expired rows; SPEC A4-12). TPA's own revocations are untouched (I-27). Read the sweeper's lines.
       conditions:
@@ -7233,6 +7526,8 @@ sso_crm:
 
     sso-operator-ended:
       display_name: "TPA sign-in: an operator ended sign-in sessions"
+      subject: "CRM sign-in with TPA: an operator ended sign-in sessions"
+      action: "expected during a rollback; check who ran it"
       tier: p2
       documentation: >-
         Someone ran `auth admin sso-end` (SPEC §16): the TPA sessions behind live sign-ins were ended. Expected in a rollback; otherwise read the job's execution for who and why.
@@ -7244,6 +7539,7 @@ sso_crm:
 
     sso-signing-key-foreign-use:
       display_name: "URGENT TPA sign-in: someone but auth used the sign-in key"
+      subject: "CRM sign-in with TPA: someone other than sign-in used its signing key"
       tier: p1
       urgent: true
       documentation: >-
@@ -7262,6 +7558,7 @@ sso_crm:
 
     sso-client-key-foreign-read:
       display_name: "TPA sign-in: someone but the CRM engine read the client key"
+      subject: "CRM sign-in with TPA: someone other than the CRM read its key"
       tier: p2
       documentation: >-
         A principal other than the CRM beta copy's serving engine read crm-sso-client-key (the Data Access audit log): whoever reads it is the sign-in client (SPEC §12). Read the entry for who; if it is not an expected person's, suspend the client and rotate the key (sso.tf's crm_sso_client_key_version).
@@ -7319,6 +7616,7 @@ crm_sso:
   alert_policies:
     crm-sso-unavailable-at-start:
       display_name: "TPA sign-in: the CRM engine started without it"
+      subject: "The CRM started without its Sign in with TPA button"
       tier: p2
       documentation: >-
         The CRM beta copy's engine started with TPA sign-in on and could not use it (a key, an address): no sign-in button. Read the start line's reason; its keys and addresses are sso.tf's.
@@ -7330,6 +7628,7 @@ crm_sso:
 
     crm-sso-status-unavailable:
       display_name: "URGENT TPA sign-in: the CRM cannot reach auth's status"
+      subject: "The CRM cannot check TPA sessions, so CRM users are being signed out"
       tier: p1
       urgent: true
       documentation: >-
@@ -7346,6 +7645,7 @@ crm_sso:
 
     crm-sso-recovery-mail-failed:
       display_name: "URGENT TPA sign-in: a recovery email failed"
+      subject: "The CRM could not send a recovery email: that person is locked out"
       tier: p1
       urgent: true
       documentation: >-
@@ -7389,7 +7689,8 @@ desk_roster:
     desk-roster-added:
       display_name: "svc-ops set up a rep's desk line"
       tier: p2
-      subject: "a rep's desk line was set up"
+      subject: "A customer service rep's phone desk line was set up"
+      action: "check it was expected"
       documentation: >-
         svc-ops set up a desk line for a customer service rep in the last five
         minutes (R502: anyone given the ops_agent role in the staff tenant gets
@@ -7448,7 +7749,7 @@ member_email:
       display_name: "URGENT connectors: the email vendor refused our key or address"
       tier: p1
       urgent: true
-      subject: "connectors: all email is held, the vendor refused our key or address"
+      subject: "All member emails are held: SendGrid refused our key or address"
       documentation: >-
         SendGrid answered 401 or 403 to connectors, so sending is held: no email
         notice leaves, and none is lost, since a held row waits rather than going
@@ -7466,7 +7767,7 @@ member_email:
     records-notices-expired:
       display_name: "records expired notices unsent"
       tier: p2
-      subject: "records expired notices unsent"
+      subject: "Member notices expired unsent (older than 48 hours)"
       documentation: >-
         records expired one or more notices unsent, because they were older than
         its limit, 48 hours by default, when connectors claimed them
@@ -7615,6 +7916,7 @@ auth_texts:
     # line that exists now. p2: the estate's ceilings are the brake.
     auth-texted-codes-volume:
       display_name: "texted codes: more than 100 in an hour"
+      subject: "Over 100 texted sign-in codes in an hour (unusual volume)"
       tier: p2
       documentation: >-
         Twilio reported more than 100 of auth's texted codes delivered or not
@@ -7642,7 +7944,9 @@ auth_texts:
     auth-texts-not-delivered:
       display_name: "texted codes: five or more not delivered in an hour"
       tier: p2
-      subject: "texted codes not delivered: ${metric_or_resource.label.code}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "Texted sign-in codes are not being delivered: ${metric_or_resource.label.code}"
       documentation: >-
         Twilio reported five or more of auth's texted codes not delivered in an
         hour, by the closed word for why (the incident's `code`): members are
@@ -7678,6 +7982,7 @@ auth_texts:
     # delivered) it opens never.
     auth-texts-blocked:
       display_name: "URGENT texted codes blocked: the carriers are refusing the line"
+      subject: "Texted sign-in codes blocked: carriers are refusing our number"
       tier: p1
       urgent: true
       documentation: >-
@@ -7707,7 +8012,9 @@ auth_texts:
     auth-texts-not-sent:
       display_name: "texted codes: five or more not sent in an hour"
       tier: p2
-      subject: "texted codes not sent: ${metric_or_resource.label.code}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "Texted sign-in codes were not sent: ${metric_or_resource.label.code}"
       documentation: >-
         auth's messenger did not hand five or more texted codes to Twilio in an
         hour for a reason of the number's or the account's (the incident's
@@ -7732,7 +8039,9 @@ auth_texts:
     auth-text-delivery-reads-failing:
       display_name: "texted codes: their delivery is not being read back"
       tier: p2
-      subject: "texted codes' delivery read failing: ${metric_or_resource.label.code}"
+      notification_prompts: ["OPENED", "CLOSED"]
+      auto_close: "1800s"
+      subject: "Cannot read texted codes' delivery status from Twilio: ${metric_or_resource.label.code}"
       documentation: >-
         auth's messenger is not reading texted codes' delivery back from Twilio:
         a turn of reads raised (sms_delivery_checks_failed, its traceback in
@@ -7766,6 +8075,7 @@ auth_texts:
     # than 500 in an hour is traffic the texts do not account for.
     auth-twilio-connections-high:
       display_name: "auth's messenger: more connections by the text vendor's rule than texts explain"
+      subject: "Sign-in made unusually many connections to the text provider"
       tier: p2
       documentation: >-
         The auth_twilio firewall rule admitted more than 500 connections in an
@@ -7843,7 +8153,7 @@ mail_check:
       display_name: "URGENT mail check: no invites email arrived in 2 h 15 min"
       tier: p1
       urgent: true
-      subject: "mail check: no invites email arrived in 2 h 15 min"
+      subject: "The test invite email has not arrived for 2 h 15 min (invites may be failing)"
       documentation: >-
         The hourly mail check on the invites lane has not reached its inbox for
         2 h 15 min: two checks in a row. That lane is the opening-email chain
@@ -7879,7 +8189,7 @@ mail_check:
       display_name: "URGENT mail check: no notices email arrived in 2 h 15 min"
       tier: p1
       urgent: true
-      subject: "mail check: no notices email arrived in 2 h 15 min"
+      subject: "The test notice email has not arrived for 2 h 15 min (notices may be failing)"
       documentation: >-
         The hourly mail check on the notices lane has not reached its inbox for
         2 h 15 min: two checks in a row. That lane is records' outbox and
@@ -7939,7 +8249,7 @@ email_delivery:
     email-delivery-failed:
       display_name: "emails bounced, dropped or reported as spam"
       tier: p2
-      subject: "email ${metric_or_resource.label.outcome} reported by SendGrid"
+      subject: "A real email failed to arrive: ${metric_or_resource.label.outcome} (SendGrid's report)"
       documentation: >-
         SendGrid reported a real email (an opening email, a notice or a sign-in
         message; the mail check's own are left out) as bounced, dropped or

@@ -43,8 +43,10 @@ PagerDuty deleted the TPA's first account. The owner made a new one and the same
   `pagerduty.com:slack:reply-in-incident-thread:1`; made through `POST /incident_workflows`, by hand, not yet by
   `pd_setup.py`). Started by hand through the API it posts as designed. Its **trigger** could not be made through the
   API (`POST /incident_workflows/triggers` answered 500 "Reduce of empty array with no initial value" for every
-  shape tried with the account key), so a person adds it in PagerDuty: the steps are in "Slack", "The thread
-  reply" below. Until then the workflow never runs (the owner, 2026-11-14: "why is there not link to watchtower").
+  shape tried with the account key): this plan offers the Incident Type Trigger alone, no conditional one. It ran on
+  nothing for two days (the owner, 2026-11-14: "why is there not link to watchtower") until **the owner added it in
+  PagerDuty's screen on 2026-11-14: an Incident Type Trigger on "Base Incident", all services**. `pd_setup.py` now
+  reads it and reports a missing one as "by hand" ("Slack", "The thread reply").
 - **No "beta" in what people read (the owner, 2026-11-12: "We are NOT in beta").** The Terraform root is named
   `beta` but it is the production estate. The services are "TPA · Portal & API", "TPA · Member records" and
   "TPA · Call centre", the business service "Trellis TPA", and the titled integration drops the subject's
@@ -441,19 +443,20 @@ thread. Its message (updated 2026-11-14 through `PUT /incident_workflows/PBP4Q0H
   best-fit watchtower page is the incident's own link ("Watchtower: <page>", the event's `client_url`).
 - **No branch on the service.** The workflow "Condition" step (`pagerduty.com:logic:incident-workflows-conditional-block:1`)
   is for the Enterprise plan for Incident Management alone (its own entitlement note), so the message names each
-  area's page beside the service's name instead of choosing one. Three workflows, each triggered on one service,
-  would choose; each would need its own trigger made by hand.
-- **The trigger is still a person's step** (`POST /incident_workflows/triggers` answers 500 for every shape). Conditional
-  triggers are for the Business and Enterprise plans (PagerDuty's docs); if the screen shows "Conditional Trigger"
-  as locked, this plan cannot run the workflow by itself. The steps:
-  1. PagerDuty → **Automation** → **Incident Workflows** → "TPA: Slack thread with watchtower links" → **Open in
-     Builder**.
-  2. **Add Trigger** → **Conditional Trigger** → **When an incident is created**, with no condition.
-  3. Services: choose the three, "TPA · Portal & API", "TPA · Member records" and "TPA · Call centre" (not "Default
-     Service").
-  4. **Publish**, and confirm.
-  5. Check: `GET /incident_workflows/triggers?workflow_id=PBP4Q0H` lists one trigger with the three services, and the
-     next incident's thread has the reply.
+  area's page beside the service's name instead of choosing one. Three workflows, each on one service, would choose;
+  each would need its own trigger made by hand.
+- **The trigger: added by the owner, 2026-11-14.** An **Incident Type Trigger** on **Base Incident**
+  (`incident_types: ["incident_default"]`, every incident's type), subscribed to all services, published and enabled
+  (`GET /incident_workflows/triggers?workflow_id=PBP4Q0H`). This plan offers no conditional trigger, which is why
+  `POST /incident_workflows/triggers` answered 500 for every shape. All services includes "Default Service", whose
+  incidents get the reply too.
+  - `pd_setup.py` reads it on every run: "ok … trigger [Incident Type Trigger, all services]", or "by hand" when
+    none would run the workflow on every TPA incident (missing, disabled, manual, another incident type, or not on
+    all three services). **It never makes one**: the API refuses, and proving a create would mean removing the
+    owner's.
+  - Should it ever be missing: PagerDuty → **Automation** → **Incident Workflows** → "TPA: Slack thread with
+    watchtower links" → **Add Trigger** → **Incident Type Trigger**, type **Base Incident**, all services →
+    **Publish**. Then `make pagerduty-plan` shows the trigger ok.
 
 ## Every source
 
@@ -466,7 +469,7 @@ Events API key, no Grafana or watchtower alerting, no CRM, call-centre or tpa-jo
 | Each TPA service's "Google Cloud Monitoring (titled)" (the route every Monitoring channel uses) | "<what happened> · <whether to act>", above; the two groups their own | yes: `what_happened`, `what_to_do`, `what_to_check`, `measured`, `dashboard` and the links |
 | Each TPA service's plain "Google Cloud Monitoring" (the way back, `TW_PAGERDUTY_ROUTE=monitoring`; no channel uses it) | Monitoring's own long summary | Monitoring's payload only. Its title cannot change without the AIOps add-on (the owner: "We are not using AIops"), so it stays the way back alone |
 | "Default Service" (PagerDuty's own; no integration, connected to the channel) | whatever a person types when making an incident by hand | none. It was used for Slack checks; a person can disconnect it |
-| The thread reply (workflow above) | not a title: replies under the incident's card | the title and the incident's links; per-service branching needs Enterprise |
+| The thread reply (workflow above; the owner's Incident Type Trigger, all services) | not a title: replies under the incident's card | the title and the incident's links; per-service branching needs Enterprise |
 
 ## Silencing
 

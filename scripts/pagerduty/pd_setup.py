@@ -18,7 +18,9 @@ What it makes (each found by its exact name, created when absent and corrected w
     contact method).
 
 It also reads (never makes) each service's Slack connection and prints "by hand" until a person has connected the
-service to #obatpa-incidents with every urgency, every priority and the five incident events (docs/PAGERDUTY.md).
+service to #obatpa-incidents with every urgency, every priority and the five incident events (docs/PAGERDUTY.md);
+and the thread-reply workflow's trigger, "by hand" until one runs it on every TPA incident (a person adds it in
+PagerDuty's screen: the trigger API answers 500, and a test would mean removing the owner's).
 
 What it will not do: delete anything; touch "Default Service" or the "Default" escalation policy; create a
 notification rule without --add-rules (so a rule a person removed stays removed); change a schedule that has more
@@ -685,6 +687,53 @@ def report_slack(pd: PagerDuty, plan: Plan, service_ids: list[str | None], prior
                 plan.ok(where)
 
 
+# ---- the thread reply's workflow (read only) ---------------------------------------------------------------------------
+
+TRIGGER_STEPS = ('a person adds it: PagerDuty → Automation → Incident Workflows → the workflow → Add Trigger → '
+                 '"Incident Type Trigger", type "Base Incident", all services (docs/PAGERDUTY.md "The thread reply"); '
+                 'pd_setup.py never makes one')
+
+
+def trigger_runs_on_every_tpa_incident(trigger: dict, workflow_id: str, service_ids: list[str]) -> bool:
+    """An enabled trigger of this workflow that starts it on every incident of the TPA services: an Incident Type
+    Trigger on Base Incident, or a conditional one, for all services or for each of ours. A manual one never runs."""
+    if (trigger.get("workflow_id") or (trigger.get("workflow") or {}).get("id")) != workflow_id:
+        return False
+    if trigger.get("is_disabled"):
+        return False
+    kind = trigger.get("trigger_type")
+    if kind == "incident_type":
+        if d.WORKFLOW_INCIDENT_TYPE not in (trigger.get("incident_types") or []):
+            return False
+    elif kind != "conditional":
+        return False
+    covered = {s.get("id") for s in trigger.get("services") or []}
+    return bool(trigger.get("is_subscribed_to_all_services")) or set(service_ids) <= covered
+
+
+def report_workflow(pd: PagerDuty, plan: Plan, service_ids: list[str | None]) -> None:
+    what = f'  workflow "{d.WORKFLOW_NAME}"'
+    try:
+        workflow = pd.find_by_name("/incident_workflows", "incident_workflows", d.WORKFLOW_NAME)
+        if workflow is None:
+            plan.person(what, 'not made: docs/PAGERDUTY.md "The thread reply" holds its message')
+            return
+        triggers = pd.get("/incident_workflows/triggers",
+                          {"workflow_id": workflow["id"], "limit": 100}).get("triggers") or []
+    except ApiError as e:
+        plan.person(what, f'cannot read it ({e}); check by hand: docs/PAGERDUTY.md "The thread reply"')
+        return
+    ours = [sid for sid in service_ids if sid]
+    good = [t for t in triggers if trigger_runs_on_every_tpa_incident(t, workflow["id"], ours)]
+    if good:
+        t = good[0]
+        plan.ok(f"{what} trigger", f'{t.get("trigger_type_name") or t.get("trigger_type")}, '
+                                   f'{"all services" if t.get("is_subscribed_to_all_services") else "the TPA services"}')
+    else:
+        plan.person(f"{what} trigger", ("none runs it on every TPA incident: " if triggers else "missing: ") +
+                    TRIGGER_STEPS)
+
+
 # ---- business service ------------------------------------------------------------------------------------------------
 
 
@@ -812,6 +861,7 @@ def main() -> int:
         service_ids = ensure_services(pd, plan, policy_id, priorities,
                                       Grouping(pd, plan, args.retry_intelligent_grouping))
         report_slack(pd, plan, service_ids, list(priorities.values()))
+        report_workflow(pd, plan, service_ids)
         ensure_business_service(pd, plan, team_id, service_ids)
         ensure_notification_rules(pd, plan, users, args.add_rules)
     except Stop as e:

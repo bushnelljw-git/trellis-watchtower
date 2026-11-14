@@ -133,7 +133,7 @@ def not_found():
 class FakeState:
     def __init__(self, refuse_intelligent=False, rich_contacts=False, refuse_team_create=False, grouping_error=None,
                  redirect_pd=False, advanced_orchestration=True, fail_orchestration_put=None,
-                 ignore_transformer_code=False):
+                 ignore_transformer_code=False, workflow=True, workflow_trigger=True):
         self.lock = threading.Lock()
         self.seq = itertools.count(1)
         self.requests: list[dict] = []
@@ -194,6 +194,19 @@ class FakeState:
         self.incidents: dict[str, dict] = {}
         self.alerts: dict[str, list[dict]] = {}
         self.slack_connections: list[dict] = []
+        # The thread-reply workflow, made by hand (never by pd_setup.py), and the trigger the owner added in
+        # PagerDuty's screen, in the live API's shape (2026-11-14).
+        self.workflows: dict[str, dict] = {}
+        self.workflow_triggers: list[dict] = []
+        if workflow:
+            self.workflows["PWF1"] = {"id": "PWF1", "type": "incident_workflow",
+                                      "name": "TPA: Slack thread with watchtower links"}
+        if workflow and workflow_trigger:
+            self.workflow_triggers.append({
+                "id": "trig-1", "type": "workflow_trigger", "trigger_type_name": "Incident Type Trigger",
+                "trigger_type": "incident_type", "is_disabled": False, "incident_types": ["incident_default"],
+                "workflow": {"id": "PWF1", "published": True}, "workflow_id": "PWF1",
+                "is_subscribed_to_all_services": True, "services": []})
 
     # ---- helpers ---------------------------------------------------------------------------------------------------
     def new_id(self, prefix: str) -> str:
@@ -238,6 +251,14 @@ class FakeState:
             return 200, {"vendor": {"id": "PUCLE3C", "name": "Google Cloud Monitoring", "generic_service_type": "api"}}
         if method == "GET" and p == ["integration-slack", "workspaces"]:
             return 200, {"workspaces": [{"slack_team_id": "T1", "slack_team_name": "Fake"}]}
+        if method == "GET" and p == ["incident_workflows"]:
+            return 200, self.page_of(list(self.workflows.values()), "incident_workflows", query)
+        if method == "GET" and p == ["incident_workflows", "triggers"]:
+            wid = query.get("workflow_id", [None])[0]
+            found = [t for t in self.workflow_triggers if wid is None or t["workflow_id"] == wid]
+            return 200, {"triggers": found, "limit": 100, "more": False}
+        if p[:1] == ["incident_workflows"] and method != "GET":
+            raise AssertionError(f"pd_setup.py never writes a workflow or a trigger: {method} {'/'.join(p)}")
         if method == "GET" and p == ["priorities"]:
             return 200, self.page_of(self.priorities, "priorities", query)
         if method == "GET" and p == ["users"]:

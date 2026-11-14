@@ -3782,6 +3782,14 @@ def jobs(cc: bool = True, env: str = "beta") -> dict:
               "Alert records the scheduled runs raised in the time range (`jobs-alerts`; the paging ones urgent; "
               "two `tenants_partial` in a day `jobs-partial-recurring`).", columns={"job": "Job", "code": "Alert"},
               no_value=NO_ALERTS),
+        # TP-193 (tpa-platform 9b1f0468): the cut-off freeze runs as a drain tick in the warm process, so no resource
+        # filter (a revision's line, not a job's). By job alone: the metric's sponsor_id label is not on the dashboard
+        # lint's allowlist, and each group's alert names its group.
+        table("Months waiting for Freeze now", APP, q(log("tpa_jobs_waiting"), by=("job",)),
+              "Ticks that found a group whose month passed its cut-off and that no job may freeze "
+              "(`jobs-cutoff-waiting`, TP-193, one incident per group, named in its title): billing for that month "
+              "waits for a person to press Freeze now.", columns={"job": "Job"},
+              no_value="No month waiting in this range"),
         # A distribution (one point per tenant per run): Cloud Monitoring refuses ALIGN_MEAN on one (400, "The
         # aligner cannot be applied to metrics with kind DELTA and value type DISTRIBUTION"), so the mean is the
         # merged distribution's, ALIGN_DELTA then REDUCE_MEAN.

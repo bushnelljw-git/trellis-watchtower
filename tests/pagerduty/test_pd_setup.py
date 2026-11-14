@@ -111,7 +111,9 @@ class DryRunAndIdempotency(Base):
             'ok        notification rule Jonathan Bushnell: high urgency -> email "Default" at 0 min',
         ]:
             self.assertIn(line, result.stdout)
-        self.assertIn("summary: 24 to create, 0 to update, 4 ok, 2 kept, 0 refused, 3 by hand", result.stdout)
+        self.assertIn("summary: 24 to create, 0 to update, 5 ok, 2 kept, 0 refused, 3 by hand", result.stdout)
+        self.assertIn('ok          workflow "TPA: Slack thread with watchtower links" trigger  [Incident Type Trigger, '
+                      'all services]', result.stdout)
         with_rules = self.pd("--add-rules")
         self.assertIn('create    notification rule Jonathan Bushnell: high urgency -> Slack "slack" at 0 min',
                       with_rules.stdout)
@@ -545,3 +547,56 @@ class WithoutAiops(Base):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("urgency low, alert severity warning, priority P3", result.stdout)
         self.assertIn("\nas designed\n", result.stdout)
+
+
+class WorkflowTrigger(Base):
+    """The thread reply's workflow trigger (docs/PAGERDUTY.md, "The thread reply"): read, never made. The owner added
+    it in PagerDuty's screen on 2026-11-14 (an Incident Type Trigger on Base Incident, all services)."""
+
+    def test_the_owners_trigger_is_ok_and_nothing_is_written_to_a_workflow(self):
+        result = self.apply()
+        self.assertIn('ok          workflow "TPA: Slack thread with watchtower links" trigger  [Incident Type Trigger, '
+                      'all services]', result.stdout)
+        self.assertEqual([r for r in self.state.writes() if "/incident_workflows" in r["path"]], [])
+
+    def test_a_missing_trigger_is_a_gap_with_the_steps_and_is_never_made(self):
+        self.state.workflow_triggers.clear()
+        result = self.apply()
+        self.assertIn('by hand     workflow "TPA: Slack thread with watchtower links" trigger  [missing: a person adds '
+                      'it: PagerDuty → Automation → Incident Workflows → the workflow → Add Trigger → "Incident Type '
+                      'Trigger", type "Base Incident", all services', result.stdout)
+        self.assertIn("pd_setup.py never makes one", result.stdout)
+        self.assertRegex(self.summary(result), r", by hand 4$")
+        self.assertEqual([r for r in self.state.writes() if "/incident_workflows" in r["path"]], [])
+
+    def test_a_trigger_that_would_not_run_on_every_tpa_incident_is_a_gap(self):
+        self.apply()
+        base = dict(self.state.workflow_triggers[0])
+        for change in ({"is_disabled": True}, {"incident_types": ["security_incident"]},
+                       {"trigger_type": "manual", "trigger_type_name": "Manual Trigger"},
+                       {"is_subscribed_to_all_services": False, "services": []},
+                       {"workflow_id": "POTHER", "workflow": {"id": "POTHER"}}):
+            with self.subTest(change=change):
+                self.state.workflow_triggers[:] = [{**base, **change}]
+                result = self.pd()
+                # Another workflow's trigger is not listed for ours (the API filters by workflow_id): "missing".
+                self.assertRegex(result.stdout, r'trigger  \[(none runs it on every TPA incident|missing): a person '
+                                                r'adds it')
+                self.assertRegex(self.summary(result), r", 4 by hand$")
+
+    def test_a_trigger_on_each_tpa_service_by_name_is_ok(self):
+        self.apply()
+        ours = [{"id": self.service_id(n)} for n in ("TPA · Portal & API", "TPA · Member records", "TPA · Call centre")]
+        self.state.workflow_triggers[0].update({"is_subscribed_to_all_services": False, "services": ours})
+        self.assertIn("[Incident Type Trigger, the TPA services]", self.pd().stdout)
+        self.state.workflow_triggers[0]["services"] = ours[:2]
+        self.assertIn("none runs it on every TPA incident", self.pd().stdout)
+
+
+class WorkflowMissing(Base):
+    state_options = {"workflow": False}
+
+    def test_a_missing_workflow_is_a_gap(self):
+        result = self.apply()
+        self.assertIn('by hand     workflow "TPA: Slack thread with watchtower links"  [not made: docs/PAGERDUTY.md '
+                      '"The thread reply" holds its message]', result.stdout)

@@ -135,6 +135,11 @@ SERVICES = [
 # own Slack screen makes (kind "stakeholder", no priority filter). 2026-11-12: three connections made through the API
 # as kind "responder" with every event were accepted, listed as healthy and posted nothing, so that kind is a gap.
 SLACK_CHANNEL = "obatpa-incidents"
+# The incident workflow that replies in each incident's Slack thread (docs/PAGERDUTY.md, "The thread reply"). Made by
+# hand through the API; its trigger was added by the owner in PagerDuty's screen on 2026-11-14 (this plan offers the
+# Incident Type Trigger alone, and the trigger API answers 500). pd_setup.py only reads both and reports a gap.
+WORKFLOW_NAME = "TPA: Slack thread with watchtower links"
+WORKFLOW_INCIDENT_TYPE = "incident_default"  # "Base Incident", every incident's type unless another is chosen
 SLACK_EVENTS = ["incident.triggered", "incident.resolved"]
 SLACK_SILENT_KINDS = ("responder",)
 
