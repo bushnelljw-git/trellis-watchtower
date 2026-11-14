@@ -158,6 +158,38 @@ of the plan the account has, with no add-on.
   event: a trigger, or a resolve when `incident.state` is `closed`, keyed by `incident.incident_id` so the resolve
   finds its incident. The title is the table above, cut at 250 characters. A body with no `incident` object makes no
   event at all (`PD.fail`), so it pages nobody.
+- **One problem, one page (2026-11-14, deploy-safety).** The account's plan has no alert grouping: its `/abilities`
+  name no time-based, content-based or intelligent grouping, `/alert_grouping_settings` is empty and there is no
+  global event orchestration (read 2026-11-14). So the code groups with the Events API's own rule: an event whose
+  `incident_key` names an incident that is still open is added to that alert's log (a "trigger" entry, not a new
+  alert) and pages nobody again. Two groups,
+  each keyed with the project and Monitoring's severity, so a Critical event never joins a Warning incident and
+  nothing is downgraded:
+  - **Control-plane changes**: one change counter (`iam_policy_changes`, `network_control_changes`,
+    `monitoring_changes` or `log_metric_changes`) within one two-hour UTC slot (from `started_at`) is one incident,
+    titled "Changes, 02:00 to 04:00 UTC: <the first change>". The counter is in the key (the review), so a change of
+    another kind during an apply still pages on its own. An approved apply made 4 to 8 change incidents per project,
+    one per method (105 incidents from 11-07 to 11-14, most of them changes); now it is at most one per kind per
+    project per slot. These policies send no close (#202), so a person resolves the incident after reading the
+    project's Admin Activity log for the slot; PHI's Critical IAM change sends one, and its close resolves its group.
+    `started_at` is when Google opened its incident, a few minutes after the change: read the slot against the deploy
+    NOTICE's START and DONE with that slack.
+  - **One Cloud Run service failing**: `run_system_errors`, `run_crash_exits`, `run_oom_kills` and
+    `sql_proxy_errors` for one service (or job) within one half-hour UTC slot are one incident, titled "<service>
+    failing, from 02:00 to 02:30 UTC: <the first alert>". A Google close of one of them is dropped (no event): one
+    counter going quiet must not resolve an incident whose other counters still fire, so a person resolves it, after
+    checking each one's Cloud Monitoring incident (PagerDuty is not told when a counter goes quiet). tpa-platform's
+    catalogue keeps these four policies on its waiting list (D-402).
+  - A group that crosses a slot's end is two incidents, never none. An event with no `started_at`, or a failing
+    counter with no service or job label, keeps its own incident. Everything else is keyed by Monitoring's
+    `incident_id`, as before. The alert's details say which group it is in (`grouped`). A run that emits no event
+    (a dropped close) is answered 202 like any other; that is not yet seen live.
+  - **Not built: a "during deploy" label** (the coordinator's ask (a), 2026-11-14). The code runs on Monitoring's
+    payload alone and fetches nothing, and nothing in that payload says a deploy window is open; the only markers a
+    deploy could set where it would show (a policy's labels) are themselves the changes the alerts watch, and a
+    maintenance window suppresses incidents, which is ruled out. The change group's title names its slot, which
+    reads against the deploy NOTICE's START and DONE. PagerDuty's Change Events (a deploy's start and end posted to
+    each service, shown under "Recent changes" on its incidents) would do it if the plan carries them; unverified.
 - **The details**, in reading order, each left out when it has nothing to say:
 
   | Detail | From |
@@ -201,12 +233,12 @@ of the plan the account has, with no add-on.
   channels the titled integration's keys, and `pd_test_event.py` posts through it. Both refuse a titled integration
   whose stored code is not the file's. `TW_PAGERDUTY_ROUTE=monitoring` on one command makes it use the plain
   integration instead: that, and the "Rotation" apply below, is the whole way back.
-- **Not yet proven: Monitoring's own channel posting to it.** The integration was proven on 2026-11-12 by posting
-  Monitoring's notification to its address by hand (trigger and resolve, title exactly the subject).
-  Whether Google's `pagerduty` channel, given a titled integration's key, reaches the code is not yet seen. The
-  first apply with the test switch ("The test page" below) proves it; until then the plain integration and its keys
-  stay as they are, and the way back is one apply. The code also reads an Events API v1 event that carries the
-  incident in its details, in case that is what the channel posts.
+- **Seen live: Monitoring's own channel posting to it** (read back 2026-11-14). The integration was proven on
+  2026-11-12 by posting Monitoring's notification to its address by hand (trigger and resolve, title exactly the
+  subject). Production's incidents since then carry this code's titles, which only it writes: #94 to #96 read
+  "Alert policy or channel changed: update alert policy" (the subject without its environment word, the Google
+  operation name in words), and #103 to #105 the same shape. The way back is still one apply to the plain
+  integration's keys. The code also reads an Events API v1 event that carries the incident in its details.
 
 **Applying it.**
 1. `make pagerduty-plan`: three creates, the titled integration on each service.

@@ -378,5 +378,109 @@ class Es5(unittest.TestCase):
         self.assertEqual(len(ran["events"]), 1)
 
 
+
+# 2026-11-14 (deploy-safety): one problem, one page. 02:10Z on 2026-11-14, as Monitoring's seconds.
+AT_0210 = 1794622200
+CHANGE = "logging.googleapis.com/user/{}"
+
+
+def change(counter: str, *, started=AT_0210, severity="Warning", project="trellistpa-beta-tpa-app",
+           state="open", incident_id="change-1") -> dict:
+    """A control-plane change's notification: its counter, the method label, the project."""
+    return notification(metric={"type": CHANGE.format(counter), "labels": {"operation": "SetIamPolicy"}},
+                        resource={"type": "audited_resource", "labels": {"project_id": project}},
+                        documentation__subject="[ALERT - Warning] beta · IAM policy or role changed: SetIamPolicy",
+                        started_at=started, severity=severity, state=state, incident_id=incident_id)
+
+
+def failing(counter: str, *, service="records", job=None, started=AT_0210, severity="Warning", state="open",
+            incident_id="svc-1") -> dict:
+    labels = {"project_id": "trellistpa-beta-tpa-phi"}
+    labels.update({"job_name": job} if job else {"service_name": service})
+    return notification(metric={"type": CHANGE.format(counter), "labels": {}},
+                        resource={"type": "cloud_run_job" if job else "cloud_run_revision", "labels": labels},
+                        documentation__subject="[ALERT - Warning] beta · containers keep crashing: records",
+                        started_at=started, severity=severity, state=state, incident_id=incident_id)
+
+
+@unittest.skipIf(fakes.NODE is None, NO_NODE)
+class Grouping(unittest.TestCase):
+    """This account has no PagerDuty alert grouping, so related alerts share an incident_key: the Events API adds
+    an event to the open incident with its key, and pages nobody again."""
+
+    run_js = Transform.run_js
+    event = Transform.event
+
+    def test_one_change_counter_in_one_slot_is_one_incident_and_each_counter_its_own(self):
+        """An apply's many changes of one kind are one page; a change of another kind in the same slot still pages
+        on its own (the review: a log metric narrowed during an IAM apply)."""
+        first = self.event(change("iam_policy_changes", incident_id="a"))["incident_key"]
+        later_in_the_slot = self.event(change("iam_policy_changes", started=AT_0210 + 100 * 60, incident_id="b"))
+        self.assertEqual(later_in_the_slot["incident_key"], first)
+        keys = {self.event(change(c, incident_id=c))["incident_key"]
+                for c in ("iam_policy_changes", "network_control_changes", "monitoring_changes", "log_metric_changes")}
+        self.assertEqual(len(keys), 4)
+
+    def test_a_change_group_says_its_slot_and_still_triggers_at_its_own_severity(self):
+        event = self.event(change("monitoring_changes"))
+        self.assertEqual(event["event_type"], "trigger")
+        self.assertTrue(event["description"].startswith("Changes, 02:00 to 04:00 UTC: "), event["description"])
+        self.assertIn("IAM policy or role changed", event["description"])
+        self.assertIn("(monitoring_changes) in this project at this severity from 02:00 to 04:00 UTC",
+                      event["details"]["grouped"])
+        self.assertIn("Admin Activity log", event["details"]["grouped"])
+        self.assertEqual(event["details"]["incident"]["severity"], "Warning")
+
+    def test_another_slot_project_or_severity_is_another_incident(self):
+        base = self.event(change("iam_policy_changes"))["incident_key"]
+        for other in (change("iam_policy_changes", started=AT_0210 + 2 * 3600),
+                      change("iam_policy_changes", project="trellistpa-beta-tpa-phi"),
+                      change("iam_policy_changes", severity="Critical")):
+            with self.subTest(other=other["incident"]["started_at"]):
+                self.assertNotEqual(self.event(other)["incident_key"], base)
+
+    def test_a_change_group_is_resolved_by_googles_close_where_one_is_sent(self):
+        """The change policies send no close (#202) but PHI's Critical IAM change, whose close resolves its group."""
+        opened = self.event(change("log_metric_changes"))
+        closed = self.event(change("log_metric_changes", state="closed"))
+        self.assertEqual(closed["event_type"], "resolve")
+        self.assertEqual(closed["incident_key"], opened["incident_key"])
+
+    def test_one_service_failing_in_one_half_hour_is_one_incident(self):
+        keys = {self.event(failing(c, incident_id=c))["incident_key"]
+                for c in ("run_system_errors", "run_crash_exits", "run_oom_kills", "sql_proxy_errors")}
+        self.assertEqual(len(keys), 1)
+        event = self.event(failing("run_crash_exits"))
+        self.assertTrue(event["description"].startswith("records failing, from 02:00 to 02:30 UTC: "),
+                        event["description"])
+        self.assertIn("check each one's Cloud Monitoring incident before resolving it by hand",
+                      event["details"]["grouped"])
+
+    def test_another_service_job_half_hour_or_severity_is_another_incident(self):
+        base = self.event(failing("run_system_errors"))["incident_key"]
+        for other in (failing("run_system_errors", service="tpa-api"), failing("run_oom_kills", job="tpa-jobs-sweeps"),
+                      failing("run_system_errors", started=AT_0210 + 30 * 60),
+                      failing("run_system_errors", severity="Critical")):
+            with self.subTest(other=str(other["incident"]["resource"])):
+                self.assertNotEqual(self.event(other)["incident_key"], base)
+
+    def test_a_service_groups_close_is_left_to_a_person(self):
+        ran = self.run_js(failing("run_crash_exits", state="closed"))
+        self.assertIsNone(ran["failed"])
+        self.assertEqual(ran["events"], [], "one counter going quiet must not resolve the outage's incident")
+
+    def test_anything_else_keeps_its_own_incident_and_close(self):
+        self.assertEqual(self.event(SAMPLE)["incident_key"], "cet-probe-1794490176")
+        self.assertNotIn("grouped", self.event(SAMPLE)["details"])
+        closed = self.event(notification(state="closed"))
+        self.assertEqual((closed["event_type"], closed["incident_key"]), ("resolve", "cet-probe-1794490176"))
+
+    def test_no_start_time_or_no_service_is_not_grouped(self):
+        self.assertEqual(self.event(change("iam_policy_changes", started=None))["incident_key"], "change-1")
+        no_service = notification(metric={"type": CHANGE.format("run_system_errors"), "labels": {}},
+                                  resource={"type": "cloud_run_revision", "labels": {"project_id": "p-tpa-phi"}},
+                                  incident_id="svc-x")
+        self.assertEqual(self.event(no_service)["incident_key"], "svc-x")
+
 if __name__ == "__main__":
     unittest.main()

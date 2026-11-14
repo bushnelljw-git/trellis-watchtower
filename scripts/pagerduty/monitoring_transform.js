@@ -47,6 +47,28 @@ var PAGES_BY_PROJECT = [
   { uid: "tw-cloud-callcentre", name: "Call centre", ending: "-cc" }
 ];
 
+// One problem, one page (2026-11-14, deploy-safety). This account's plan has no alert grouping (no time-based,
+// content-based or intelligent grouping, no AIOps: read from its /abilities), so the grouping is the Events API's own:
+// an event whose incident_key names an incident that is still open is added to that incident's alert log, and pages
+// nobody a second time. Nothing is downgraded or dropped: the first event of a group opens its incident at its own
+// severity, and the severity is in the key, so a Critical event never joins a Warning incident.
+//   1. Control-plane changes: one change counter (an IAM policy or role, a firewall or Cloud Armor rule, an alert
+//      policy or channel, a log metric) in one project, at one severity, within one two-hour UTC slot, is one incident:
+//      an approved apply's many changes of one kind are one page, and a change of another kind still pages on its own
+//      (a log metric narrowed during an IAM apply). These policies wait for a person (#202: they send no close); PHI's
+//      Critical IAM change sends one, and its close resolves its group.
+//   2. One Cloud Run service failing: its start-up, crash, memory and database-dial counters (run_system_errors,
+//      run_crash_exits, run_oom_kills, sql_proxy_errors) for the same service or job, in one project, at one severity,
+//      within one half-hour UTC slot, are one incident. Its close is left to a person: one counter going quiet must
+//      not resolve an incident whose other counters still fire (an open real problem stays open).
+// A slot starts on the hour (or the half hour, or the even hour) in UTC, from Monitoring's started_at; a group that
+// crosses a slot's end is two incidents, never none. An event with no started_at is not grouped.
+var GROUP_PREFIX = "logging.googleapis.com/user/";
+var CHANGE_METRICS = ["iam_policy_changes", "network_control_changes", "monitoring_changes", "log_metric_changes"];
+var CHANGE_SLOT_SECONDS = 2 * 3600;
+var SERVICE_METRICS = ["run_system_errors", "run_crash_exits", "run_oom_kills", "sql_proxy_errors"];
+var SERVICE_SLOT_SECONDS = 30 * 60;
+
 function text(value) {
   if (value === null || value === undefined) { return ""; }
   return String(value).replace(/^\s+|\s+$/g, "");
@@ -211,27 +233,87 @@ function incidentOf(body) {
   return found;
 }
 
+// "02:00" for a slot's start.
+function clock(seconds) {
+  var d = new Date(seconds * 1000);
+  return two(d.getUTCHours()) + ":" + two(d.getUTCMinutes());
+}
+
+// The group an event belongs to (above), or null: { key, title, detail, keepOpen }.
+function group(i, what) {
+  var metricType = text(field(i.metric, "type"));
+  var labels = field(field(i, "resource"), "labels");
+  var project = text(field(labels, "project_id")) || text(i.scoping_project_id);
+  var severity = text(i.severity).toLowerCase() || "none";
+  var started = Number(i.started_at);
+  var name, slot, size, service, span;
+  if (metricType.indexOf(GROUP_PREFIX) !== 0 || !isFinite(started) || started <= 0 || !project) { return null; }
+  name = metricType.substring(GROUP_PREFIX.length);
+  if (contains(CHANGE_METRICS, name)) {
+    size = CHANGE_SLOT_SECONDS;
+    slot = started - (started % size);
+    span = clock(slot) + " to " + clock(slot + size) + " UTC";
+    return {
+      key: "changes" + SEPARATOR + project + SEPARATOR + name + SEPARATOR + severity + SEPARATOR + slot,
+      title: "Changes, " + span + ": " + what,
+      detail: "One incident for this kind of change (" + name + ") in this project at this severity from " + span +
+        " (an apply makes many). Later ones in the slot are in this alert's log and page nobody: read the project's " +
+        "Admin Activity log for the whole slot before resolving.",
+      keepOpen: false
+    };
+  }
+  if (contains(SERVICE_METRICS, name)) {
+    service = text(field(labels, "service_name")) || text(field(labels, "job_name"));
+    if (!service) { return null; }
+    size = SERVICE_SLOT_SECONDS;
+    slot = started - (started % size);
+    span = clock(slot) + " to " + clock(slot + size) + " UTC";
+    return {
+      key: "service" + SEPARATOR + project + SEPARATOR + service + SEPARATOR + severity + SEPARATOR + slot,
+      title: service + " failing, from " + span + ": " + what,
+      detail: "One incident for " + service + "'s start-up, crash, memory and database-dial alerts at this severity " +
+        "from " + span + ". Later ones in the slot are in this alert's log and page nobody. PagerDuty is not told " +
+        "when one goes quiet: check each one's Cloud Monitoring incident before resolving it by hand.",
+      keepOpen: true
+    };
+  }
+  return null;
+}
+
 function main() {
   var i = incidentOf(PD.inputRequest.body);
-  var what, best, key, event;
+  var what, best, key, event, grouped, closed;
   if (!i) {
     PD.fail("not a Cloud Monitoring notification: no incident object in the body");
     return;
   }
   what = title(i);
   best = page(i);
+  closed = text(i.state).toLowerCase() === "closed";
+  grouped = group(i, what);
+  if (grouped && grouped.keepOpen && closed) {
+    // One member of a service's group closed: the incident stays open for a person (above).
+    return;
+  }
   key = text(i.incident_id);
   if (!key && (text(i.policy_name) || text(i.condition_name))) {
     key = text(i.policy_name) + " / " + text(i.condition_name);
   }
   event = {
-    event_type: text(i.state).toLowerCase() === "closed" ? PD.Resolve : PD.Trigger,
-    description: what,
+    event_type: closed ? PD.Resolve : PD.Trigger,
+    description: grouped ? grouped.title : what,
     details: details(i, what, best),
     client: "Watchtower: " + best.name,
     client_url: link(best.uid),
     contexts: contexts(i, best)
   };
+  if (grouped) {
+    if (event.description.length > TITLE_LIMIT) {
+      event.description = event.description.substring(0, TITLE_LIMIT - 3) + "...";
+    }
+    event.details.grouped = grouped.detail;
+    key = grouped.key;
+  }
   if (key) { event.incident_key = key; }
   PD.emitGenericEvents([event]);
 }
