@@ -236,18 +236,19 @@ class TestEvents(Live):
         return [r for r in self.state.requests if r["path"].startswith("/events")]
 
     def test_the_title_is_the_subject_and_the_severity_rules_still_apply(self):
-        for role, severity, service, outcome in [
-            ("cc", "warning", SERVICES[2], "urgency low, alert severity warning, priority P3"),
-            ("app", "CRITICAL", SERVICES[0], "urgency high, alert severity critical, priority P1"),
-            ("phi", "Error", SERVICES[1], "urgency high, alert severity error, priority P2"),
-            ("app", "No severity", SERVICES[0], "urgency high, alert severity critical, priority none"),
+        for role, severity, service, outcome, action in [
+            ("cc", "warning", SERVICES[2], "urgency low, alert severity warning, priority P3", "no action needed"),
+            ("app", "CRITICAL", SERVICES[0], "urgency high, alert severity critical, priority P1", "check now"),
+            ("phi", "Error", SERVICES[1], "urgency high, alert severity error, priority P2", "check now"),
+            ("app", "No severity", SERVICES[0], "urgency high, alert severity critical, priority none", "check now"),
         ]:
             with self.subTest(severity=severity):
                 result = self.event("--role", role, "--severity", severity, "--send", "--wait", "5")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn(outcome, result.stdout)
-                self.assertIn(f'title "TEST (ignore): PagerDuty setup check ({severity}, {service}) · no action '
-                              f'needed"', result.stdout)
+                # An alert that pages says "check now" whatever its subject says (the review).
+                self.assertIn(f'title "TEST (ignore): PagerDuty setup check ({severity}, {service}) · {action}"',
+                              result.stdout)
                 self.assertIn("\nas designed\n", result.stdout)
                 self.assertIn("status resolved", result.stdout, "closed by a notification with state closed")
         self.assertEqual(self.state.transformer_failures, [])
@@ -274,7 +275,7 @@ class TestEvents(Live):
         base = pdlib.WATCHTOWER_URL
         self.assertEqual(list(details)[:5], ["what_happened", "what_to_do", "what_to_check", "dashboard", "overview"])
         self.assertEqual(f'{details["what_happened"]} · {details["what_to_do"]}', alert["summary"])
-        self.assertEqual(details["what_to_do"], "no action needed", "the test subject's own")
+        self.assertEqual(details["what_to_do"], "check now", "an Error pages, whatever the subject says")
         self.assertEqual(details["incident"]["severity"], "error")
         self.assertEqual(details["overview"], f"{base}/d/tw-cloud-overview")
         self.assertEqual(alert["body"]["contexts"],

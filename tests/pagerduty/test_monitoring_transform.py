@@ -388,9 +388,10 @@ class Es5(unittest.TestCase):
     @unittest.skipIf(fakes.NODE is None, NO_NODE)
     def test_it_runs_in_strict_mode_with_nothing_but_pd(self):
         """The stub's context holds PD alone: a stray global or an undeclared variable would throw here."""
-        ran = fakes.run_transform('"use strict";\n' + pdlib.transformer_code(), SAMPLE)
-        self.assertIsNone(ran["error"], ran["error"])
-        self.assertEqual(len(ran["events"]), 1)
+        for body in (SAMPLE, change("network_control_changes"), failing("sql_proxy_errors", job="tpa-jobs-sweeps")):
+            ran = fakes.run_transform('"use strict";\n' + pdlib.transformer_code(), body)
+            self.assertIsNone(ran["error"], ran["error"])
+            self.assertEqual(len(ran["events"]), 1)
 
 
 
@@ -450,6 +451,13 @@ class Grouping(unittest.TestCase):
         self.assertEqual(event["details"]["what_happened"], "IAM policy or role changed: SetIamPolicy",
                          "the alert's own words stay in its details")
         self.assertEqual(event["details"]["incident"]["severity"], "Warning")
+
+    def test_the_group_keys_are_exactly_f21ea67s(self):
+        """Plain titles changed no key: an open incident made before them still takes its group's later alerts."""
+        self.assertEqual(self.event(change("iam_policy_changes"))["incident_key"],
+                         "changes · trellistpa-beta-tpa-app · iam_policy_changes · warning · 1794621600")
+        self.assertEqual(self.event(failing("run_crash_exits"))["incident_key"],
+                         "service · trellistpa-beta-tpa-phi · records · warning · 1794621600")
 
     def test_another_slot_project_or_severity_is_another_incident(self):
         base = self.event(change("iam_policy_changes"))["incident_key"]
@@ -527,6 +535,15 @@ class PlainWords(unittest.TestCase):
         self.assertEqual(event["details"]["what_happened"], "TEST (ignore): a check (Warning, TPA · Call centre)")
         self.assertEqual(event["details"]["what_to_do"], "no action needed")
 
+    def test_an_alert_that_pages_always_says_check_now(self):
+        """The review: whatever the subject's own words, Critical, Error or an unmapped severity pages now."""
+        for severity in ("Critical", "Error", "No severity", UNSET):
+            with self.subTest(severity=severity):
+                event = self.event(notification(documentation__subject="TPA · Disk filling · no action needed",
+                                                severity=severity))
+                self.assertEqual(event["description"], "Disk filling · check now")
+                self.assertEqual(event["details"]["what_to_do"], "check now")
+
     def test_an_old_subject_is_given_whether_to_act_by_its_severity(self):
         for severity, action in [("Warning", "look today"), (" WARNING ", "look today"), ("Critical", "check now"),
                                  ("Error", "check now"), ("No severity", "check now"), (UNSET, "check now")]:
@@ -551,6 +568,20 @@ class PlainWords(unittest.TestCase):
         self.assertEqual(self.event(job)["description"], "TEST (ignore): URGENT The tpa-jobs-sweeps job is failing "
                                                          "during 02:00–02:30 UTC (it ran out of memory) · check now")
 
+    def test_a_critical_change_group_says_check_now_not_the_deploy_words(self):
+        """The review: PHI's urgent IAM change pages; with an old subject or its own words, it ends "check now"."""
+        for subject in ("[ALERT - Critical] TPA · URGENT IAM policy or role changed: SetIamPolicy",
+                        "TPA · URGENT Access rights changed · " + DEPLOY):
+            with self.subTest(subject=subject):
+                body = change("iam_policy_changes", severity="Critical", project="trellistpa-beta-tpa-phi")
+                body["incident"]["documentation"]["subject"] = subject
+                event = self.event(body)
+                self.assertEqual(event["description"], "URGENT Member records settings changed during 02:00–04:00 UTC "
+                                                       "(access rights were changed) · check now")
+                self.assertEqual(event["details"]["what_to_do"], "check now")
+        warning = self.event(change("iam_policy_changes"))
+        self.assertTrue(warning["description"].endswith(" · " + DEPLOY), "a Warning keeps the deploy words")
+
     def test_a_failing_group_takes_its_severitys_whether_to_act_from_an_old_subject(self):
         self.assertTrue(self.event(failing("sql_proxy_errors", severity="Critical"))["description"].endswith(
             "(it could not reach its database) · check now"))
@@ -569,7 +600,9 @@ class PlainWords(unittest.TestCase):
              "an alert policy was created"),
             ("monitoring_changes", "google.monitoring.v3.NotificationChannelService.DeleteNotificationChannel",
              "an alert channel was deleted"),
-            ("monitoring_changes", "google.monitoring.v3.SnoozeService.CreateSnooze",
+            ("monitoring_changes", "google.monitoring.v3.SnoozeService.CreateSnooze", "alerts were snoozed"),
+            ("monitoring_changes", "google.monitoring.v3.SnoozeService.UpdateSnooze", "alerts were snoozed"),
+            ("monitoring_changes", "google.monitoring.v3.UptimeCheckService.CreateUptimeCheckConfig",
              "an alert policy or channel was created"),
             ("iam_policy_changes", "SetIamPolicy", "access rights were changed"),
             ("iam_policy_changes", "google.cloud.run.v2.Services.SetIamPolicy",
@@ -578,6 +611,9 @@ class PlainWords(unittest.TestCase):
              "access rights were changed on a secret"),
             ("iam_policy_changes", "google.iam.admin.v1.SetIAMPolicy", "access rights were changed on a service account"),
             ("iam_policy_changes", "storage.setIamPermissions", "access rights were changed on a storage bucket"),
+            ("iam_policy_changes", "google.cloud.run.v2.Jobs.SetIamPolicy", "access rights were changed on a Cloud Run job"),
+            ("iam_policy_changes", "google.cloud.kms.v1.KeyManagementService.SetIamPolicy",
+             "access rights were changed on an encryption key"),
             ("iam_policy_changes", "google.iam.admin.v1.CreateRole", "an access role was created"),
             ("iam_policy_changes", "google.iam.admin.v1.UndeleteRole", "an access role was restored"),
             ("network_control_changes", "v1.compute.networkFirewallPolicies.addRule", "a firewall rule was added"),
@@ -589,6 +625,10 @@ class PlainWords(unittest.TestCase):
             ("network_control_changes", "v1.compute.backendServices.setSecurityPolicy",
              "a site's Cloud Armor policy was changed"),
             ("network_control_changes", "v1.compute.firewalls.insert", "a firewall rule was created"),
+            ("network_control_changes", "v1.compute.networkFirewallPolicies.addAssociation",
+             "a firewall policy was attached to a network"),
+            ("network_control_changes", "v1.compute.networkFirewallPolicies.removeAssociation",
+             "a firewall policy was detached from a network"),
             ("network_control_changes", "beta.compute.firewallPolicies.patch", "a firewall policy was changed"),
             ("network_control_changes", "", "a firewall or Cloud Armor rule was changed"),
             ("network_control_changes", "something.else", "a firewall or Cloud Armor rule was changed"),

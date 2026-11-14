@@ -19,11 +19,12 @@ var DASH = "\u2013";
 var TITLE_LIMIT = 250;
 var ACTION_LIMIT = 80;
 
-// Whether anyone needs to act (the owner, 2026-11-14: "why are they not descriptive on the problem"). tpa-platform's
-// subject ends with it: "<what happened> \u00b7 <whether to act>", the policy's own words or its tier's ("check now",
-// "look today", "no action needed"). A title without one (a subject from before that, Monitoring's own words) is
-// given one by the alert's severity: Warning can wait for the day; Critical, Error and anything else page now (an
-// unmapped severity pages at high urgency, PagerDuty's default).
+// Whether anyone needs to act (the owner, 2026-11-14: "why are they not descriptive on the problem"). An alert that
+// pages (Critical, Error, or a severity the services' rules do not map, which pages at high urgency, PagerDuty's
+// default) always ends "check now", whatever its subject says. A Warning ends with its subject's own words
+// (tpa-platform's "<what happened> \u00b7 <whether to act>", the policy's own or its tier's: "look today", "no action
+// needed"), or, for a subject from before that or Monitoring's own words, "look today" (a change group: the deploy
+// words).
 var ACT_NOW = "check now";
 var ACT_TODAY = "look today";
 var DEPLOY_ACTION = "expected during a deploy; check the deploy notes";
@@ -78,9 +79,10 @@ var PAGES_BY_PROJECT = [
 // A slot starts on the hour (or the half hour, or the even hour) in UTC, from Monitoring's started_at; a group that
 // crosses a slot's end is two incidents, never none. An event with no started_at is not grouped.
 // A group's title is its own, in plain words (the owner, 2026-11-14: "I have no idea what these are"): "Portal & API
-// settings changed during 10:00-12:00 UTC (an alert counter was updated) \u00b7 expected during a deploy; check the
-// deploy notes", and "The records service is failing during 02:00-02:30 UTC (it crashed) \u00b7 look today". Its
-// whether-to-act is the subject's own, else the deploy words for a change and the severity's for a failure.
+// settings changed during 10:00\u201312:00 UTC (an alert counter was updated) \u00b7 expected during a deploy; check
+// the deploy notes", and "The records service is failing during 02:00\u201302:30 UTC (it crashed) \u00b7 look today".
+// Its whether-to-act follows act() above: "check now" when it pages, else the subject's own, else the deploy words for
+// a change and "look today" for a failure.
 var GROUP_PREFIX = "logging.googleapis.com/user/";
 var CHANGE_METRICS = ["iam_policy_changes", "network_control_changes", "monitoring_changes", "log_metric_changes"];
 var CHANGE_SLOT_SECONDS = 2 * 3600;
@@ -125,8 +127,14 @@ function cut(value, limit) {
   return value.length > limit ? value.substring(0, limit - 3) + "..." : value;
 }
 
-function bySeverity(i) {
-  return text(i.severity).toLowerCase() === "warning" ? ACT_TODAY : ACT_NOW;
+function pages(i) {
+  return text(i.severity).toLowerCase() !== "warning";
+}
+
+// Whether to act: "check now" for an alert that pages; else the subject's own words, else `otherwise`.
+function act(i, h, otherwise) {
+  if (pages(i)) { return ACT_NOW; }
+  return h.own ? h.tail : otherwise;
 }
 
 // Our subject after its word, in plain words, or null when the subject is not ours.
@@ -136,23 +144,25 @@ function ours(i) {
   return text(plain(subject.replace(OUR_SUBJECT, ""))) || null;
 }
 
-// What a person reads, as { what, action, own }: what happened, and whether anyone needs to act. `own` is true when
-// the action is the subject's own last part (after the last separator: what happened may hold one, as in
-// "TPA \u00b7 Portal & API").
+// What a person reads, as { what, tail, own, action }: what happened; the subject's own whether-to-act (`tail`, when
+// `own`: its last part, after the last separator, as what happened may hold one, "TPA \u00b7 Portal & API"); and
+// whether anyone needs to act for an alert outside the groups (act above).
 function heading(i) {
   var body = ours(i);
   var policy = text(i.policy_name);
   var condition = text(i.condition_name);
-  var at;
+  var h, at;
   if (body !== null) {
     at = body.lastIndexOf(SEPARATOR);
-    if (at !== -1) {
-      return { what: body.substring(0, at), action: body.substring(at + SEPARATOR.length), own: true };
-    }
-    return { what: body, action: bySeverity(i), own: false };
+    h = at === -1 ? { what: body, tail: "", own: false } :
+      { what: body.substring(0, at), tail: body.substring(at + SEPARATOR.length), own: true };
+  } else if (policy && condition) {
+    h = { what: policy + SEPARATOR + condition, tail: "", own: false };
+  } else {
+    h = { what: text(i.summary) || "Cloud Monitoring alert", tail: "", own: false };
   }
-  if (policy && condition) { return { what: policy + SEPARATOR + condition, action: bySeverity(i), own: false }; }
-  return { what: text(i.summary) || "Cloud Monitoring alert", action: bySeverity(i), own: false };
+  h.action = act(i, h, ACT_TODAY);
+  return h;
 }
 
 // The title: what happened, cut so that whether to act always shows, then whether to act (itself cut at
@@ -313,8 +323,17 @@ function done(verb) {
 // Where an IAM change was made, from the service in its operation's name; "" when it does not say.
 var IAM_PLACES = [
   [".run.", " on a Cloud Run service"], ["secretmanager", " on a secret"], ["storage.", " on a storage bucket"],
-  ["iam.admin", " on a service account"], ["cloudkms", " on an encryption key"]
+  ["iam.admin", " on a service account"], [".kms.", " on an encryption key"]
 ];
+
+function place(operation) {
+  var n;
+  if (operation.indexOf(".run.") !== -1 && operation.indexOf("Jobs.") !== -1) { return " on a Cloud Run job"; }
+  for (n = 0; n < IAM_PLACES.length; n++) {
+    if (operation.indexOf(IAM_PLACES[n][0]) !== -1) { return IAM_PLACES[n][1]; }
+  }
+  return "";
+}
 
 // One control-plane change in plain words, from its counter and its operation label (the method Google logged:
 // "google.logging.v2.MetricsServiceV2.UpdateLogMetric", "v1.compute.networkFirewallPolicies.addRule",
@@ -327,19 +346,21 @@ function changed(name, operation) {
   var w = words(method);
   var thing = w.slice(1).join(" ");
   var verb = done(w[0]);
-  var n;
   if (name === "log_metric_changes") { return "an alert counter was " + verb; }
   if (name === "monitoring_changes") {
     if (thing === "alert policy") { return "an alert policy was " + verb; }
     if (thing === "notification channel") { return "an alert channel was " + verb; }
+    if (thing === "snooze") { return "alerts were snoozed"; }
     return "an alert policy or channel was " + verb;
   }
   if (name === "iam_policy_changes") {
     if (contains(w, "role")) { return "an access role was " + verb; }
-    for (n = 0; n < IAM_PLACES.length; n++) {
-      if (operation.indexOf(IAM_PLACES[n][0]) !== -1) { return "access rights were changed" + IAM_PLACES[n][1]; }
-    }
-    return "access rights were changed";
+    return "access rights were changed" + place(operation);
+  }
+  if (contains(w, "association")) {
+    return (collection === "securityPolicies" ? "a Cloud Armor policy was " : "a firewall policy was ") +
+      (w[0] === "add" ? "attached to a network" : w[0] === "remove" ? "detached from a network" :
+        "changed where it applies");
   }
   if (contains(w, "rule")) {
     return (collection === "securityPolicies" ? "a Cloud Armor rule" : "a firewall rule") + " was " + verb;
@@ -390,7 +411,7 @@ function group(i, h) {
       key: "changes" + SEPARATOR + project + SEPARATOR + name + SEPARATOR + severity + SEPARATOR + slot,
       what: marks(i) + area(project) + " settings changed during " + span + " (" +
         changed(name, text(field(field(i.metric, "labels"), "operation"))) + ")",
-      action: h.own ? h.action : DEPLOY_ACTION,
+      action: act(i, h, DEPLOY_ACTION),
       detail: "One incident for this kind of change (" + name + ") in this project at this severity during " + span +
         ": a deploy makes many. Later ones in the slot are in this alert's log and page nobody. Compare the slot " +
         "with the deploy notes (the NOTICE's START and DONE); if no deploy was running, read the project's Admin " +
@@ -409,7 +430,7 @@ function group(i, h) {
     return {
       key: "service" + SEPARATOR + project + SEPARATOR + service + SEPARATOR + severity + SEPARATOR + slot,
       what: marks(i) + "The " + service + kind + " is failing during " + span + " (" + FAILING[name] + ")",
-      action: h.own ? h.action : bySeverity(i),
+      action: act(i, h, ACT_TODAY),
       detail: "One incident for the " + service + kind + "'s start-up, crash, memory and database alerts at this " +
         "severity during " + span + ". Later ones in the slot are in this alert's log and page nobody. PagerDuty is " +
         "not told when one goes quiet: check each one's Cloud Monitoring incident before resolving it by hand.",

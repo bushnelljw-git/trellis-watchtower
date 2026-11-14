@@ -278,7 +278,9 @@ def transformer_heading(incident: dict) -> tuple[str, str]:
     def text(value) -> str:
         return "" if value is None else str(value).strip()
 
-    act = ACT_TODAY if text(incident.get("severity")).lower() == "warning" else ACT_NOW
+    # An alert that pages (anything but Warning) always says "check now"; a Warning says its subject's own words.
+    pages = text(incident.get("severity")).lower() != "warning"
+    act = ACT_NOW if pages else ACT_TODAY
     subject = _TAG.sub("", text((incident.get("documentation") or {}).get("subject")), count=1)
     policy, condition = text(incident.get("policy_name")), text(incident.get("condition_name"))
     body = ""
@@ -288,8 +290,8 @@ def transformer_heading(incident: dict) -> tuple[str, str]:
                               _OUR_SUBJECT.sub("", subject, count=1))
         body = (body[:1].upper() + body[1:]).strip()
     if body:
-        what, sep, action = body.rpartition(TITLE_SEPARATOR)
-        return (what, action) if sep else (body, act)
+        what, sep, tail = body.rpartition(TITLE_SEPARATOR)
+        return (what, tail if not pages else act) if sep else (body, act)
     if policy and condition:
         return policy + TITLE_SEPARATOR + condition, act
     return text(incident.get("summary")) or "Cloud Monitoring alert", act

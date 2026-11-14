@@ -145,9 +145,10 @@ to act: "<what happened> · <whether to act>".
   "TPA · [URGENT ]<what happened>[: <which>] · <whether to act>", the policy's own words ("check it's not real
   people", "expected during a deploy; check the deploy notes") or its tier's ("check now" p1, "look today" p2,
   "no action needed" p3 and notices). The last ` · ` is the one before whether to act (what happened may hold one).
-- **A subject without whether to act** (written before that change, until DEPLOY CHANNEL applies it; or Monitoring's
-  own words) is given one by the alert's severity: Warning "look today"; Critical, Error and anything else "check
-  now" (an unmapped severity pages at high urgency).
+- **An alert that pages always ends "check now"**, whatever its subject says: Critical, Error, or a severity the
+  services' rules don't map (it pages at high urgency, PagerDuty's default). A Warning ends with its subject's own
+  words; a subject without them (written before that change, until DEPLOY CHANNEL applies it, or Monitoring's own
+  words) ends "look today", or, for a change group, the deploy words below.
 - **A long title** is cut in what happened, never in whether to act (itself at most 80 characters).
 
 The title is the first of these that fits, then whether to act:
@@ -189,8 +190,9 @@ of the plan the account has, with no add-on.
     titled in plain words from the counter and the first change's operation, e.g. "Portal & API settings changed
     during 02:00–04:00 UTC (an alert counter was updated) · expected during a deploy; check the deploy notes" (the
     area from the project, "Production" for another; the operation label's method as "a firewall rule was added",
-    "access rights were changed on a secret", "an alert policy was deleted"; whether to act the subject's own, else
-    those deploy words). The counter is in the key (the review), so a change of
+    "access rights were changed on a secret", "an alert policy was deleted", "alerts were snoozed"; "check now" when it
+    pages, as PHI's Critical IAM change does, else the subject's own words, else those deploy words). The counter is in
+    the key (the review), and the keys are exactly as before (a test pins them), so a change of
     another kind during an apply still pages on its own. An approved apply made 4 to 8 change incidents per project,
     one per method (105 incidents from 11-07 to 11-14, most of them changes); now it is at most one per kind per
     project per slot. These policies send no close (#202), so a person resolves the incident after reading the
@@ -200,8 +202,9 @@ of the plan the account has, with no add-on.
   - **One Cloud Run service failing**: `run_system_errors`, `run_crash_exits`, `run_oom_kills` and
     `sql_proxy_errors` for one service (or job) within one half-hour UTC slot are one incident, titled "The records
     service is failing during 02:00–02:30 UTC (it crashed) · look today" (the first alert's counter in plain words:
-    could not start or failed a health check, crashed, ran out of memory, could not reach its database; whether to
-    act the subject's own, else by severity). A Google close of one of them is dropped (no event): one
+    could not start or failed a health check, crashed, ran out of memory, could not reach its database; "check now"
+    when it pages, else the subject's own words, else "look today"). A Google close of one of them is dropped (no
+    event): one
     counter going quiet must not resolve an incident whose other counters still fire, so a person resolves it, after
     checking each one's Cloud Monitoring incident (PagerDuty is not told when a counter goes quiet). tpa-platform's
     catalogue keeps these four policies on its waiting list (D-402).
