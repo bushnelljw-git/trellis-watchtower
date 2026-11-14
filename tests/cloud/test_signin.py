@@ -48,7 +48,7 @@ from test_resources import (CHECKOUT_PRESENT, DASHBOARDS, ENVIRONMENTS, INFRA, I
 CATALOGUE = cat.Catalogue()
 BUILT = ",".join((gen.ROBOT_SECRETS, *gen.ROBOT_JOBS))   # stage 2: the secrets and both robots
 BETA_TILES = ["Member robot", "Broker robot", "Texted codes (24 h)", "Emails (24 h)", "Outside checks",
-              "Sign-in alerts"]
+              "Email checks", "Last check", "Email delivery (24 h)", "Sign-in alerts"]
 PRODUCTION_TILES = ["Emails (24 h)", "Sign-in alerts"]
 END = 1_000_000_000_000   # the range's end, in ms (any fixed number: the frames are placed against it)
 
@@ -218,12 +218,17 @@ class RowTest(unittest.TestCase):
                 self.assertEqual(sum(p["gridPos"]["w"] for p in tiles), 24, env)
                 self.assertEqual({p["gridPos"]["y"] for p in tiles}, {1}, env)
                 continue
-            # The five tiles fill one line; the alerts take the whole width under them.
-            *line, alerts = tiles
+            # The five tiles fill one line; the mail check's three (D-400) the line under them; the alerts the whole
+            # width under those.
+            *line, checks, last, delivery, alerts = tiles
             self.assertEqual(sum(p["gridPos"]["w"] for p in line), 24, env)
             self.assertEqual({p["gridPos"]["y"] for p in line}, {1}, env)
+            second = 1 + line[0]["gridPos"]["h"]
+            self.assertEqual([(p["gridPos"]["x"], p["gridPos"]["w"], p["gridPos"]["y"])
+                              for p in (checks, last, delivery)],
+                             [(0, 8, second), (8, 6, second), (14, 10, second)], env)
             self.assertEqual((alerts["title"], alerts["gridPos"]["x"], alerts["gridPos"]["w"], alerts["gridPos"]["y"]),
-                             ("Sign-in alerts", 0, 24, 1 + line[0]["gridPos"]["h"]), env)
+                             ("Sign-in alerts", 0, 24, second + checks["gridPos"]["h"]), env)
 
     def test_every_tile_in_the_row_reads_at_the_rows_fixed_sizes(self):
         # Left to size itself, Grafana drew a robot's three lines a few pixels high in a four-column tile (the owner,

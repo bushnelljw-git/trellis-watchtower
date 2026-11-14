@@ -1716,6 +1716,136 @@ def emails_tile(env: str, w: int = 3, h: int = 5) -> dict:
     return p
 
 
+# D-400 (tpa-platform's beta mailcheck.tf): the hourly mail check. Records sends one check email an hour on each of two
+# lanes through the queues real emails take (invites: the opening-email chain to auth's messenger; notices: records'
+# outbox to connectors), and an App Engine inbox in a project of its own counts each one DKIM proves we sent
+# (`mail_check_arrived`, by lane) and refuses the rest (`mail_check_refused`, by reason). The app project's metrics
+# scope reads that project, so the app datasource charts its counters. What SendGrid reported back about every email
+# is records' `records_vendor_events`, the PHI project's. Three tiles, because a panel never mixes datasources (the
+# lint's rule 8) and a status read the pager's way cannot share a frame with a time ago: Email checks (each lane
+# arriving or not over the urgent policy's window, and the inbox's refusals), Last check (each lane's newest arrival as
+# a time ago) and Email delivery (SendGrid's reports). Beta's alone: production-full builds none of it. The three
+# counters exist from tpa-platform's inbox stage (cloud/README.md, "The hourly mail check").
+GAE = "gae_app"
+MAIL_LANES = ("invites", "notices")
+# The urgent policies' window (mail-check-<lane>-missing: no arrival in 2 h 15 min, two hourly checks in a row), read
+# here as they read it; tests/cloud/test_mail_check.py holds it to the catalogue's PromQL.
+MAIL_CHECK_WINDOW_S = 8100
+MAIL_CHECK_WINDOW = "2 h 15 min"
+# The kinds of email records matches a report to that are real emails, as email-delivery-failed counts them (the mail
+# checks' own left out).
+REAL_EMAIL_KINDS = "opening|notice|auth_message|unmatched"
+
+
+def email_checks_tile(w: int = 8, h: int = 5) -> dict:
+    """Each lane arriving or not over the urgent policy's window, and the deliveries the inbox refused in the day."""
+    a = Arithmetic()
+    window, day = f"+{MAIL_CHECK_WINDOW_S}s", "+86400s"
+    queries = [q(log("mail_check_arrived"), GAE, period=window, by=(), name=f"{lane} window", lane=lane)
+               for lane in MAIL_LANES]
+    # Any arrival in the day, a window that always ends now when there was one: it holds the newest row at the range's
+    # end, so a lane with nothing in the newest window reads 0 there, never an older window's count.
+    queries += [q(log("mail_check_arrived"), GAE, period=day, by=(), name="arrivals count"),
+                q(log("mail_check_refused"), GAE, period=day, by=(), name="refused count")]
+    shown = {**{a.at_least(a.count(f"{lane} window")): lane for lane in MAIL_LANES},
+             a.total("refused (24 h)", [a.count("refused count")]): "refused (24 h)"}
+    status = [{"type": "value", "options": {"0": {"text": f"✕ none in {MAIL_CHECK_WINDOW}", "color": RED, "index": 0},
+                                            "1": {"text": "✓ arriving", "color": TEAL, "index": 1}}}]
+    p = stat("Email checks", APP, queries,
+             "The hourly mail check (tpa-platform D-400): records sends one check email an hour on each lane through "
+             "the queues real emails take, invites through the opening-email chain and auth's messenger, notices "
+             "through records' outbox and connectors, both to SendGrid; a Google-managed inbox counts each one whose "
+             f"DKIM signature proves we sent it (`mail_check_arrived`). invites and notices: ✓ arriving while a check of "
+             f"that lane arrived in the last {MAIL_CHECK_WINDOW}, ✕ none in {MAIL_CHECK_WINDOW}, red, as the urgent "
+             "`mail-check-invites-missing` and `mail-check-notices-missing` read it (two hourly checks in a row; one "
+             "late check is not a failure). refused (24 h): deliveries the inbox refused (`mail_check_refused`, by "
+             "reason: not one of its addresses, not the check's subject, a signature missing, not ours or not "
+             "verifying, a check older than a day or ahead of the clock, any request but Google's mail delivery). "
+             "When each lane last arrived is Last check, beside this tile.",
+             w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from="24h",
+             value_size=SIGNIN_VALUE_SIZE, title_size=SIGNIN_NAME_SIZE, no_value="No check arrived in 24 h",
+             decimals=0,
+             transformations=_window_steps() + a.steps + [
+                 {"id": "organize", "options": {"includeByName": {n: True for n in shown},
+                                                "renameByName": shown,
+                                                "indexByName": {n: i for i, n in enumerate(shown)}}}],
+             overrides=[*[{"matcher": {"id": "byName", "options": lane}, "properties": [
+                            {"id": "mappings", "value": status},
+                            {"id": "thresholds", "value": thresholds(RED, (1, TEAL))}]} for lane in MAIL_LANES],
+                        {"matcher": {"id": "byName", "options": "refused (24 h)"}, "properties": [
+                            {"id": "thresholds", "value": thresholds(NEUTRAL, (1, AMBER))}]}])
+    p["options"]["orientation"] = "horizontal"
+    return p
+
+
+def last_check_tile(w: int = 6, h: int = 5) -> dict:
+    """When each lane's newest check arrived, as a time ago."""
+    queries = [q(log("mail_check_arrived"), GAE, period="+60s", by=(), name=lane, lane=lane) for lane in MAIL_LANES]
+    steps: list[dict] = []
+    # Each lane's frame alone: its minutes with an arrival, each minute's time as a number, the newest of them. A lane
+    # with no arrival in the range has no frame, so it is missing here rather than read as some old time (Email checks
+    # beside it says ✕).
+    for ref, lane in zip("AB", MAIL_LANES):
+        only = {"id": "byRefId", "options": ref}
+        steps += [{"id": "filterByValue", "filter": only, "options": {"type": "include", "match": "any", "filters": [
+                      {"fieldName": lane, "config": {"id": "greater", "options": {"value": 0}}}]}},
+                  {**calc(f"{lane} at", "Time", "*", 1), "filter": only},
+                  {"id": "reduce", "filter": only,
+                   "options": {"mode": "reduceFields", "reducers": ["max"], "includeTimeField": False}}]
+    steps.append({"id": "concatenate", "options": {"frameNameMode": "drop"}})
+    names = {f"{lane} at": lane for lane in MAIL_LANES}
+    p = stat("Last check", APP, queries,
+             "When each lane's newest mail check arrived in the inbox (`mail_check_arrived`, tpa-platform D-400), as a "
+             "time ago: about an hour at most while it runs. A lane with none in 24 hours is missing here; Email "
+             "checks beside it then reads ✕ and its urgent policy has opened.",
+             w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from="24h",
+             value_size=SIGNIN_VALUE_SIZE, title_size=SIGNIN_NAME_SIZE, no_value="No check in 24 h",
+             transformations=steps + [
+                 {"id": "organize", "options": {"includeByName": {n: True for n in names},
+                                                "renameByName": names,
+                                                "indexByName": {n: i for i, n in enumerate(names)}}}],
+             overrides=[{"matcher": {"id": "byName", "options": lane}, "properties": [
+                            {"id": "unit", "value": "dateTimeFromNow"}]} for lane in MAIL_LANES])
+    p["options"]["orientation"] = "horizontal"
+    return p
+
+
+def email_delivery_tile(w: int = 10, h: int = 5) -> dict:
+    """What SendGrid reported back in the day, from records' stored events: delivered; bounced or dropped, and spam
+    reports, of real emails."""
+    a = Arithmetic()
+    day = "+86400s"
+    queries = [q(log("records_vendor_events"), REV, period=day, by=(), name="delivered count", outcome="delivered"),
+               q(log("records_vendor_events"), REV, period=day, by=(), name="bounced count",
+                 outcome=Re("bounce|dropped"), lane=Re(REAL_EMAIL_KINDS)),
+               q(log("records_vendor_events"), REV, period=day, by=(), name="spam count", outcome="spamreport",
+                 lane=Re(REAL_EMAIL_KINDS))]
+    shown = {a.total("delivered", [a.count("delivered count")]): "delivered",
+             a.total("bounced or dropped", [a.count("bounced count")]): "bounced or dropped",
+             a.total("spam reports", [a.count("spam count")]): "spam reports"}
+    p = stat("Email delivery (24 h)", PHI, queries,
+             "What SendGrid reported back in the last 24 hours, as records stored each signed report "
+             "(`records_vendor_events`, by SendGrid's event and the kind of email records matched it to). delivered: to "
+             "the recipient's server, every email (opening emails, notices, sign-in messages, the hourly mail checks "
+             "and any records could not match). bounced or dropped, and spam reports: real emails alone, as "
+             "`email-delivery-failed` counts them (its window is an hour): bounced, the address takes no mail; "
+             "dropped, SendGrid would not send, most often an address it suppressed after an earlier bounce; a spam "
+             "report, the person marked it so. Who and which email is the ops portal's delivery state and SendGrid's "
+             "own activity feed, never this tile. None of these counts until SendGrid's signed reports reach records.",
+             w=w, h=h, calc="lastNotNull", text_mode="value_and_name", time_from="24h",
+             value_size=SIGNIN_VALUE_SIZE, title_size=SIGNIN_NAME_SIZE, no_value="No report in 24 h", decimals=0,
+             transformations=_window_steps() + a.steps + [
+                 {"id": "organize", "options": {"includeByName": {n: True for n in shown},
+                                                "indexByName": {n: i for i, n in enumerate(shown)}}}],
+             overrides=[{"matcher": {"id": "byName", "options": "delivered"}, "properties": [
+                            {"id": "thresholds", "value": thresholds(NEUTRAL, (1, TEAL))}]},
+                        *[{"matcher": {"id": "byName", "options": name}, "properties": [
+                            {"id": "thresholds", "value": thresholds(NEUTRAL, (1, AMBER))}]}
+                          for name in ("bounced or dropped", "spam reports")]])
+    p["options"]["orientation"] = "horizontal"
+    return p
+
+
 # The messenger's and the outside checks' p1 policies the alerts tile reads beside the robots' (D-335): each read from
 # the catalogue, each refused unless it is the shape written here.
 def messenger_rules() -> dict:
@@ -2782,13 +2912,15 @@ def signin_row(env: str) -> list[dict]:
     member, broker = ((key, who, title, factor, job) for (key, who, title, factor), job in zip(SIGNIN_ROBOTS, ROBOT_JOBS))
     # Five tiles on one line, each wide enough for its title and its words at the row's sizes (at three columns a
     # title was cut to "Emails (2..."), and the alerts the whole width under them, a line each.
+    # D-400: the hourly mail check's three tiles on a line of their own under them (beta's alone).
     return [row(SIGNIN_ROW), robot_tile(*member, w=5), robot_tile(*broker, w=5), texts_tile(w=5),
-            emails_tile(env, w=4), outside_checks_tile(w=5), alerts_table(env, w=24, h=4)]
+            emails_tile(env, w=4), outside_checks_tile(w=5), email_checks_tile(w=8), last_check_tile(w=6),
+            email_delivery_tile(w=10), alerts_table(env, w=24, h=4)]
 
 
 def overview(cc: bool = True, env: str = "beta") -> dict:
     """The home page, calm: four open rows (Can people sign in?: the sign-in robots, the codes going out, the outside
-    checks and the sign-in alerts; Right now: a status per area, uptime, incidents; Services: a tile per service the
+    checks, beta's hourly email checks and the sign-in alerts; Right now: a status per area, uptime, incidents; Services: a tile per service the
     environment runs; Databases: a tile per instance), then the detail in rows shut by default. Written per
     environment (`env`: the services it runs) and with or without the call centre (`cc`)."""
     def area(name, ds, services, deps, p95_query, p95_desc, groups, fifth, jobs):

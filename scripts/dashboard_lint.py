@@ -126,9 +126,11 @@ LABEL_ONLY_ON = {"metric.label.reason": {"router.googleapis.com/nat/dropped_sent
 # servicedirectory_service: a private uptime check's resource (Google's VPC checkers reading auth's and tpa-api's
 # /ready at their internal balancers; tpa-platform D-149). Its one label read here is service_name. nat_gateway: a
 # project's Cloud NAT (its ports, connections and drops), read by gateway_name. gcs_bucket: a bucket's size and
-# object count, read by bucket_name, never an object's name.
+# object count, read by bucket_name, never an object's name. gae_app: the hourly mail check's inbox (tpa-platform
+# D-400), App Engine in a project of its own, whose two counters keep their series on it; read by their own labels
+# alone (lane, code), never a resource label.
 MONITORED_RESOURCES = {"cloud_run_revision", "cloud_run_job", "cloudsql_database", "uptime_url", "cloud_scheduler_job",
-                       "audited_resource", "servicedirectory_service", "nat_gateway", "gcs_bucket"}
+                       "audited_resource", "servicedirectory_service", "nat_gateway", "gcs_bucket", "gae_app"}
 METRIC_TYPE_RE = re.compile(r"^(logging|run|cloudsql|monitoring|router|storage)\.googleapis\.com/[a-z0-9_/]+$")
 FILTER_OPERATORS = {"=", "=~"}
 CLOUD_PANEL_TYPES = {"row", "stat", "timeseries", "table", "state-timeline", "text", "bargauge"}

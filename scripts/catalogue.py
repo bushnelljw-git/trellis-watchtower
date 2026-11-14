@@ -33,11 +33,13 @@ THRESHOLD_DEFAULTS = {"comparison": "COMPARISON_GT", "threshold_value": "0", "du
 # app role's: `signin_robots` (the robots' secret read, auth's line on a robot's login tried from elsewhere, and their
 # policies; their result lines are the synthetics section's), `auth_texts` (each texted code's delivery as Twilio
 # reported it, while auth_sms_twilio_enabled) and `auth_email_everyone` (emails the messenger could not hand on, while
-# email_everyone_enabled). Every log metric of a section read here must be charted, as a role's are
-# (tests/cloud/test_catalogue.py). The other optional sections (`beta_text_codes`, `crm_lane_*`, `perimeter_dry_run`,
+# email_everyone_enabled); and the hourly mail check's (D-400, mailcheck.tf): `mail_check`, read as the app role's
+# (its counters are the inbox project's own, which the app project's metrics scope reads, so the app datasource charts
+# them) and `email_delivery` the PHI role's (records' line). Every log metric of a section read here must be charted,
+# as a role's are (tests/cloud/test_catalogue.py). The other optional sections (`beta_text_codes`, `crm_lane_*`, `perimeter_dry_run`,
 # ...) are not read.
 SECTIONS = {"feed_ingest": "app", "feed_ingest_records": "phi", "signin_robots": "app", "auth_texts": "app",
-            "auth_email_everyone": "app"}
+            "auth_email_everyone": "app", "mail_check": "app", "email_delivery": "phi"}
 
 
 def git_blob_sha(data: bytes) -> str:

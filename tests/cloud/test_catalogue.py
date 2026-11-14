@@ -241,15 +241,20 @@ class CatalogueTest(unittest.TestCase):
         # sign-in row's three (SR-OR-1, D-335), the app role's: the robots' secret read, auth's line on a robot's login
         # tried from anywhere but the runner (tpa-platform 10e20a62) and their policies, each texted code's delivery
         # as Twilio reported it back, and the emails the messenger could not hand on. The others are not read.
+        # D-400: and the hourly mail check's, `mail_check` read as the app role's (the inbox project's own counters,
+        # which the app project's metrics scope reads) and `email_delivery` the PHI role's (records' line).
         self.assertEqual(cat.SECTIONS, {"feed_ingest": "app", "feed_ingest_records": "phi", "signin_robots": "app",
-                                        "auth_texts": "app", "auth_email_everyone": "app"})
+                                        "auth_texts": "app", "auth_email_everyone": "app", "mail_check": "app",
+                                        "email_delivery": "phi"})
         self.assertEqual({k: set(v) for k, v in self.catalogue.sections.items()},
                          {"feed_ingest": {"everon_runs_not_whole", "everon_book_employers", "everon_book_people"},
                           "feed_ingest_records": {"source_sync_alerts"},
                           "signin_robots": {"signin_robot_secret_read", "signin_robot_foreign"},
                           "auth_texts": {"auth_texts_reported", "auth_texts_not_sent", "auth_text_delivery_faults",
                                          "auth_twilio_connections"},
-                          "auth_email_everyone": {"auth_email_undeliverable", "auth_message_to_synthetic_login"}})
+                          "auth_email_everyone": {"auth_email_undeliverable", "auth_message_to_synthetic_login"},
+                          "mail_check": {"mail_check_arrived", "mail_check_refused"},
+                          "email_delivery": {"records_vendor_events"}})
         self.assertEqual(self.catalogue.roles["app"]["auth_texts_reported"]["labels"], {"code"})
         self.assertEqual(self.catalogue.roles["app"]["signin_robot_foreign"]["labels"], {"code", "class", "operation"})
         self.assertEqual(self.catalogue.unanchored_labels("app", "signin_robot_foreign"), set())

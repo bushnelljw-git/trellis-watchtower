@@ -85,7 +85,7 @@ shared:
       filter: |
         (resource.type="cloud_run_revision" OR resource.type="cloud_run_job")
         AND severity>=ERROR
-        AND jsonPayload.message=~"^\\[[a-z][a-z0-9-]*:[a-z0-9-]+:[a-z][a-z0-9-]*\\] "
+        AND jsonPayload.message=~"^[[][a-z][a-z0-9-]*:[a-z0-9-]+:[a-z][a-z0-9-]*[]] "
 
     # D-147 (the reliability signals, 2026-10-11; docs/infra/monitoring.md
     # §12). Every metric below reads a line the platform writes, never one of
@@ -191,7 +191,7 @@ shared:
       filter: |
         resource.type="cloud_run_revision"
         AND log_id("run.googleapis.com/varlog/system")
-        AND textPayload=~"^Container (called exit\\([1-9][0-9]*\\)|terminated on signal ([1-8]|1[0-46-9]|[2-9][0-9]))\\."
+        AND textPayload=~"^Container (called exit[(][1-9][0-9]*[)]|terminated on signal ([1-8]|1[0-46-9]|[2-9][0-9]))[.]"
 
     # The Admin Activity audit log (always on, free, copied to the vault):
     # a Secret Manager version disabled or destroyed, and a KMS key version
@@ -207,7 +207,7 @@ shared:
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
         AND protoPayload.serviceName="secretmanager.googleapis.com"
-        AND protoPayload.methodName=~"(^|\\.)((Disable|Destroy)SecretVersion|DeleteSecret)$"
+        AND protoPayload.methodName=~"(^|[.])((Disable|Destroy)SecretVersion|DeleteSecret)$"
       labels:
         operation: 'EXTRACT(protoPayload.methodName)'
 
@@ -220,8 +220,8 @@ shared:
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
         AND protoPayload.serviceName="cloudkms.googleapis.com"
-        AND (protoPayload.methodName=~"(^|\\.)DestroyCryptoKeyVersion$"
-          OR (protoPayload.methodName=~"(^|\\.)UpdateCryptoKeyVersion$"
+        AND (protoPayload.methodName=~"(^|[.])DestroyCryptoKeyVersion$"
+          OR (protoPayload.methodName=~"(^|[.])UpdateCryptoKeyVersion$"
             AND protoPayload.request.cryptoKeyVersion.state="DISABLED"))
       labels:
         operation: 'EXTRACT(protoPayload.methodName)'
@@ -262,9 +262,9 @@ shared:
         alone; the entry says who, on what and which binding.
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
-        AND (protoPayload.methodName=~"(?i)(^|\\.)setiampolicy$"
+        AND (protoPayload.methodName=~"(?i)(^|[.])setiampolicy$"
           OR protoPayload.methodName="storage.setIamPermissions"
-          OR protoPayload.methodName=~"^google\\.iam\\.admin\\.v1\\.(CreateRole|UpdateRole|DeleteRole|UndeleteRole)$")
+          OR protoPayload.methodName=~"^google[.]iam[.]admin[.]v1[.](CreateRole|UpdateRole|DeleteRole|UndeleteRole)$")
         AND NOT protoPayload.status.code>0
       labels:
         operation: 'EXTRACT(protoPayload.methodName)'
@@ -279,7 +279,7 @@ shared:
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
         AND protoPayload.serviceName="iam.googleapis.com"
-        AND protoPayload.methodName=~"^google\\.iam\\.admin\\.v1\\.(CreateServiceAccountKey|UploadServiceAccountKey|EnableServiceAccountKey)$"
+        AND protoPayload.methodName=~"^google[.]iam[.]admin[.]v1[.](CreateServiceAccountKey|UploadServiceAccountKey|EnableServiceAccountKey)$"
       labels:
         operation: 'EXTRACT(protoPayload.methodName)'
 
@@ -290,7 +290,7 @@ shared:
         log. By method alone.
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
-        AND protoPayload.methodName=~"(?i)(^|\\.)setiampolicy$"
+        AND protoPayload.methodName=~"(?i)(^|[.])setiampolicy$"
         AND protoPayload.serviceData.policyDelta.auditConfigDeltas:*
         AND NOT protoPayload.status.code>0
       labels:
@@ -305,7 +305,7 @@ shared:
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
         AND protoPayload.serviceName="logging.googleapis.com"
-        AND protoPayload.methodName=~"^google\\.logging\\.v2\\.(ConfigServiceV2\\.(CreateSink|UpdateSink|DeleteSink|CreateExclusion|UpdateExclusion|DeleteExclusion|CreateBucket|CreateBucketAsync|UpdateBucket|UpdateBucketAsync|DeleteBucket|UndeleteBucket|CreateView|UpdateView|DeleteView|UpdateSettings|UpdateCmekSettings)|LoggingServiceV2\\.DeleteLog)$"
+        AND protoPayload.methodName=~"^google[.]logging[.]v2[.](ConfigServiceV2[.](CreateSink|UpdateSink|DeleteSink|CreateExclusion|UpdateExclusion|DeleteExclusion|CreateBucket|CreateBucketAsync|UpdateBucket|UpdateBucketAsync|DeleteBucket|UndeleteBucket|CreateView|UpdateView|DeleteView|UpdateSettings|UpdateCmekSettings)|LoggingServiceV2[.]DeleteLog)$"
         AND NOT protoPayload.status.code>0
       labels:
         operation: 'EXTRACT(protoPayload.methodName)'
@@ -319,7 +319,7 @@ shared:
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
         AND protoPayload.serviceName="compute.googleapis.com"
-        AND protoPayload.methodName=~"^(v1|beta)\\.compute\\.((firewalls)\\.(insert|patch|update|delete)|(securityPolicies)\\.(insert|patch|delete|addRule|patchRule|removeRule)|(networkFirewallPolicies|regionNetworkFirewallPolicies)\\.(insert|patch|delete|addRule|patchRule|removeRule|addAssociation|removeAssociation)|backendServices\\.setSecurityPolicy)$"
+        AND protoPayload.methodName=~"^(v1|beta)[.]compute[.]((firewalls)[.](insert|patch|update|delete)|(securityPolicies)[.](insert|patch|delete|addRule|patchRule|removeRule)|(networkFirewallPolicies|regionNetworkFirewallPolicies)[.](insert|patch|delete|addRule|patchRule|removeRule|addAssociation|removeAssociation)|backendServices[.]setSecurityPolicy)$"
         AND NOT protoPayload.status.code>0
       labels:
         operation: 'EXTRACT(protoPayload.methodName)'
@@ -329,14 +329,20 @@ shared:
         The IAP gate changed: IAP's settings on a resource updated, or a
         backend service updated with IAP turned off, from the Admin Activity
         audit log. Who may pass IAP is an IAM policy (iam_policy_changes). By
-        method alone.
+        method alone. The portal's own backend, bes-web, is left out: it runs
+        without IAP by design since OWNER-EMAIL-2 opened the portal, and every
+        apply that touches it writes `iap { enabled = false }` again (36 such
+        updates from 2026-10-29 to 2026-11-13, every match of this counter once
+        D-340 made it count), which would page p1 on each deploy. The exclusion
+        assumes portal_public_enabled; remove it where that switch is false.
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
         AND ((protoPayload.serviceName="iap.googleapis.com"
-            AND protoPayload.methodName=~"(^|\\.)UpdateIapSettings$")
+            AND protoPayload.methodName=~"(^|[.])UpdateIapSettings$")
           OR (protoPayload.serviceName="compute.googleapis.com"
-            AND protoPayload.methodName=~"^(v1|beta)\\.compute\\.backendServices\\.(patch|update)$"
-            AND protoPayload.request.iap.enabled=false))
+            AND protoPayload.methodName=~"^(v1|beta)[.]compute[.]backendServices[.](patch|update)$"
+            AND protoPayload.request.iap.enabled=false
+            AND NOT protoPayload.resourceName=~"/backendServices/bes-web$"))
         AND NOT protoPayload.status.code>0
       labels:
         operation: 'EXTRACT(protoPayload.methodName)'
@@ -355,7 +361,7 @@ shared:
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
         AND protoPayload.serviceName="run.googleapis.com"
-        AND protoPayload.methodName=~"\\.(Services|Jobs)\\.SetIamPolicy$"
+        AND protoPayload.methodName=~"[.](Services|Jobs)[.]SetIamPolicy$"
         AND (protoPayload.request.policy.bindings.members:"allUsers"
           OR protoPayload.request.policy.bindings.members:"allAuthenticatedUsers"
           OR protoPayload.serviceData.policyDelta.bindingDeltas.member:"allUsers"
@@ -374,8 +380,8 @@ shared:
         the Admin Activity audit log (the v1 and v2 APIs). By method alone.
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
-        AND (protoPayload.methodName=~"(^|\\.)(SetOrgPolicy|ClearOrgPolicy)$"
-          OR protoPayload.methodName=~"^google\\.cloud\\.orgpolicy\\.v[12]\\.OrgPolicy\\.(CreatePolicy|UpdatePolicy|DeletePolicy)$")
+        AND (protoPayload.methodName=~"(^|[.])(SetOrgPolicy|ClearOrgPolicy)$"
+          OR protoPayload.methodName=~"^google[.]cloud[.]orgpolicy[.]v[12][.]OrgPolicy[.](CreatePolicy|UpdatePolicy|DeletePolicy)$")
         AND NOT protoPayload.status.code>0
       labels:
         operation: 'EXTRACT(protoPayload.methodName)'
@@ -391,8 +397,8 @@ shared:
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
         AND protoPayload.serviceName="cloudsql.googleapis.com"
-        AND protoPayload.methodName=~"^cloudsql\\.instances\\.(export|clone)$"
-        AND NOT protoPayload.authenticationInfo.principalEmail=~"\\.gserviceaccount\\.com$"
+        AND protoPayload.methodName=~"^cloudsql[.]instances[.](export|clone)$"
+        AND NOT protoPayload.authenticationInfo.principalEmail=~"[.]gserviceaccount[.]com$"
       labels:
         operation: 'EXTRACT(protoPayload.methodName)'
 
@@ -410,13 +416,13 @@ shared:
         alone.
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
-        AND protoPayload.authenticationInfo.principalEmail=~"\\.gserviceaccount\\.com$"
-        AND NOT protoPayload.authenticationInfo.principalEmail=~"@(gcp-sa-[a-z0-9-]+\\.iam|cloudservices)\\.gserviceaccount\\.com$"
-        AND (protoPayload.methodName=~"(?i)(^|\\.)setiampolicy$"
+        AND protoPayload.authenticationInfo.principalEmail=~"[.]gserviceaccount[.]com$"
+        AND NOT protoPayload.authenticationInfo.principalEmail=~"@(gcp-sa-[a-z0-9-]+[.]iam|cloudservices)[.]gserviceaccount[.]com$"
+        AND (protoPayload.methodName=~"(?i)(^|[.])setiampolicy$"
           OR protoPayload.methodName="storage.setIamPermissions"
-          OR protoPayload.methodName=~"^google\\.iam\\.admin\\.v1\\.(CreateRole|UpdateRole|DeleteRole|UndeleteRole)$"
-          OR protoPayload.methodName=~"^(v1|beta)\\.compute\\.(firewalls|securityPolicies|networkFirewallPolicies|regionNetworkFirewallPolicies)\\."
-          OR protoPayload.methodName=~"^(v1|beta)\\.compute\\.backendServices\\.setSecurityPolicy$")
+          OR protoPayload.methodName=~"^google[.]iam[.]admin[.]v1[.](CreateRole|UpdateRole|DeleteRole|UndeleteRole)$"
+          OR protoPayload.methodName=~"^(v1|beta)[.]compute[.](firewalls|securityPolicies|networkFirewallPolicies|regionNetworkFirewallPolicies)[.]"
+          OR protoPayload.methodName=~"^(v1|beta)[.]compute[.]backendServices[.]setSecurityPolicy$")
         AND NOT protoPayload.status.code>0
       labels:
         operation: 'EXTRACT(protoPayload.methodName)'
@@ -1056,6 +1062,15 @@ shared:
               metric.type = "logging.googleapis.com/user/iam_policy_changes" AND resource.type = "cloudsql_database"
             alignment_period: "1800s"
             group_by_fields: ["metric.label.operation"]
+        # A Cloud Run job's IAM (run.v2.Jobs.SetIamPolicy) is logged on the job, as its other audit entries are
+        # (2026-11-13: the counter's series by resource type read global, audited_resource and cloud_run_revision;
+        # no condition here watched cloud_run_job). Six, Google's most for one policy.
+        - name: "an IAM change (on a Cloud Run job)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/iam_policy_changes" AND resource.type = "cloud_run_job"
+            alignment_period: "1800s"
+            group_by_fields: ["metric.label.operation"]
 
     service-key-created:
       display_name: "URGENT a service account key was created"
@@ -1181,6 +1196,14 @@ shared:
               metric.type = "logging.googleapis.com/user/network_control_changes" AND resource.type = "network_security_policy"
             alignment_period: "1800s"
             group_by_fields: ["metric.label.operation"]
+        # A backend's Cloud Armor policy set or taken off (backendServices.setSecurityPolicy) is counted on the
+        # backend (2026-11-13: two such points from the hooks apply, on gce_backend_service, opened nothing).
+        - name: "a network control changed (on a backend service)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/network_control_changes" AND resource.type = "gce_backend_service"
+            alignment_period: "1800s"
+            group_by_fields: ["metric.label.operation"]
 
     iap-changed:
       display_name: "URGENT the IAP gate's settings changed"
@@ -1242,6 +1265,14 @@ shared:
           threshold:
             filter: >-
               metric.type = "logging.googleapis.com/user/run_public_invokers" AND resource.type = "audited_resource"
+            alignment_period: "1800s"
+            group_by_fields: ["metric.label.operation"]
+        # run_public_invokers counts a job's SetIamPolicy as well as a service's, and a job's is logged on the job
+        # (2026-11-13: no condition here named cloud_run_job, so a job opened to allUsers counted and paged nobody).
+        - name: "allUsers bound (on a Cloud Run job)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/run_public_invokers" AND resource.type = "cloud_run_job"
             alignment_period: "1800s"
             group_by_fields: ["metric.label.operation"]
 
@@ -1320,6 +1351,10 @@ shared:
         for which account and what it changed, disable the account if nobody
         can say why (gcloud iam service-accounts disable), and read what else
         it did since.
+      # Six conditions, Google's most. The counter is also written on cloud_run_job (a job's IAM) and
+      # gce_backend_service (a backend's Armor policy), which no condition here names (2026-11-13). A robot's change
+      # there still opens iam-changed or network-control-changed, which name both, at their tier (p2, or p1 for IAM in
+      # the PHI project), never this page. Naming them here needs a second policy or one PromQL condition over every type.
       conditions:
         - name: "a robot's change (on global)"
           threshold:
@@ -1452,8 +1487,8 @@ projects:
           AND jsonPayload.service="tpa-api"
           AND jsonPayload.message="request"
           AND NOT jsonPayload.route=~"^/(live|assist|staff-ask|employer-ask|uploads|downloads|previews)/"
-          AND NOT jsonPayload.route=~"^(/knowledge/documents|/plan-years/\\{plan_year_id\\}/(plan-documents|published-documents)(/reembed)?)$"
-          AND NOT jsonPayload.operation=~"^(plans\\.document_ai_begin|plan_templates\\.design_ai_begin|plans\\.add_document|plans\\.add_published_document|knowledge\\.ingest|plans\\.reembed_documents)$"
+          AND NOT jsonPayload.route=~"^(/knowledge/documents|/plan-years/[{]plan_year_id[}]/(plan-documents|published-documents)(/reembed)?)$"
+          AND NOT jsonPayload.operation=~"^(plans[.]document_ai_begin|plan_templates[.]design_ai_begin|plans[.]add_document|plans[.]add_published_document|knowledge[.]ingest|plans[.]reembed_documents)$"
         value_extractor: 'EXTRACT(jsonPayload.duration_ms)'
         unit: "ms"
         bounds: [25, 50, 100, 250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]
@@ -3674,7 +3709,7 @@ projects:
           resource.type="cloud_run_revision"
           AND jsonPayload.service="records"
           AND jsonPayload.message="operation served"
-          AND jsonPayload.op=~"^(eligibility\\.reveal|network\\.reveal_field)$"
+          AND jsonPayload.op=~"^(eligibility[.]reveal|network[.]reveal_field)$"
         labels:
           operation: 'REGEXP_EXTRACT(jsonPayload.op, "^(eligibility\\.reveal|network\\.reveal_field)$")'
 
@@ -3682,7 +3717,7 @@ projects:
         description: >-
           A member read records served to staff (`operation served` at a staff
           door, `door_internal`, `door_agent`, `door_compliance` or
-          `door_finance`, for one of the eleven operations whose records entry
+          `door_finance`, for one of the twelve operations whose records entry
           decides a read or a list of a member), by operation: the hosted
           security page's reads by hour, where night activity shows. Never
           the member, the person or the tenant; an after-hours flag on a
@@ -3692,9 +3727,9 @@ projects:
           AND jsonPayload.service="records"
           AND jsonPayload.message="operation served"
           AND jsonPayload.door=~"^door_(internal|agent|compliance|finance)$"
-          AND jsonPayload.op=~"^(eligibility\\.get_member|eligibility\\.list_members|eligibility\\.search_members|eligibility\\.member_coverage|eligibility\\.member_id_card|claims\\.accumulators|claims\\.list_other_coverages|contactcenter\\.member|contactcenter\\.member_coverage|contactcenter\\.member_balances|implementations\\.enrollment_provenance)$"
+          AND jsonPayload.op=~"^(eligibility[.]get_member|eligibility[.]list_members|eligibility[.]search_members|eligibility[.]member_coverage|eligibility[.]member_id_card|eligibility[.]member_card_view|claims[.]accumulators|claims[.]list_other_coverages|contactcenter[.]member|contactcenter[.]member_coverage|contactcenter[.]member_balances|implementations[.]enrollment_provenance)$"
         labels:
-          operation: 'REGEXP_EXTRACT(jsonPayload.op, "^(eligibility\\.get_member|eligibility\\.list_members|eligibility\\.search_members|eligibility\\.member_coverage|eligibility\\.member_id_card|claims\\.accumulators|claims\\.list_other_coverages|contactcenter\\.member|contactcenter\\.member_coverage|contactcenter\\.member_balances|implementations\\.enrollment_provenance)$")'
+          operation: 'REGEXP_EXTRACT(jsonPayload.op, "^(eligibility\\.get_member|eligibility\\.list_members|eligibility\\.search_members|eligibility\\.member_coverage|eligibility\\.member_id_card|eligibility\\.member_card_view|claims\\.accumulators|claims\\.list_other_coverages|contactcenter\\.member|contactcenter\\.member_coverage|contactcenter\\.member_balances|implementations\\.enrollment_provenance)$")'
 
       connectors_passes:
         description: >-
@@ -5459,7 +5494,7 @@ signin_robots:
         AND protoPayload.serviceName="secretmanager.googleapis.com"
         AND protoPayload.methodName=~"AccessSecretVersion$"
         AND protoPayload.resourceName=~"/secrets/signin-robot-(member|broker)-credentials(/|$)"
-        AND NOT (protoPayload.authenticationInfo.principalEmail=~"^sa-signin-robots@[a-z0-9-]+-tpa-app\\.iam\\.gserviceaccount\\.com$" AND NOT protoPayload.authenticationInfo.serviceAccountDelegationInfo.firstPartyPrincipal.principalEmail:*)
+        AND NOT (protoPayload.authenticationInfo.principalEmail=~"^sa-signin-robots@[a-z0-9-]+-tpa-app[.]iam[.]gserviceaccount[.]com$" AND NOT protoPayload.authenticationInfo.serviceAccountDelegationInfo.firstPartyPrincipal.principalEmail:*)
 
     # auth-notary 30a1e743 (the independent review's M1; SR-03): auth writes
     # one `sign_in_robot_foreign` line (logger auth.domain.sign_in_robots) per
@@ -7752,3 +7787,176 @@ auth_texts:
               metric.type = "logging.googleapis.com/user/auth_twilio_connections" AND resource.type = "gce_subnetwork"
             threshold_value: 500
             alignment_period: "3600s"
+
+# D-400 (beta's mailcheck.tf): the hourly mail check's inbox, App Engine in a
+# project of its own that receives its logs, so its two counters are that
+# project's (module.monitoring_mail_check, from the inbox stage). The app writes
+# one JSON line a delivery to stdout, which App Engine records on the `gae_app`
+# resource (the one type both counters keep a series on): `msg`
+# mail_check_arrived with `lane`, `check_id`, `dkim` "pass" and `seconds`, or
+# mail_check_refused with one closed `reason` (mail_inbox/check.py, REASONS).
+# No line the app writes carries an address, a subject, a header or a body; the check id is
+# never read here.
+#
+# The two policies are the app project's, read across its metrics scope (the
+# inbox project is in it from the inbox stage), so they reach PagerDuty and
+# Slack as every p1 there does, and only at the alerting stage, once each lane
+# has arrived once: Google refuses a PromQL policy over a counter with no
+# series. Each is one lane's, PromQL alone in its policy, written as the
+# module's missed runs are: absent over 2 h 15 min now AND ten minutes ago (the
+# hold is inside the query, because the guard's week-long lookback takes no
+# retest window: "Retest windows are not supported in PromQL queries with
+# lookbacks longer than 1d1h"), AND some arrival in the last seven days, so a
+# lane that has never arrived never opens it. 2 h 15 min is two hourly checks
+# in a row (one late or lost check does not page); at the seven-day lookback
+# Google evaluates every five minutes.
+mail_check:
+  log_metrics:
+    mail_check_arrived:
+      description: >-
+        One per mail check email the inbox counted: delivered to its lane's
+        address, the pinned subject, From and a DKIM signature of the sending
+        domain. The lane alone (invites or notices); never the check id.
+      filter: |
+        resource.type="gae_app"
+        AND jsonPayload.msg="mail_check_arrived"
+        AND jsonPayload.dkim="pass"
+        AND (jsonPayload.lane="invites" OR jsonPayload.lane="notices")
+      labels:
+        lane: 'EXTRACT(jsonPayload.lane)'
+
+    mail_check_refused:
+      description: >-
+        One per request the inbox refused, by its closed reason: not a check
+        address, not the pinned subject, a signature that is missing, of
+        another domain or does not verify, a check older than a day, or any
+        request not Google's mail delivery (not_mail_path, which the firewall
+        should leave at zero). The reason alone.
+      filter: |
+        resource.type="gae_app"
+        AND jsonPayload.msg="mail_check_refused"
+      labels:
+        code: 'EXTRACT(jsonPayload.reason)'
+
+  alert_policies:
+    mail-check-invites-missing:
+      display_name: "URGENT mail check: no invites email arrived in 2 h 15 min"
+      tier: p1
+      urgent: true
+      subject: "mail check: no invites email arrived in 2 h 15 min"
+      documentation: >-
+        The hourly mail check on the invites lane has not reached its inbox for
+        2 h 15 min: two checks in a row. That lane is the opening-email chain
+        (records' opening queue, tpa-jobs-drains, auth's opening intake, auth's
+        messenger, SendGrid), the chain staff and broker invitations and
+        opening emails take, so treat those as not going out until shown
+        otherwise. First tell never sent from sent and never arrived: in the
+        member-data project's logs, look for records' mail_check_queued line of
+        the invites lane in the last three hours (records writes one each
+        hour). None: the check was never sent. Read the job (missed run
+        (tpa-jobs-mail-check), jobs-failed) and records' mail_check_skipped
+        line and its reason (not_configured: records has no address). Some: it
+        was sent and never arrived. Read, in order, tpa-jobs-drains and auth's
+        messenger (auth-outbox-publisher, auth-messages-stalled) for its
+        SendGrid call, records' vendor_event_stored lines of kind mail_check (a
+        bounce, drop or deferral is SendGrid's answer), then the inbox
+        project's mail_check_refused counter by reason (a dkim reason means
+        the email arrived and failed its signature check: read SendGrid's
+        domain authentication). This policy waits for the lane's first
+        arrival, and closes by itself after seven days with none, which is not
+        a recovery (docs/infra/mail-check.md).
+      conditions:
+        - name: "no invites check in 2 h 15 min, ten minutes running"
+          promql:
+            query: >-
+              absent_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="invites"}[135m])
+              and on() absent_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="invites"}[135m] offset 600s)
+              and on() count_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="invites"}[7d])
+            duration: "0s"
+            evaluation_interval: "300s"
+
+    mail-check-notices-missing:
+      display_name: "URGENT mail check: no notices email arrived in 2 h 15 min"
+      tier: p1
+      urgent: true
+      subject: "mail check: no notices email arrived in 2 h 15 min"
+      documentation: >-
+        The hourly mail check on the notices lane has not reached its inbox for
+        2 h 15 min: two checks in a row. That lane is records' outbox and
+        connectors' email to SendGrid, the path reminders and coverage notices
+        take, so treat those as not going out until shown otherwise. First tell
+        never sent from sent and never arrived: in the member-data project's
+        logs, look for records' mail_check_queued line of the notices lane in
+        the last three hours (records writes one each hour). None: the check
+        was never sent. Read the job (missed run (tpa-jobs-mail-check),
+        jobs-failed) and records' mail_check_skipped line and its reason
+        (not_configured: records has no address). Some: it was sent and never
+        arrived. Read, in order, connectors (connectors-email-held,
+        connectors-stalled, its dead letters) for its SendGrid call, records'
+        vendor_event_stored lines of kind mail_check (a bounce, drop or
+        deferral is SendGrid's answer), then the inbox project's
+        mail_check_refused counter by reason (a dkim reason means the email
+        arrived and failed its signature check: read SendGrid's domain
+        authentication). This policy waits for the lane's first arrival, and
+        closes by itself after seven days with none, which is not a recovery
+        (docs/infra/mail-check.md).
+      conditions:
+        - name: "no notices check in 2 h 15 min, ten minutes running"
+          promql:
+            query: >-
+              absent_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="notices"}[135m])
+              and on() absent_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="notices"}[135m] offset 600s)
+              and on() count_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="notices"}[7d])
+            duration: "0s"
+            evaluation_interval: "300s"
+
+# D-400 (beta's mailcheck.tf): what SendGrid reported back about every email,
+# read off records' one line per stored event (hooks-relay -> tpa-api -> records'
+# vendor_events): the kind of email it matched (opening, notice, auth_message,
+# mail_check or unmatched) as `lane`, SendGrid's event (delivered, bounce,
+# dropped, deferred, spamreport, open, processed or other) as `outcome`, and
+# nothing else of the event. In the member-data project, which receives
+# records' logs; the counter from the mail check's inbox stage (the monitoring
+# website charts it), the policy at its alerting stage and only while signed
+# reports reach records (hooks.tf).
+email_delivery:
+  log_metrics:
+    records_vendor_events:
+      description: >-
+        One per SendGrid event records stored, by the kind of email it matched
+        (lane) and SendGrid's event (outcome). Never an address, a row or the
+        event's own fields.
+      filter: |
+        resource.type="cloud_run_revision"
+        AND resource.labels.service_name="records"
+        AND jsonPayload.service="records"
+        AND jsonPayload.message="vendor_event_stored"
+      labels:
+        lane: 'EXTRACT(jsonPayload.kind)'
+        outcome: 'EXTRACT(jsonPayload.event)'
+
+  alert_policies:
+    email-delivery-failed:
+      display_name: "emails bounced, dropped or reported as spam"
+      tier: p2
+      subject: "email ${metric_or_resource.label.outcome} reported by SendGrid"
+      documentation: >-
+        SendGrid reported a real email (an opening email, a notice or a sign-in
+        message; the mail check's own are left out) as bounced, dropped or
+        reported as spam in the last hour. A bounce is an address that does not
+        take mail; a drop is SendGrid refusing to send, most often an address
+        on its suppression list after an earlier bounce; a spam report is a
+        person marking it so. Which emails and to whom is the ops portal's
+        delivery state (opening emails) and SendGrid's own activity feed, never
+        this alert. A run of drops can mean SendGrid suppressed a real address:
+        read its suppression list. The counter's lane says which kind of email.
+      conditions:
+        - name: "a bounce, drop or spam report on a real email this hour"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/records_vendor_events" AND resource.type = "cloud_run_revision"
+              AND metric.labels.outcome = one_of("bounce", "dropped", "spamreport")
+              AND metric.labels.lane = one_of("opening", "notice", "auth_message", "unmatched")
+            threshold_value: 0
+            alignment_period: "3600s"
+            group_by_fields: ["metric.label.outcome"]

@@ -101,10 +101,21 @@ class TerraformTest(unittest.TestCase):
         # robots' secret read, signinrobots.tf) into the app project by its key, the project the app role lives in.
         local = {"feed_ingest": "feed_ingest_policies", "feed_ingest_records": "feed_ingest_records_log_metrics",
                  "signin_robots": "signin_robot_log_metrics", "auth_texts": "auth_texts_log_metrics",
-                 "auth_email_everyone": "auth_email_everyone_log_metrics"}
+                 "auth_email_everyone": "auth_email_everyone_log_metrics",
+                 "email_delivery": "email_delivery_log_metrics"}
         by_project = {"signin_robots"}
-        self.assertEqual(set(local), set(cat.SECTIONS))
+        # D-400: the mail check's counters are the inbox project's own (mailcheck.tf, module.monitoring_mail_check),
+        # and the app project's metrics scope reads that project, so the app datasource charts them.
+        scoped = {"mail_check"}
+        self.assertEqual(set(local) | scoped, set(cat.SECTIONS))
+        mail = INFRA.show("infra/envs/beta/mailcheck.tf")
+        self.assertIn("local.mail_check_log_metrics,", INFRA.block(mail, 'module "monitoring_mail_check"'))
+        self.assertIn("local.mail_check_inbox ? [module.project_mail_check[0].project_id] : []",
+                      INFRA.block(self.main, 'module "monitoring_app"'))
         for section, role in cat.SECTIONS.items():
+            if section in scoped:
+                self.assertEqual(role, "app", section)
+                continue
             where = rf"p == \"{role}\"" if section in by_project else rf"contains\(roles, \"{role}\"\)"
             self.assertRegex(self.main, rf"in local\.{local[section]} : name => \w+ if {where}", section)
 
