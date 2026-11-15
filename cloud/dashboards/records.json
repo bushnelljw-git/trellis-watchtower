@@ -8373,7 +8373,7 @@
     },
     {
       "type": "row",
-      "title": "Perimeter and alert changes",
+      "title": "Member connections (findings records filed)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -8386,13 +8386,125 @@
     },
     {
       "type": "timeseries",
+      "title": "Connection findings, by rule and scope",
+      "description": "One per member-connection finding records filed in the compliance queue (`records_connection_alarms`, its `connection alarm` line), by rule (`code`) and scope (`class`: employer, unlinked, tenant, record or login; empty where the rule has none). A tenant-wide pause of connecting by birthday and SSN opens `records-self-connect-tenant-paused` (urgent); an employer's or the no-link path's pause, a birthday or record locked, or a tenant-wide clear by staff open `records-self-connect-locked`; a notice to a census address not sent within a day, `records-connection-notice-not-sent`. Never the person, the record, the employer, the finding or a count: those are the ops portal's Compliance anomaly queue.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 136
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-phi"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-phi"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_PHI_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/records_connection_alarms",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code",
+              "metric.label.class"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}} {{metric.label.class}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 71
+    },
+    {
+      "type": "row",
+      "title": "Perimeter and alert changes",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 143
+      },
+      "id": 72
+    },
+    {
+      "type": "timeseries",
       "title": "Perimeter violations",
       "description": "VPC Service Controls violations logged in this project, by reason, service and whether it was a dry run (`perimeter-violations`).",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 136
+        "y": 144
       },
       "datasource": {
         "type": "stackdriver",
@@ -8482,7 +8594,7 @@
           "sort": "desc"
         }
       },
-      "id": 71
+      "id": 73
     },
     {
       "type": "timeseries",
@@ -8492,7 +8604,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 136
+        "y": 144
       },
       "datasource": {
         "type": "stackdriver",
@@ -8601,7 +8713,7 @@
           "sort": "desc"
         }
       },
-      "id": 72
+      "id": 74
     },
     {
       "type": "row",
@@ -8612,9 +8724,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 144
+        "y": 152
       },
-      "id": 73
+      "id": 75
     },
     {
       "type": "timeseries",
@@ -8624,7 +8736,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 145
+        "y": 153
       },
       "datasource": {
         "type": "stackdriver",
@@ -8717,7 +8829,7 @@
           "sort": "desc"
         }
       },
-      "id": 74
+      "id": 76
     },
     {
       "type": "timeseries",
@@ -8727,7 +8839,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 145
+        "y": 153
       },
       "datasource": {
         "type": "stackdriver",
@@ -8820,7 +8932,7 @@
           "sort": "desc"
         }
       },
-      "id": 75
+      "id": 77
     }
   ]
 }

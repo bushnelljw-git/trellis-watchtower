@@ -9361,7 +9361,7 @@
     },
     {
       "type": "row",
-      "title": "Sign-in protection, staff laptops and one-time passes",
+      "title": "Sign-in protection, staff laptops, one-time passes and member sign-ups",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -9573,7 +9573,7 @@
     {
       "type": "timeseries",
       "title": "Texted codes refused at a day's ceiling",
-      "description": "Members' texted codes auth refused because the estate's day is spent, by where (`code`: offer or send) and which ceiling (`class`: soft, past the setting; hard, past twice it) (`auth_sms_codes_estate_ceiling`; `auth-texted-codes-ceiling`), and applicants' set-up codes refused at theirs (`auth_sms_codes_registration_ceiling`; `auth-registration-codes-ceiling`).",
+      "description": "Members' texted codes auth refused because the estate's day is spent, by where (`code`: offer or send) and which ceiling (`class`: soft, past the setting; hard, past twice it) (`auth_sms_codes_estate_ceiling`; `auth-texted-codes-ceiling`), applicants' set-up codes refused at theirs (`auth_sms_codes_registration_ceiling`; `auth-registration-codes-ceiling`), and codes to logins the member portal's self sign-up made, refused because those logins' own day is spent (`auth_sms_codes_self_signup_ceiling`, by where; `auth-self-signup-codes-ceiling`).",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -9643,6 +9643,35 @@
             "preprocessor": "none"
           },
           "aliasBy": "set-up: {{metric.label.code}}"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_sms_codes_self_signup_ceiling",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "self sign-up: {{metric.label.code}}"
         }
       ],
       "interval": "1m",
@@ -9991,6 +10020,104 @@
       "id": 84
     },
     {
+      "type": "timeseries",
+      "title": "Member sign-up alarms, by line",
+      "description": "auth's alarm lines for the public member sign-up (the employer enrollment link's Create my account; `auth_member_signup_alarms`), by line (`code`): a tenant's starts reaching 500 in an hour (`member_signup_tenant_busy`; `auth-member-signup-burst`), its 20,000 a day reached so its sign-ups are refused until the UTC day turns (`member_signup_tenant_cap_reached`; `auth-member-signup-cap`, urgent), and a code refused at the verify step (`member_signup_verify_refused`). Never the person, an address, the tenant or a count.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 158
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_member_signup_alarms",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.code"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.code}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 85
+    },
+    {
       "type": "row",
       "title": "auth's jobs",
       "collapsed": false,
@@ -9999,19 +10126,19 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 158
+        "y": 165
       },
-      "id": 85
+      "id": 86
     },
     {
       "type": "timeseries",
       "title": "Executions, by job and result",
-      "description": "Completed executions of auth's jobs per interval. Two failed in a row open `jobs-failed` (R380); one opens the urgent `audit-chain` for the audit jobs.",
+      "description": "Completed executions of auth's jobs per interval. Two failed in a row open `jobs-failed` (R380), or `jobs-failed-attended` for the three a person runs (auth-bootstrap, auth-tag-credentials, auth-retag-bearer-key); one opens the urgent `audit-chain` for the audit jobs.",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 159
+        "y": 166
       },
       "datasource": {
         "type": "stackdriver",
@@ -10104,7 +10231,7 @@
           "sort": "desc"
         }
       },
-      "id": 86
+      "id": 87
     },
     {
       "type": "timeseries",
@@ -10114,7 +10241,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 159
+        "y": 166
       },
       "datasource": {
         "type": "stackdriver",
@@ -10207,7 +10334,105 @@
           "sort": "desc"
         }
       },
-      "id": 87
+      "id": 88
+    },
+    {
+      "type": "timeseries",
+      "title": "A person's rehearsals refused",
+      "description": "A person's rehearsal of an attended auth job that ended refused, one per execution (`auth_dry_run_refusals`, auth's `dry_run_refused` line): a `--dry-run` of auth-bootstrap or auth-tag-credentials, or auth-retag-bearer-key's read-only `--status`. Not a failure: a day with one opens nothing for that job in `jobs-failed-attended`, since its person is at the console.",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 174
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-app"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/auth_dry_run_refusals",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_job"
+            ],
+            "groupBys": [
+              "resource.label.job_name"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{resource.label.job_name}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 89
     }
   ]
 }

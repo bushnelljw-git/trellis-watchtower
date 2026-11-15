@@ -1034,11 +1034,17 @@ ENROLL_OFF = ("enroll_enabled off (D-185, beta's enroll.tf; it builds nothing wi
 HOOKS_RELAY_OFF = ("hooks-relay, the relay for SendGrid's signed delivery reports on the hooks host (OWNER-NT-6, "
                    "hooks.tf), is built only behind its switch and does not run (gcloud run services list, read only, "
                    "2026-11-12): no tile and no page until it does (tasks/todo.md)")
+# The public marketing site (D-411, beta's valteva.tf), built only behind valteva_site_enabled: it runs in the app
+# project since 2026-11-14 (gcloud run services list, read only, 2026-11-15: min 0, max 2, behind its own edge), but it
+# is not the TPA's and no catalogue policy reads it, so it has no tile and no page yet (tasks/todo.md).
+VALTEVA_WEB_BETA = ("valteva-web, the public marketing site valteva.com (D-411, beta's valteva.tf, behind "
+                    "valteva_site_enabled), runs in the app project since 2026-11-14 (gcloud run services list, read "
+                    "only): no TPA policy reads it, so no tile and no page yet (tasks/todo.md)")
 NOT_RUN = {"beta": {"file-reader": FILE_READER_BETA,
                     "enroll": ENROLL_OFF.format("the enrollment engine (PHI project, internal)"),
                     "enroll-relay": ENROLL_OFF.format("the portal's API hop into the PHI project (app project)"),
                     "enroll-web": ENROLL_OFF.format("the enrollment portal (app project, behind edge_enroll)"),
-                    "hooks-relay": HOOKS_RELAY_OFF},
+                    "hooks-relay": HOOKS_RELAY_OFF, "valteva-web": VALTEVA_WEB_BETA},
            "production": {"file-reader": FILE_READER_OFF, "hooks-relay": HOOKS_RELAY_OFF}}
 # The module's `<service> has no instance` (its threshold condition; its absence one waits ten minutes): instance_count
 # the most in each minute, summed over revisions, below one for five minutes.
@@ -3292,11 +3298,20 @@ def sign_in(env: str = "beta") -> dict:
         *sign_in_protection(),
         row("auth's jobs"),
         series("Executions, by job and result", APP, executions(AUTH_JOBS),
-               "Completed executions of auth's jobs per interval. Two failed in a row open `jobs-failed` (R380); one "
-               "opens the urgent `audit-chain` for the audit jobs.", bars=True, no_value=NO_RUNS),
+               "Completed executions of auth's jobs per interval. Two failed in a row open `jobs-failed` (R380), or "
+               "`jobs-failed-attended` for the three a person runs (auth-bootstrap, auth-tag-credentials, "
+               "auth-retag-bearer-key); one opens the urgent `audit-chain` for the audit jobs.", bars=True,
+               no_value=NO_RUNS),
         series("Schedules that could not start their job", APP, schedule_failures(AUTH_SCHEDULES),
                "Cloud Scheduler attempts for auth's schedules that finished in error, by schedule and status.",
                bars=True, no_value=NONE),
+        series("A person's rehearsals refused", APP,
+               q(log("auth_dry_run_refusals"), JOB, by=("job_name",)),
+               "A person's rehearsal of an attended auth job that ended refused, one per execution "
+               "(`auth_dry_run_refusals`, auth's `dry_run_refused` line): a `--dry-run` of auth-bootstrap or "
+               "auth-tag-credentials, or auth-retag-bearer-key's read-only `--status`. Not a failure: a day with one "
+               "opens nothing for that job in `jobs-failed-attended`, since its person is at the console.", w=24,
+               h=6, bars=True, no_value=NONE),
     ]
     return dashboard("tw-cloud-sign-in", "Sign-in (cloud)",
                      "auth, its messenger and its jobs in the app project: sign-in health, messages, audit.",
@@ -3306,9 +3321,9 @@ def sign_in(env: str = "beta") -> dict:
 def sign_in_protection() -> list[dict]:
     """auth's own guards and staff-only doors, each a count by the labels its catalogue entry carries: sign-ins paused
     after wrong attempts, breached-password lookups with no answer, texted codes refused at a day's ceiling, staff
-    laptops, device-bound sessions and one-time passes."""
+    laptops, device-bound sessions, one-time passes and the public member sign-up's alarms."""
     return [
-        row("Sign-in protection, staff laptops and one-time passes"),
+        row("Sign-in protection, staff laptops, one-time passes and member sign-ups"),
         series("Sign-ins paused after wrong attempts", APP,
                q(log("auth_sign_in_protection"), REV, by=("code", "class"), name=alias("code", "class")),
                "One per account whose sign-in auth paused after wrong attempts, by the pause (`code`: account, factor, "
@@ -3324,11 +3339,15 @@ def sign_in_protection() -> list[dict]:
         series("Texted codes refused at a day's ceiling", APP,
                [q(log("auth_sms_codes_estate_ceiling"), REV, by=("code", "class"),
                   name=alias("code", "class", prefix="members: ")),
-                q(log("auth_sms_codes_registration_ceiling"), REV, by=("code",), name=alias("code", prefix="set-up: "))],
+                q(log("auth_sms_codes_registration_ceiling"), REV, by=("code",), name=alias("code", prefix="set-up: ")),
+                q(log("auth_sms_codes_self_signup_ceiling"), REV, by=("code",),
+                  name=alias("code", prefix="self sign-up: "))],
                "Members' texted codes auth refused because the estate's day is spent, by where (`code`: offer or "
                "send) and which ceiling (`class`: soft, past the setting; hard, past twice it) "
-               "(`auth_sms_codes_estate_ceiling`; `auth-texted-codes-ceiling`), and applicants' set-up codes refused "
-               "at theirs (`auth_sms_codes_registration_ceiling`; `auth-registration-codes-ceiling`).", bars=True, w=8,
+               "(`auth_sms_codes_estate_ceiling`; `auth-texted-codes-ceiling`), applicants' set-up codes refused "
+               "at theirs (`auth_sms_codes_registration_ceiling`; `auth-registration-codes-ceiling`), and codes to "
+               "logins the member portal's self sign-up made, refused because those logins' own day is spent "
+               "(`auth_sms_codes_self_signup_ceiling`, by where; `auth-self-signup-codes-ceiling`).", bars=True, w=8,
                h=7, no_value=NONE),
         series("Staff laptops: waiting, approved, mismatched, copied", APP,
                q(log("auth_staff_devices"), None, by=("code", "outcome"), name=alias("code", "outcome")),
@@ -3349,6 +3368,14 @@ def sign_in_protection() -> list[dict]:
                "with (`auth_sign_in_passes`; `auth-sign-in-pass-issued`, `auth-sign-in-pass-used`). Who, for whom and "
                "why are in auth's audit chain.", bars=True, w=8, h=7,
                no_value="No sign-in pass issued or used in this range"),
+        series("Member sign-up alarms, by line", APP,
+               q(log("auth_member_signup_alarms"), REV, by=("code",)),
+               "auth's alarm lines for the public member sign-up (the employer enrollment link's Create my account; "
+               "`auth_member_signup_alarms`), by line (`code`): a tenant's starts reaching 500 in an hour "
+               "(`member_signup_tenant_busy`; `auth-member-signup-burst`), its 20,000 a day reached so its sign-ups "
+               "are refused until the UTC day turns (`member_signup_tenant_cap_reached`; `auth-member-signup-cap`, "
+               "urgent), and a code refused at the verify step (`member_signup_verify_refused`). Never the person, an "
+               "address, the tenant or a count.", bars=True, w=24, h=7, no_value=NONE),
     ]
 
 
@@ -3415,6 +3442,7 @@ def records(env: str = "beta") -> dict:
         connectors_dead(),
         *(administrator_sync() if importer else []),
         *records_limit(),
+        *member_connections(),
         row("Perimeter and alert changes"),
         series("Perimeter violations", PHI,
                q(log("perimeter_violations"), AUDITED, by=("code", "service", "outcome"),
@@ -3487,6 +3515,25 @@ def records_limit() -> list[dict]:
                "A member read records served at a staff door (`records_staff_member_reads`), by operation; night "
                "activity shows by the hour. Never the member, the person or the tenant.", w=6, h=7, bars=True,
                no_value=NONE),
+    ]
+
+
+def member_connections() -> list[dict]:
+    """records' member-connection findings (OWNER-UEL-1: the employer enrollment link's connect by birthday and SSN),
+    one per finding filed in the compliance queue, by its rule and scope: the counter the three self-connect policies
+    read, charted so every catalogue metric is on a page. Who, which employer and the counts are the ops portal's."""
+    return [
+        row("Member connections (findings records filed)"),
+        series("Connection findings, by rule and scope", PHI,
+               q(log("records_connection_alarms"), REV, by=("code", "class"), name=alias("code", "class")),
+               "One per member-connection finding records filed in the compliance queue (`records_connection_alarms`, "
+               "its `connection alarm` line), by rule (`code`) and scope (`class`: employer, unlinked, tenant, record "
+               "or login; empty where the rule has none). A tenant-wide pause of connecting by birthday and SSN "
+               "opens `records-self-connect-tenant-paused` (urgent); an employer's or the no-link path's pause, a "
+               "birthday or record locked, or a tenant-wide clear by staff open `records-self-connect-locked`; a "
+               "notice to a census address not sent within a day, `records-connection-notice-not-sent`. Never the "
+               "person, the record, the employer, the finding or a count: those are the ops portal's Compliance "
+               "anomaly queue.", w=24, h=7, bars=True, no_value=NONE),
     ]
 
 

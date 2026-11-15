@@ -1489,6 +1489,27 @@ projects:
           operation: 'EXTRACT(jsonPayload.msg)'
           code: 'EXTRACT(jsonPayload.reason)'
 
+      # 2026-11-14 (PagerDuty #107): a person's refused rehearsals of auth's
+      # attended jobs, one line each (auth's `dry_run_refused`, from `cli.main`
+      # when a `--dry-run` ends non-zero; auth-notary docs/04 §5.1). Cloud Run
+      # counts each as a failed execution, and nothing in its count tells it
+      # from a job failing, so `jobs-failed-attended` reads this to leave
+      # such a window alone (the metric's own description, which says
+      # `jobs-failed`, is left as production holds it: a change is an update).
+      # No label: the job is the resource's `job_name`.
+      auth_dry_run_refusals:
+        description: >-
+          A person's rehearsal of an attended auth job that ended refused, one
+          per execution: auth's `dry_run_refused` line (a `--dry-run` of
+          auth-bootstrap or auth-tag-credentials, auth-retag-bearer-key's
+          read-only `--status`, or a `--dry-run` whose line did not parse). Read by `jobs-failed`,
+          so a refused rehearsal is never a job failing twice in a row.
+        filter: |
+          resource.type="cloud_run_job"
+          AND resource.labels.job_name=~"^auth-[a-z-]+$"
+          AND jsonPayload.logger="auth.cli"
+          AND jsonPayload.msg="dry_run_refused"
+
       tpa_api_requests:
         description: >-
           tpa-api's one line per request (tpa-api.md §5.3): the operation the
@@ -2108,6 +2129,53 @@ projects:
           AND jsonPayload.outcome="refused"
         labels:
           code: 'REGEXP_EXTRACT(jsonPayload.at, "^(offer|send)$")'
+
+      # OWNER-UEL-1's follow-up (auth-notary 6acc98e): a login the member portal's
+      # self sign-up made, and nothing else reached, counts its texted codes in its
+      # own pool (AUTH_SMS_CODES_SELF_SIGNUP_PER_DAY, 500 by default), never the
+      # members'. Past it each refused code writes `sms_codes_self_signup_ceiling`
+      # at ERROR from logger `auth.domain.text_caps`, `outcome` refused, `bucket`
+      # self_signup, `at` offer or send. Only `at` is read.
+      auth_sms_codes_self_signup_ceiling:
+        description: >-
+          One per texted code auth refused to a self sign-up login because the
+          self sign-ups' day is spent (`sms_codes_self_signup_ceiling`, outcome
+          refused), by where it was refused (`code`: offer or send). Nothing
+          else of the line is read.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="auth"
+          AND jsonPayload.logger="auth.domain.text_caps"
+          AND jsonPayload.msg="sms_codes_self_signup_ceiling"
+          AND jsonPayload.outcome="refused"
+        labels:
+          code: 'REGEXP_EXTRACT(jsonPayload.at, "^(offer|send)$")'
+
+      # OWNER-UEL-1 (the employer enrollment link): the public member sign-up's
+      # alarm lines, logger `auth.api.member_signups` (auth-notary
+      # auth/api/member_signups.py). `member_signup_tenant_busy` (WARNING) is the
+      # tenant's sign-up starts reaching 500 in an hour, written once at the
+      # 500th, never a refusal; `member_signup_tenant_cap_reached` (ERROR) is its
+      # 20,000 a day reached, written once, after which the tenant's sign-ups are
+      # refused until the UTC day turns. `member_signup_verify_refused`
+      # (WARNING, `reason` not_matched or rate_limited) is a wrong or refused
+      # code at the verify step, counted for the dashboards and read by no
+      # policy. Only the line's name is read: never `tid`, `reason` or `outcome`.
+      auth_member_signup_alarms:
+        description: >-
+          One per alarm line of the public member sign-up, by which line
+          (`code`): a tenant's starts reached 500 in an hour
+          (member_signup_tenant_busy), its 20,000 a day reached so sign-ups are
+          refused until the UTC day turns (member_signup_tenant_cap_reached), or
+          a code refused at the verify step (member_signup_verify_refused).
+          Nothing else of the line is read.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="auth"
+          AND jsonPayload.logger="auth.api.member_signups"
+          AND jsonPayload.msg=~"^(member_signup_tenant_busy|member_signup_tenant_cap_reached|member_signup_verify_refused)$"
+        labels:
+          code: 'REGEXP_EXTRACT(jsonPayload.msg, "^(member_signup_tenant_busy|member_signup_tenant_cap_reached|member_signup_verify_refused)$")'
 
       # O244's F1 (auth-notary 4aced85, at its head cbe9e57): auth asks the full
       # breached-password list (AN-03) off its event loop under a two-second
@@ -3038,21 +3106,57 @@ projects:
         subject: "A scheduled job failed twice in a row: ${metric_or_resource.label.job_name}"
         documentation: >-
           The same Cloud Run job's last two executions both failed after their
-          retries: within a window of two of its schedules (a day for a job a
-          person runs), two failed runs and no successful one. One failed run
-          opens nothing, and its next run's success closes it; the run's own
-          lines say why it failed. For tpa-jobs a failed run is any tenant not
-          `ok`, or a run that could not list its tenants (tpa-jobs.md §3): its
-          alert records say which. auth's three attended jobs
-          (auth-bootstrap, auth-tag-credentials, auth-retag-bearer-key; a
-          person runs each, R176) are here too (2026-10-11): their person is
-          told on the console, and whoever is on call learns of a second
-          failure. The audit jobs are in the urgent audit-chain policy, which
+          retries: within a window of two of its schedules, two failed runs and
+          no successful one. One failed run opens nothing, and its next run's
+          success closes it; the run's own lines say why it failed. For
+          tpa-jobs a failed run is any tenant not `ok`, or a run that could not
+          list its tenants (tpa-jobs.md §3): its alert records say which. A
+          job with no schedule here (migrate-auth) has a day's window. auth's
+          three attended jobs are in "a job a person runs failed twice in a
+          row". The audit jobs are in the urgent audit-chain policy, which
           opens on one.
         conditions:
           - name: "the same job failed twice in a row"
             failed_twice:
-              jobs: ["migrate-auth", "auth-sweeper", "auth-bootstrap", "auth-tag-credentials", "auth-retag-bearer-key", "tpa-jobs-erisa-clocks", "tpa-jobs-nightly-anomalies", "tpa-jobs-stoploss-surveillance", "tpa-jobs-accumulator-reconcile", "tpa-jobs-workload-audit", "tpa-jobs-member-access"]
+              jobs: ["migrate-auth", "auth-sweeper", "tpa-jobs-erisa-clocks", "tpa-jobs-nightly-anomalies", "tpa-jobs-stoploss-surveillance", "tpa-jobs-accumulator-reconcile", "tpa-jobs-workload-audit", "tpa-jobs-member-access"]
+
+      # auth's three attended jobs (a person runs each, R176; in jobs-failed
+      # since 2026-10-11, the owner's "yes all of the alert gaps need to be
+      # fixed"), apart since 2026-11-14 (D-409). A person's refused rehearsal
+      # is not a failure (PagerDuty #107: six refused `admin workload-rebind
+      # --dry-run` executions of auth-bootstrap paged): Cloud Run's count
+      # carries only the result, so auth's own `dry_run_refused` line says
+      # which failures were rehearsals. A policy of their own because Google
+      # refuses any PromQL alert that reads a log-based metric over more than
+      # 1d1h, anywhere in its query (the production apply of 5d25fa53:
+      # "Log-based metrics are not supported in PromQL alerts with lookback
+      # windows longer than 1d1h"), and a daily scheduled job's window in
+      # jobs-failed is 48 hours. These three have no missed run, so each
+      # window is a day.
+      jobs-failed-attended:
+        display_name: "a job a person runs failed twice in a row"
+        tier: p2
+        notification_prompts: ["OPENED", "CLOSED"]
+        auto_close: "1800s"
+        subject: "A job a person runs failed twice in a row: ${metric_or_resource.label.job_name}"
+        documentation: >-
+          One of auth's three attended jobs (auth-bootstrap,
+          auth-tag-credentials, auth-retag-bearer-key; a person runs each with
+          the command as the execution's argv) failed twice in a day with no
+          success that day: its person is told on the console, and whoever is
+          on call learns of a second failure. A person's rehearsal that was
+          refused (a `--dry-run`, or the re-tag job's read-only `--status`) is
+          not a failure: a day in which one was refused opens nothing for that
+          job (auth's `dry_run_refused` line, counted as
+          `auth_dry_run_refusals`), since its person is at the console. The
+          execution's own lines say why it failed.
+        conditions:
+          - name: "the same attended job failed twice in a day, a refused rehearsal aside"
+            failed_twice:
+              jobs: ["auth-bootstrap", "auth-tag-credentials", "auth-retag-bearer-key"]
+              dry_runs:
+                metric: auth_dry_run_refusals
+                jobs: ["auth-bootstrap", "auth-tag-credentials", "auth-retag-bearer-key"]
 
       # #202 (T-5080; the live read: 30 of its 33 incidents were Cloud
       # Scheduler's own UNAVAILABLE starting `auth-publish`, every minute,
@@ -3646,6 +3750,81 @@ projects:
               alignment_period: "600s"
               group_by_fields: ["metric.label.code"]
 
+      # OWNER-UEL-1: the public member sign-up's tenant ceilings. The burst (500
+      # starts in an hour) is a look today (p2): genuine at an open enrollment's
+      # peak, or a run of fake sign-ups. The day's cap (20,000) pages (p1): the
+      # tenant's door is shut for everybody until the UTC day turns, which is an
+      # outage of sign-up and almost certainly abuse. Both wait for a person.
+      auth-member-signup-burst:
+        display_name: "member sign-ups surging: a tenant passed 500 in an hour"
+        tier: p2
+        subject: "Member account sign-ups surging: over 500 in an hour for one employer group"
+        documentation: >-
+          auth's public member sign-up (the employer enrollment link's Create my
+          account) started 500 sign-ups for one tenant within an hour (auth's
+          `member_signup_tenant_busy`, written once at the 500th). Nothing is
+          refused yet; at 20,000 in a UTC day the tenant's sign-ups stop
+          (auth-member-signup-cap). Either a real opening-day rush or a run of
+          fake addresses: read auth's sign-up request lines by client address
+          and the load balancer's log, and Cloud Armor's refusals beside them.
+          If it is abuse, block the sources at Cloud Armor, or rotate the
+          employer's link in the ops portal.
+        conditions:
+          - name: "a tenant's sign-ups passed 500 in an hour"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_member_signup_alarms" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = "member_signup_tenant_busy"
+              alignment_period: "600s"
+
+      # OWNER-UEL-1's follow-up (auth-notary 6acc98e): the self sign-ups' own pool
+      # of texted codes spent. An abuse ceiling (fake sign-ups pumping texts):
+      # p2, waits for a person. Members' codes count apart and still go.
+      auth-self-signup-codes-ceiling:
+        display_name: "self sign-up logins' texted codes refused: their daily ceiling is spent"
+        tier: p2
+        subject: "Texted codes refused for new self sign-up accounts: today's limit is spent: ${metric_or_resource.label.code}"
+        documentation: >-
+          auth refused a texted code to a login the member portal's self sign-up
+          made, because those logins' own day is spent (auth's
+          `sms_codes_self_signup_ceiling`; AUTH_SMS_CODES_SELF_SIGNUP_PER_DAY,
+          500 by default). Until the UTC day turns, a newly self-signed-up member
+          gets no texted code (another method, or an emailed invitation, still
+          works); members invited by their employer count apart and are not
+          affected. Either a run of fake sign-ups pumping texts (read
+          auth-member-signup-burst beside it, auth's sign-up request lines by
+          client address and the text vendor's console) or a real opening-day
+          rush past the setting.
+        conditions:
+          - name: "any self sign-up login's code refused at the ceiling in ten minutes"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_sms_codes_self_signup_ceiling" AND resource.type = "cloud_run_revision"
+              alignment_period: "600s"
+              group_by_fields: ["metric.label.code"]
+
+      auth-member-signup-cap:
+        display_name: "URGENT member sign-ups refused: a tenant reached 20,000 in a day"
+        tier: p1
+        urgent: true
+        subject: "Member account sign-ups stopped: one employer group reached today's limit"
+        documentation: >-
+          auth's public member sign-up reached 20,000 starts for one tenant in
+          the UTC day (auth's `member_signup_tenant_cap_reached`): every further
+          sign-up for that tenant is refused until the day turns, so real
+          employees cannot create their account. Almost certainly abuse: read
+          auth's sign-up request lines by client address and the load
+          balancer's log, block the sources at Cloud Armor, and rotate the
+          employer's link in the ops portal. Invitations and existing logins
+          are unaffected.
+        conditions:
+          - name: "a tenant's sign-ups reached the day's cap"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/auth_member_signup_alarms" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = "member_signup_tenant_cap_reached"
+              alignment_period: "600s"
+
       # O244's F1 (auth-notary 4aced85, head cbe9e57): while the breach list
       # gives no answer, nobody signs in and no password is set. p2 (PagerDuty at
       # low urgency, Slack): the refusal is the safe side, so it is an outage of
@@ -3885,6 +4064,32 @@ projects:
         labels:
           direction: 'REGEXP_EXTRACT(jsonPayload.direction, "^(raise|lower)$")'
           role: 'REGEXP_EXTRACT(jsonPayload.role, "^(claims_examiner|claims_supervisor|eligibility_specialist|member_services|care_navigator|ops_agent|ops_supervisor|ops_admin|finance|tpa_admin|compliance_officer|plan_administrator)$")'
+
+      # OWNER-UEL-1 (the employer enrollment link, a member connecting by
+      # birthday and SSN): records writes one `connection alarm` line at
+      # WARNING for every member-connection finding it files in the compliance
+      # queue (`compliance_anomalies`), after the transaction that wrote it
+      # commits: `code` the finding's rule, `scope` where it has one (a pause:
+      # employer, unlinked or tenant; a birthday lock: employer or tenant; a
+      # record's lock `record`; a login's lock `login`; a staff clear: record,
+      # employer or tenant), and ids and counts no label reads. A notice not sent
+      # in 24 hours is one line per pass that raised any (`rows`). Labels are two
+      # closed alternations; `scope` rides the allowed label name `class`, never
+      # an exception's class (test_monitoring_shape's sweep names it).
+      records_connection_alarms:
+        description: >-
+          One per member-connection finding records filed in the compliance
+          queue (`connection alarm`), by the finding's rule (`code`) and its
+          scope (`class`: employer, unlinked, tenant, record or login, empty
+          where the rule has none). Never the person, the record, the
+          employer, the finding's id or a count.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND jsonPayload.service="records"
+          AND jsonPayload.message="connection alarm"
+        labels:
+          code: 'REGEXP_EXTRACT(jsonPayload.code, "^(connection_offer_voided|connection_already_connected|connection_other_person|connection_by_its_inviter|connection_address_shared|connection_address_on_inviter_domain|connection_typed_address_rate|connection_phone_shared|connection_vouched|connection_disowned|connection_ambiguous_address|connection_address_from_broker_census|connection_self_login_locked|connection_self_record_locked|connection_self_ambiguous|connection_self_paused|connection_self_pause_cleared|connection_self_birthday_locked|connection_self_tenant_pause_cleared|connection_notice_not_sent)$")'
+          class: 'REGEXP_EXTRACT(jsonPayload.scope, "^(employer|unlinked|tenant|record|login)$")'
 
       # T4 (PLAN §5, panels 4 and 11): two reads the hosted security page
       # charts, from records' "operation served" line (records/gates/
@@ -4222,6 +4427,98 @@ projects:
               filter: >-
                 metric.type = "logging.googleapis.com/user/records_velocity_settings_changes" AND resource.type = "cloud_run_revision"
                 AND metric.labels.direction = "lower"
+
+      # OWNER-UEL-1: connecting by birthday and SSN, once the public sign-up is
+      # on. A tenant-wide pause stops every self-connect in the tenant and means
+      # wrong guesses reached the whole tenant's ceiling: it pages (p1). An
+      # employer's (or the no-link path's) pause, a birthday's lock, a record's
+      # lock and a staff clear of the whole tenant are each one guessing run or
+      # one lifted guard: a look today (p2). A census notice not sent in 24
+      # hours is kept for the record (p3). Every one waits for a person: they
+      # are the abuse ceilings of a public door.
+      records-self-connect-tenant-paused:
+        display_name: "URGENT member self-connect paused for a whole tenant"
+        tier: p1
+        urgent: true
+        subject: "Members can no longer connect by birthday and SSN anywhere in a tenant (too many wrong tries)"
+        documentation: >-
+          Records paused connecting by birthday and SSN for a whole tenant
+          (records' `connection_self_paused`, scope tenant): wrong
+          birthday-and-SSN tries across the tenant reached its hourly or daily
+          ceiling (a quarter of its census an hour, at least 1,500; its census
+          a day, at least 6,000). Until it lifts (after the hour, or when the
+          day's count falls) or staff clear it, nobody in the tenant connects
+          by birthday and SSN; invitation codes still work. This is a guessing
+          run against member SSNs. First steps: open the ops portal's
+          Compliance anomaly queue for the finding (who, how many), read
+          auth's sign-up alerts and Cloud Armor beside it, block the sources,
+          and rotate the employers' enrollment links if they leaked. Clear the
+          pause only once the run has stopped.
+        conditions:
+          - name: "a tenant-wide self-connect pause"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_connection_alarms" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = "connection_self_paused" AND metric.labels.class = "tenant"
+
+      records-self-connect-locked:
+        display_name: "member self-connect paused or locked (an employer, a birthday or a record)"
+        tier: p2
+        subject: "Connecting by birthday and SSN paused or locked: ${metric_or_resource.label.code} (${metric_or_resource.label.class})"
+        documentation: >-
+          Records stopped part of connecting by birthday and SSN, or staff
+          lifted the whole tenant's guard. By the incident's `code`:
+          connection_self_paused (employer, or unlinked for the path with no
+          link), wrong tries through one employer's link reached its ceiling
+          and that link's self-connect is paused for an hour or until the
+          day's count falls; connection_self_birthday_locked, ten wrong tries
+          naming one birthday through one employer (or twenty across the
+          tenant) in 7 days locked connecting by that birthday;
+          connection_self_record_locked, five tries gave one record's SSN with
+          the wrong birthday and that record is locked for 7 days;
+          connection_self_tenant_pause_cleared, a staff member cleared every
+          pause and count in the tenant. Each is someone guessing at one
+          employer's members, or a guard lifted. First steps: open the ops
+          portal's Compliance anomaly queue for the finding (who cleared, which
+          employer, the counts), and the employer's Open enrollment card. An
+          emailed invitation (Invite or Send again) still connects a real
+          person at once.
+        # Two conditions, ORed by the policy's combiner: Monitoring refuses a
+        # filter shaped "A OR (B AND C)" with a 400 that plan does not show
+        # (2026-11-14 apply; tests/infra/test_apply_refusals_caught_at_plan.py).
+        conditions:
+          - name: "a birthday or record locked, or a tenant-wide clear"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_connection_alarms" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = one_of("connection_self_birthday_locked", "connection_self_record_locked", "connection_self_tenant_pause_cleared")
+              group_by_fields: ["metric.label.code", "metric.label.class"]
+          - name: "an employer's or the no-link path's self-connect paused"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_connection_alarms" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = "connection_self_paused" AND metric.labels.class = one_of("employer", "unlinked")
+              group_by_fields: ["metric.label.code", "metric.label.class"]
+
+      records-connection-notice-not-sent:
+        display_name: "a connected member's census address was not told within 24 hours"
+        tier: p3
+        subject: "A notice to a member's email on file was not sent within a day of their account connecting"
+        documentation: >-
+          A member connected by birthday and SSN, their record's email on file
+          differs from the login's, and the notice to that address ("an account
+          was set up for you") was not sent within 24 hours (records'
+          `connection_notice_not_sent`, filed in the compliance queue). Usually
+          auth not yet taking notices (records' RECORDS_OPENING_EMAIL_LINK not
+          `employer`), a vendor refusal, or an address no vendor takes. Read the
+          finding in the ops portal's Compliance anomaly queue; the member's HR
+          sees the connection on People.
+        conditions:
+          - name: "a notice not sent within 24 hours"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/records_connection_alarms" AND resource.type = "cloud_run_revision"
+                AND metric.labels.code = "connection_notice_not_sent"
 
       # #202 (I-5197): the nightly export to the vault and the restore drill
       # are backups, and a failed one pages (p1): beta's export failed three
@@ -7613,6 +7910,30 @@ crm_sso:
         AND jsonPayload.logger="network.sso"
         AND jsonPayload.msg="sso_recovery_mail_failed"
 
+    # D-412 (the T2 review's M-2): IAP's decisions on the callback's backend are
+    # kept out of _Default and the vault by one filter, sso.tf's
+    # crm_sso_callback_iap_filter, which the root writes in for
+    # __CALLBACK_IAP_DECISIONS__ (the backend's id is known only in the cloud).
+    # A user-defined log-based metric counts an entry whatever an exclusion
+    # drops, so these two see what the exclusion takes and what it misses.
+    # Neither reads a URL, a principal or a label: a count alone.
+    crm_sso_callback_iap_other_path:
+      description: >-
+        One per IAP decision on the CRM sign-in callback's backend whose path is not /sso/callback, or whose entry keeps its path in neither field read here: the exclusion dropped it from _Default and the vault, so the backend takes more than the callback or IAP writes the path elsewhere.
+      filter: |
+        __CALLBACK_IAP_DECISIONS__
+        AND NOT protoPayload.requestMetadata.requestAttributes.path=~"^/sso/callback/?$"
+        AND NOT protoPayload.request.httpRequest.url=~"^https?://[^/?#]+/sso/callback/?([?#]|$)"
+
+    crm_sso_callback_iap_kept:
+      description: >-
+        One per Data Access entry carrying an /sso/callback path that the exclusion does not drop: it stays in _Default and goes to the vault with the one-time code and state, so the entry names the callback's backend in a way the exclusion does not read.
+      filter: |
+        log_id("cloudaudit.googleapis.com/data_access")
+        AND (protoPayload.requestMetadata.requestAttributes.path=~"^/sso/callback/?$"
+          OR protoPayload.request.httpRequest.url=~"^https?://[^/?#]+/sso/callback/?([?#]|$)")
+        AND NOT __CALLBACK_IAP_DECISIONS__
+
   alert_policies:
     crm-sso-unavailable-at-start:
       display_name: "TPA sign-in: the CRM engine started without it"
@@ -7655,6 +7976,41 @@ crm_sso:
           threshold:
             filter: >-
               metric.type = "logging.googleapis.com/user/crm_sso_recovery_mail_failed" AND resource.type = "cloud_run_revision"
+
+    # D-412: each on the two types an IAP entry's counter may be filed under,
+    # the backend's (the type IAP's own SetIamPolicy entries carry) and the
+    # audited service's; no AuthorizeUser entry has been read yet (TP-296).
+    crm-sso-callback-iap-other-path:
+      display_name: "TPA sign-in: IAP decisions dropped beyond the callback"
+      subject: "The audit log is dropping sign-in gate (IAP) records for CRM pages other than the sign-in return"
+      tier: p2
+      documentation: >-
+        An IAP decision on the CRM sign-in callback's backend (bes-crm-sso-callback) named a path other than /sso/callback, or kept its path where this counter does not read it, and D-412's exclusion dropped it from _Default and the vault. Either the CRM's URL map now sends more than the callback to that backend, or IAP writes the URL in another field. Read one such entry in the app project's Data Access log, its field names alone (never its URL, principal, address or device), then fix the URL map or the counters' fields in sso.tf and infra/monitoring.yml. The dropped entries are not in the audit store; tell the compliance owner the window.
+      conditions:
+        - name: "an IAP decision dropped beyond the callback (on the backend)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/crm_sso_callback_iap_other_path" AND resource.type = "gce_backend_service"
+        - name: "an IAP decision dropped beyond the callback (on audited_resource)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/crm_sso_callback_iap_other_path" AND resource.type = "audited_resource"
+
+    crm-sso-callback-iap-kept:
+      display_name: "TPA sign-in: a callback URL kept in the audit log"
+      subject: "A CRM sign-in return's one-time code was kept in the audit log by the sign-in gate (IAP)"
+      tier: p2
+      documentation: >-
+        A Data Access entry with the CRM sign-in callback's path (/sso/callback, whose query carries a one-time code and the round trip's state) was kept: D-412's exclusion did not match it, so it is in _Default for 30 days and in the vault for six years. The code is single use and redeemed within minutes, so this is a record to correct, not a sign-in at risk. Read the entry's field names alone (never its URL, principal, address or device): how it names the backend (resource.labels, protoPayload.resourceName) and which service and method wrote it. Then fix sso.tf's crm_sso_callback_iap_filter to name the backend as the entry does, and tell the compliance owner the window.
+      conditions:
+        - name: "a callback URL kept (on the backend)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/crm_sso_callback_iap_kept" AND resource.type = "gce_backend_service"
+        - name: "a callback URL kept (on audited_resource)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/crm_sso_callback_iap_kept" AND resource.type = "audited_resource"
 
 # R502 (the owner, class 3; slice S6; orchestrator/plans/desk-roster/DESIGN.md
 # §7 answer 11: "Alert the owner on each new desk? Yes, cheaply. A log-based
@@ -8114,12 +8470,14 @@ auth_texts:
 # has arrived once: Google refuses a PromQL policy over a counter with no
 # series. Each is one lane's, PromQL alone in its policy, written as the
 # module's missed runs are: absent over 2 h 15 min now AND ten minutes ago (the
-# hold is inside the query, because the guard's week-long lookback takes no
-# retest window: "Retest windows are not supported in PromQL queries with
-# lookbacks longer than 1d1h"), AND some arrival in the last seven days, so a
-# lane that has never arrived never opens it. 2 h 15 min is two hourly checks
-# in a row (one late or lost check does not page); at the seven-day lookback
-# Google evaluates every five minutes.
+# hold inside the query, as the module's missed runs hold theirs), AND some
+# arrival in the last day, so a lane with no arrival in a day stays quiet (a
+# day, not seven: Monitoring refuses a PromQL alert that reads a log-based
+# metric with a lookback past 1d1h). 2 h 15 min is two hourly checks in a row
+# (one late or lost check does not page); Google evaluates every five minutes.
+# Each tells PagerDuty when it opens alone (`notification_prompts`): it
+# closes by itself a day into a silence, which is no recovery, so a person
+# resolves it, as the missing backup's.
 mail_check:
   log_metrics:
     mail_check_arrived:
@@ -8148,11 +8506,23 @@ mail_check:
       labels:
         code: 'EXTRACT(jsonPayload.reason)'
 
+  # The two windows (2026-11-14, before Step 3; D-400 amended): 135 minutes
+  # is two hourly checks in a row plus a quarter hour, so one late or lost
+  # check never pages and two in a row do. The first-arrival gate reads the
+  # last day, not seven: Monitoring refuses any PromQL alert that reads a
+  # log-based metric with a lookback past 1d1h ("Log-based metrics are not
+  # supported in PromQL alerts with lookback windows longer than 1d1h", the
+  # refusal jobs-failed met that day). A day is the longest window inside it
+  # with margin; a lane with no arrival in a day (never sent yet, or switched
+  # back on after a pause) stays quiet until its next check arrives. Its cost:
+  # a lane silent for a whole day closes after a day, not seven, which is no
+  # recovery, and the documentation says so.
   alert_policies:
     mail-check-invites-missing:
       display_name: "URGENT mail check: no invites email arrived in 2 h 15 min"
       tier: p1
       urgent: true
+      notification_prompts: ["OPENED"]
       subject: "The test invite email has not arrived for 2 h 15 min (invites may be failing)"
       documentation: >-
         The hourly mail check on the invites lane has not reached its inbox for
@@ -8172,16 +8542,18 @@ mail_check:
         bounce, drop or deferral is SendGrid's answer), then the inbox
         project's mail_check_refused counter by reason (a dkim reason means
         the email arrived and failed its signature check: read SendGrid's
-        domain authentication). This policy waits for the lane's first
-        arrival, and closes by itself after seven days with none, which is not
-        a recovery (docs/infra/mail-check.md).
+        domain authentication). This policy waits for an arrival of the lane
+        in the last day, and closes by itself after a day with none, which is
+        not a recovery, so it tells PagerDuty only when it opens: resolve it
+        there once checks arrive again, after reading the job's missed run and
+        records' mail_check_queued (docs/infra/mail-check.md).
       conditions:
         - name: "no invites check in 2 h 15 min, ten minutes running"
           promql:
             query: >-
               absent_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="invites"}[135m])
               and on() absent_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="invites"}[135m] offset 600s)
-              and on() count_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="invites"}[7d])
+              and on() count_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="invites"}[24h])
             duration: "0s"
             evaluation_interval: "300s"
 
@@ -8189,6 +8561,7 @@ mail_check:
       display_name: "URGENT mail check: no notices email arrived in 2 h 15 min"
       tier: p1
       urgent: true
+      notification_prompts: ["OPENED"]
       subject: "The test notice email has not arrived for 2 h 15 min (notices may be failing)"
       documentation: >-
         The hourly mail check on the notices lane has not reached its inbox for
@@ -8207,16 +8580,18 @@ mail_check:
         deferral is SendGrid's answer), then the inbox project's
         mail_check_refused counter by reason (a dkim reason means the email
         arrived and failed its signature check: read SendGrid's domain
-        authentication). This policy waits for the lane's first arrival, and
-        closes by itself after seven days with none, which is not a recovery
-        (docs/infra/mail-check.md).
+        authentication). This policy waits for an arrival of the lane in the
+        last day, and closes by itself after a day with none, which is not a
+        recovery, so it tells PagerDuty only when it opens: resolve it there
+        once checks arrive again, after reading the job's missed run and
+        records' mail_check_queued (docs/infra/mail-check.md).
       conditions:
         - name: "no notices check in 2 h 15 min, ten minutes running"
           promql:
             query: >-
               absent_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="notices"}[135m])
               and on() absent_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="notices"}[135m] offset 600s)
-              and on() count_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="notices"}[7d])
+              and on() count_over_time(logging_googleapis_com:user_mail_check_arrived{monitored_resource="gae_app", lane="notices"}[24h])
             duration: "0s"
             evaluation_interval: "300s"
 

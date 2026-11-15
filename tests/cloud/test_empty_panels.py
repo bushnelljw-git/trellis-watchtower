@@ -71,7 +71,12 @@ BAD = {LOG + m for m in (
     # anywhere but its runner, texts never handed over, the delivery read's own faults, emails that could not be
     # delivered, mail kept from a synthetic login.
     "signin_robot_secret_read", "signin_robot_foreign", "auth_texts_not_sent", "auth_text_delivery_faults",
-    "auth_email_undeliverable", "auth_message_to_synthetic_login")}
+    "auth_email_undeliverable", "auth_message_to_synthetic_login",
+    # The catalogue at cdff0df0: a person's refused rehearsal of an attended auth job (D-409), the public member
+    # sign-up's alarms and its logins' texted codes refused at their ceiling, and records' member-connection findings
+    # (OWNER-UEL-1).
+    "auth_dry_run_refusals", "auth_member_signup_alarms", "auth_sms_codes_self_signup_ceiling",
+    "records_connection_alarms")}
 # Heartbeats: written every pass or run, so nothing at all is the signal missing, said as missing.
 HEARTBEATS = {LOG + "connectors_passes", LOG + "auth_audit_reconciled", LOG + "auth_events_publisher_alive",
               LOG + "auth_events_outbox_lag"}

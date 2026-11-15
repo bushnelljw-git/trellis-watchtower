@@ -503,6 +503,15 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     refusals are now exercised on patched catalogues, and main.tf's merge (no database filter) and tier overrides
     are pinned.
   - [ ] Once stage 1 is applied, a read of `signin_robot_foreign`'s queries (today a 404: no such counter).
+- [x] (2026-11-14) The catalogue re-vendored at tpa-platform origin/master cdff0df0 (blob 593eada5): D-409's
+  `jobs-failed-attended` and the rehearsal counter, OWNER-UEL-1's sign-up and self-connect alarms, the mail check's
+  Step 3 windows. Four new counters charted minimally, each with a descriptor in the estate (read only, 2026-11-15):
+  auth's `auth_dry_run_refusals` (Sign-in, auth's jobs), `auth_sms_codes_self_signup_ceiling` (a third line on the
+  texted codes' ceilings) and `auth_member_signup_alarms` (Sign-in protection), and records'
+  `records_connection_alarms` (Member records, a row of its own). valteva-web (D-411, beta's valteva.tf) gets a
+  `NOT_RUN` reason.
+  - [ ] Follow-up: valteva-web (the public marketing site, running in the app project since 2026-11-14, min 0, max 2)
+    gets a tile and a page if the owner wants it watched here; no TPA policy reads it today.
 
 ## Review
 
