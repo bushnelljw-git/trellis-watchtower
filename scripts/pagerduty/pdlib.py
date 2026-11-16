@@ -137,7 +137,9 @@ SERVICES = [
 SLACK_CHANNEL = "obatpa-incidents"
 # The incident workflow that replies in each incident's Slack thread (docs/PAGERDUTY.md, "The thread reply"). Made by
 # hand through the API; its trigger was added by the owner in PagerDuty's screen on 2026-11-14 (this plan offers the
-# Incident Type Trigger alone, and the trigger API answers 500). pd_setup.py only reads both and reports a gap.
+# Incident Type Trigger alone, and the trigger API answers 500). Kept off since 2026-11-16 (is_enabled: false), with the
+# trigger kept: tpa-platform's alert-thread job replies in the same thread (D-423, D-425). pd_setup.py only reads both
+# and reports a gap.
 WORKFLOW_NAME = "TPA: Slack thread with watchtower links"
 WORKFLOW_INCIDENT_TYPE = "incident_default"  # "Base Incident", every incident's type unless another is chosen
 SLACK_EVENTS = ["incident.triggered", "incident.resolved"]

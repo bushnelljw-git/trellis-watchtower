@@ -46,7 +46,11 @@ PagerDuty deleted the TPA's first account. The owner made a new one and the same
   shape tried with the account key): this plan offers the Incident Type Trigger alone, no conditional one. It ran on
   nothing for two days (the owner, 2026-11-14: "why is there not link to watchtower") until **the owner added it in
   PagerDuty's screen on 2026-11-14: an Incident Type Trigger on "Base Incident", all services**. `pd_setup.py` now
-  reads it and reports a missing one as "by hand" ("Slack", "The thread reply").
+  reads it and reports a missing one as "by hand" ("Slack", "The thread reply"). **Kept off since 2026-11-16:**
+  tpa-platform's alert-thread job (its D-423 and D-425) now posts a fuller reply in the same thread, so the workflow
+  is turned off (`is_enabled: false`) and each incident gets one reply. Its trigger is kept, so the way back is one
+  call, `is_enabled: true`, used only if that job is stopped for good. `pd_setup.py` reports "ok" while it is off and
+  "by hand" if it is on.
 - **No "beta" in what people read (the owner, 2026-11-12: "We are NOT in beta").** The Terraform root is named
   `beta` but it is the production estate. The services are "TPA · Portal & API", "TPA · Member records" and
   "TPA · Call centre", the business service "Trellis TPA", and the titled integration drops the subject's
@@ -426,8 +430,28 @@ so alerts aren't posted twice. `pd_setup.py` only reads the connections, through
 
 ### The thread reply (incident workflow "TPA: Slack thread with watchtower links")
 
-PagerDuty's card in the channel shows the title, status and priority only. The workflow replies in each incident's
-thread. Its message (updated 2026-11-14 through `PUT /incident_workflows/PBP4Q0H`, read back the same):
+**Kept OFF since 2026-11-16.** Since 07:58Z that day, tpa-platform's alert-thread Cloud Run job (its decisions D-423
+and D-425, `docs/DECISIONS.md`) posts a fuller reply in the same thread: the title, what to check, the measured value,
+the start time, the Google console link, the Watchtower page and overview, and PagerDuty. So at about 08:33Z the
+coordinator turned this workflow off, so that each incident gets one reply: `PUT /incident_workflows/PBP4Q0H` with
+`is_enabled: false`, sending its same name, description and step. Read back: `is_enabled` false, the step and its
+inputs unchanged, the owner's Incident Type Trigger still attached, the published date unchanged.
+
+- **Off, not the trigger deleted.** `POST /incident_workflows/triggers` answers 500 on this account, so a deleted
+  trigger could only come back by the owner's hand. With the trigger kept, the way back is one call: the same `PUT`
+  with `is_enabled: true`. Use it only if the alert-thread job is stopped for good. While that job runs, turning the
+  workflow on gives every incident two replies.
+- **`pd_setup.py` reports it that way, and never turns it on or off** (it reads `GET /incident_workflows/<id>`):
+  - "ok … [off on purpose: tpa-platform's alert-thread job replies in each incident's Slack thread instead (D-425);
+    turning it on doubles the replies]" while it is off;
+  - "by hand … [on: … two replies …]" when it is on: a person sets `is_enabled: false`, unless the alert-thread job
+    is stopped for good;
+  - the trigger line, "ok … trigger [Incident Type Trigger, all services; kept, so the way back is one call,
+    is_enabled: true]", or "by hand" when it is missing (below).
+
+PagerDuty's card in the channel shows the title, status and priority only. Until 2026-11-16 the workflow replied in
+each incident's thread. Its message (updated 2026-11-14 through `PUT /incident_workflows/PBP4Q0H`, read back the
+same):
 
 ```
 *What happened:* {{incident.title}}
@@ -449,27 +473,30 @@ thread. Its message (updated 2026-11-14 through `PUT /incident_workflows/PBP4Q0H
   (`incident_types: ["incident_default"]`, every incident's type), subscribed to all services, published and enabled
   (`GET /incident_workflows/triggers?workflow_id=PBP4Q0H`). This plan offers no conditional trigger, which is why
   `POST /incident_workflows/triggers` answered 500 for every shape. All services includes "Default Service", whose
-  incidents get the reply too.
-  - `pd_setup.py` reads it on every run: "ok … trigger [Incident Type Trigger, all services]", or "by hand" when
-    none would run the workflow on every TPA incident (missing, disabled, manual, another incident type, or not on
-    all three services). **It never makes one**: the API refuses, and proving a create would mean removing the
-    owner's.
-  - Should it ever be missing: PagerDuty → **Automation** → **Incident Workflows** → "TPA: Slack thread with
-    watchtower links" → **Add Trigger** → **Incident Type Trigger**, type **Base Incident**, all services →
-    **Publish**. Then `make pagerduty-plan` shows the trigger ok.
+  incidents got the reply too while the workflow was on.
+  - `pd_setup.py` reads it on every run: "ok … trigger [Incident Type Trigger, all services; kept, so the way back
+    is one call, is_enabled: true]", or "by hand" when none would run the workflow on every TPA incident (missing,
+    disabled, manual, another incident type, or not on all three services). **It never makes one**: the API
+    refuses, and proving a create would mean removing the owner's.
+  - Should it ever be missing, the way back needs it first (`is_enabled: true` alone brings no reply back):
+    PagerDuty → **Automation** → **Incident Workflows** → "TPA: Slack thread with watchtower links" → **Add
+    Trigger** → **Incident Type Trigger**, type **Base Incident**, all services → **Publish**. Then
+    `make pagerduty-plan` shows the trigger ok.
 
 ## Every source
 
 Everything that can post in #obatpa-incidents (read 2026-11-14: `GET /services?include[]=integrations`, the Slack
 connections, `/extensions`, `/webhook_subscriptions`, `/event_orchestrations`). There is no other integration: no
-Events API key, no Grafana or watchtower alerting, no CRM, call-centre or tpa-jobs sender.
+Events API key, no Grafana or watchtower alerting, no CRM, call-centre or tpa-jobs sender. Since 2026-11-16 one more
+source replies there that is not a PagerDuty integration: tpa-platform's alert-thread job (the last row).
 
 | Source | Title | Details and watchtower link |
 |---|---|---|
 | Each TPA service's "Google Cloud Monitoring (titled)" (the route every Monitoring channel uses) | "<what happened> · <whether to act>", above; the two groups their own | yes: `what_happened`, `what_to_do`, `what_to_check`, `measured`, `dashboard` and the links |
 | Each TPA service's plain "Google Cloud Monitoring" (the way back, `TW_PAGERDUTY_ROUTE=monitoring`; no channel uses it) | Monitoring's own long summary | Monitoring's payload only. Its title cannot change without the AIOps add-on (the owner: "We are not using AIops"), so it stays the way back alone |
 | "Default Service" (PagerDuty's own; no integration, connected to the channel) | whatever a person types when making an incident by hand | none. It was used for Slack checks; a person can disconnect it |
-| The thread reply (workflow above; the owner's Incident Type Trigger, all services) | not a title: replies under the incident's card | the title and the incident's links; per-service branching needs Enterprise |
+| The thread reply (workflow above; **kept OFF since 2026-11-16**, its trigger, the owner's Incident Type Trigger on all services, kept as the way back) | nothing while it is off; on, a reply under the incident's card | the title and the incident's links; per-service branching needs Enterprise. Turned on while the alert-thread job runs, every incident gets two replies |
+| tpa-platform's alert-thread job (its D-423 and D-425; replying since 2026-11-16 07:58Z) | not a title: one reply under the incident's card | the title, what to check, the measured value and the start time; the links: Google console, Watchtower page and overview, and PagerDuty |
 
 ## Silencing
 

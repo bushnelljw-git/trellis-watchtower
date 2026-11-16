@@ -19,8 +19,10 @@ What it makes (each found by its exact name, created when absent and corrected w
 
 It also reads (never makes) each service's Slack connection and prints "by hand" until a person has connected the
 service to #obatpa-incidents with every urgency, every priority and the five incident events (docs/PAGERDUTY.md);
-and the thread-reply workflow's trigger, "by hand" until one runs it on every TPA incident (a person adds it in
-PagerDuty's screen: the trigger API answers 500, and a test would mean removing the owner's).
+and the thread-reply workflow, which is kept off since 2026-11-16 (tpa-platform's alert-thread job replies instead,
+D-425): "ok" while it is off and keeps a trigger that would run it on every TPA incident, "by hand" when it is on
+(two replies per incident) or that trigger is missing (a person adds it in PagerDuty's screen: the trigger API
+answers 500, and a test would mean removing the owner's). It never turns the workflow on or off.
 
 What it will not do: delete anything; touch "Default Service" or the "Default" escalation policy; create a
 notification rule without --add-rules (so a rule a person removed stays removed); change a schedule that has more
@@ -692,6 +694,12 @@ def report_slack(pd: PagerDuty, plan: Plan, service_ids: list[str | None], prior
 TRIGGER_STEPS = ('a person adds it: PagerDuty → Automation → Incident Workflows → the workflow → Add Trigger → '
                  '"Incident Type Trigger", type "Base Incident", all services (docs/PAGERDUTY.md "The thread reply"); '
                  'pd_setup.py never makes one')
+# Kept off since 2026-11-16: tpa-platform's alert-thread job (D-423, D-425) posts the fuller reply in the same thread.
+WORKFLOW_OFF = ("off on purpose: tpa-platform's alert-thread job replies in each incident's Slack thread instead "
+                "(D-425); turning it on doubles the replies")
+WORKFLOW_ON = ("on: with its trigger, every TPA incident gets two replies in its Slack thread, this one and "
+               "tpa-platform's alert-thread job's (D-425); a person sets is_enabled: false, unless that job is stopped "
+               'for good (docs/PAGERDUTY.md "The thread reply")')
 
 
 def trigger_runs_on_every_tpa_incident(trigger: dict, workflow_id: str, service_ids: list[str]) -> bool:
@@ -712,26 +720,38 @@ def trigger_runs_on_every_tpa_incident(trigger: dict, workflow_id: str, service_
 
 
 def report_workflow(pd: PagerDuty, plan: Plan, service_ids: list[str | None]) -> None:
+    """The design: the workflow exists, is off (tpa-platform's alert-thread job replies instead), and keeps a trigger
+    that would run it on every TPA incident, so turning it back on is one call. Read only: never PUT."""
     what = f'  workflow "{d.WORKFLOW_NAME}"'
     try:
         workflow = pd.find_by_name("/incident_workflows", "incident_workflows", d.WORKFLOW_NAME)
         if workflow is None:
             plan.person(what, 'not made: docs/PAGERDUTY.md "The thread reply" holds its message')
             return
+        enabled = (pd.get(f"/incident_workflows/{workflow['id']}").get("incident_workflow") or {}).get("is_enabled")
         triggers = pd.get("/incident_workflows/triggers",
                           {"workflow_id": workflow["id"], "limit": 100}).get("triggers") or []
     except ApiError as e:
         plan.person(what, f'cannot read it ({e}); check by hand: docs/PAGERDUTY.md "The thread reply"')
         return
+    if enabled is False:
+        plan.ok(what, WORKFLOW_OFF)
+    elif enabled is True:
+        plan.person(what, WORKFLOW_ON)
+    else:
+        plan.person(what, 'cannot tell whether it is on (PagerDuty\'s answer has no is_enabled); check by hand: '
+                          'docs/PAGERDUTY.md "The thread reply"')
     ours = [sid for sid in service_ids if sid]
     good = [t for t in triggers if trigger_runs_on_every_tpa_incident(t, workflow["id"], ours)]
     if good:
         t = good[0]
         plan.ok(f"{what} trigger", f'{t.get("trigger_type_name") or t.get("trigger_type")}, '
-                                   f'{"all services" if t.get("is_subscribed_to_all_services") else "the TPA services"}')
+                                   f'{"all services" if t.get("is_subscribed_to_all_services") else "the TPA services"}'
+                                   + ("; kept, so the way back is one call, is_enabled: true" if enabled is False
+                                      else ""))
     else:
-        plan.person(f"{what} trigger", ("none runs it on every TPA incident: " if triggers else "missing: ") +
-                    TRIGGER_STEPS)
+        plan.person(f"{what} trigger", ("none runs it on every TPA incident" if triggers else "missing") +
+                    ", so is_enabled: true alone would not bring the reply back: " + TRIGGER_STEPS)
 
 
 # ---- business service ------------------------------------------------------------------------------------------------

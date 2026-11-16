@@ -111,9 +111,11 @@ class DryRunAndIdempotency(Base):
             'ok        notification rule Jonathan Bushnell: high urgency -> email "Default" at 0 min',
         ]:
             self.assertIn(line, result.stdout)
-        self.assertIn("summary: 24 to create, 0 to update, 5 ok, 2 kept, 0 refused, 3 by hand", result.stdout)
+        self.assertIn("summary: 24 to create, 0 to update, 6 ok, 2 kept, 0 refused, 3 by hand", result.stdout)
+        self.assertIn('ok          workflow "TPA: Slack thread with watchtower links"  [off on purpose: ',
+                      result.stdout)
         self.assertIn('ok          workflow "TPA: Slack thread with watchtower links" trigger  [Incident Type Trigger, '
-                      'all services]', result.stdout)
+                      'all services; kept, so the way back is one call, is_enabled: true]', result.stdout)
         with_rules = self.pd("--add-rules")
         self.assertIn('create    notification rule Jonathan Bushnell: high urgency -> Slack "slack" at 0 min',
                       with_rules.stdout)
@@ -550,24 +552,57 @@ class WithoutAiops(Base):
 
 
 class WorkflowTrigger(Base):
-    """The thread reply's workflow trigger (docs/PAGERDUTY.md, "The thread reply"): read, never made. The owner added
-    it in PagerDuty's screen on 2026-11-14 (an Incident Type Trigger on Base Incident, all services)."""
+    """The thread reply's workflow (docs/PAGERDUTY.md, "The thread reply"): read, never made, never turned on or off.
+    The owner added its trigger in PagerDuty's screen on 2026-11-14 (an Incident Type Trigger on Base Incident, all
+    services). Since 2026-11-16 the workflow is kept off (is_enabled: false), because tpa-platform's alert-thread job
+    replies in the same thread (D-425); its trigger stays, so the way back is one call."""
 
-    def test_the_owners_trigger_is_ok_and_nothing_is_written_to_a_workflow(self):
+    WORKFLOW = 'workflow "TPA: Slack thread with watchtower links"'
+
+    def workflow_writes(self):
+        return [r for r in self.state.writes() if "/incident_workflows" in r["path"]]
+
+    def test_off_with_the_owners_trigger_is_ok_and_nothing_is_written_to_a_workflow(self):
         result = self.apply()
-        self.assertIn('ok          workflow "TPA: Slack thread with watchtower links" trigger  [Incident Type Trigger, '
-                      'all services]', result.stdout)
-        self.assertEqual([r for r in self.state.writes() if "/incident_workflows" in r["path"]], [])
+        self.assertIn(f"ok          {self.WORKFLOW}  [off on purpose: tpa-platform's alert-thread job replies in each "
+                      "incident's Slack thread instead (D-425); turning it on doubles the replies]", result.stdout)
+        self.assertIn(f"ok          {self.WORKFLOW} trigger  [Incident Type Trigger, all services; kept, so the way "
+                      "back is one call, is_enabled: true]", result.stdout)
+        self.assertRegex(self.summary(result), r", by hand 3$")
+        self.assertEqual(self.workflow_writes(), [])
 
-    def test_a_missing_trigger_is_a_gap_with_the_steps_and_is_never_made(self):
+    def test_on_is_a_persons_decision_and_is_never_turned_off_by_the_script(self):
+        self.state.workflows["PWF1"]["is_enabled"] = True
+        for args in ((), ("--apply",)):
+            with self.subTest(args=args):
+                result = self.pd(*args)
+                self.assertIn(f"by hand     {self.WORKFLOW}  [on: with its trigger, every TPA incident gets two "
+                              "replies in its Slack thread, this one and tpa-platform's alert-thread job's (D-425); "
+                              "a person sets is_enabled: false, unless that job is stopped for good", result.stdout)
+                self.assertNotIn("off on purpose", result.stdout)
+                # On, the trigger is only read: it is not "the way back" while the workflow already runs.
+                self.assertIn(f"{self.WORKFLOW} trigger  [Incident Type Trigger, all services]", result.stdout)
+                self.assertRegex(self.summary(result), r", (by hand 4|4 by hand)$")
+        self.assertIs(self.state.workflows["PWF1"]["is_enabled"], True)
+        self.assertEqual(self.workflow_writes(), [])
+
+    def test_an_answer_without_is_enabled_is_a_gap_never_a_guess(self):
+        del self.state.workflows["PWF1"]["is_enabled"]
+        result = self.pd()
+        self.assertIn(f"by hand     {self.WORKFLOW}  [cannot tell whether it is on (PagerDuty's answer has no "
+                      "is_enabled)", result.stdout)
+        self.assertRegex(self.summary(result), r", 4 by hand$")
+
+    def test_off_with_no_trigger_is_a_gap_worded_as_the_way_back_and_the_trigger_is_never_made(self):
         self.state.workflow_triggers.clear()
         result = self.apply()
-        self.assertIn('by hand     workflow "TPA: Slack thread with watchtower links" trigger  [missing: a person adds '
-                      'it: PagerDuty → Automation → Incident Workflows → the workflow → Add Trigger → "Incident Type '
-                      'Trigger", type "Base Incident", all services', result.stdout)
+        self.assertIn(f"ok          {self.WORKFLOW}  [off on purpose: ", result.stdout)
+        self.assertIn(f'by hand     {self.WORKFLOW} trigger  [missing, so is_enabled: true alone would not bring the '
+                      'reply back: a person adds it: PagerDuty → Automation → Incident Workflows → the workflow → '
+                      'Add Trigger → "Incident Type Trigger", type "Base Incident", all services', result.stdout)
         self.assertIn("pd_setup.py never makes one", result.stdout)
         self.assertRegex(self.summary(result), r", by hand 4$")
-        self.assertEqual([r for r in self.state.writes() if "/incident_workflows" in r["path"]], [])
+        self.assertEqual(self.workflow_writes(), [])
 
     def test_a_trigger_that_would_not_run_on_every_tpa_incident_is_a_gap(self):
         self.apply()
@@ -580,7 +615,8 @@ class WorkflowTrigger(Base):
                 self.state.workflow_triggers[:] = [{**base, **change}]
                 result = self.pd()
                 # Another workflow's trigger is not listed for ours (the API filters by workflow_id): "missing".
-                self.assertRegex(result.stdout, r'trigger  \[(none runs it on every TPA incident|missing): a person '
+                self.assertRegex(result.stdout, r'trigger  \[(none runs it on every TPA incident|missing), so '
+                                                r'is_enabled: true alone would not bring the reply back: a person '
                                                 r'adds it')
                 self.assertRegex(self.summary(result), r", 4 by hand$")
 
@@ -588,7 +624,7 @@ class WorkflowTrigger(Base):
         self.apply()
         ours = [{"id": self.service_id(n)} for n in ("TPA · Portal & API", "TPA · Member records", "TPA · Call centre")]
         self.state.workflow_triggers[0].update({"is_subscribed_to_all_services": False, "services": ours})
-        self.assertIn("[Incident Type Trigger, the TPA services]", self.pd().stdout)
+        self.assertIn("[Incident Type Trigger, the TPA services; kept, so the way back is one call", self.pd().stdout)
         self.state.workflow_triggers[0]["services"] = ours[:2]
         self.assertIn("none runs it on every TPA incident", self.pd().stdout)
 

@@ -195,12 +195,13 @@ class FakeState:
         self.alerts: dict[str, list[dict]] = {}
         self.slack_connections: list[dict] = []
         # The thread-reply workflow, made by hand (never by pd_setup.py), and the trigger the owner added in
-        # PagerDuty's screen, in the live API's shape (2026-11-14).
+        # PagerDuty's screen, in the live API's shape (2026-11-14). Off since 2026-11-16 (is_enabled: false):
+        # tpa-platform's alert-thread job replies instead (D-425), and the trigger is kept as the way back.
         self.workflows: dict[str, dict] = {}
         self.workflow_triggers: list[dict] = []
         if workflow:
             self.workflows["PWF1"] = {"id": "PWF1", "type": "incident_workflow",
-                                      "name": "TPA: Slack thread with watchtower links"}
+                                      "name": "TPA: Slack thread with watchtower links", "is_enabled": False}
         if workflow and workflow_trigger:
             self.workflow_triggers.append({
                 "id": "trig-1", "type": "workflow_trigger", "trigger_type_name": "Incident Type Trigger",
@@ -257,6 +258,10 @@ class FakeState:
             wid = query.get("workflow_id", [None])[0]
             found = [t for t in self.workflow_triggers if wid is None or t["workflow_id"] == wid]
             return 200, {"triggers": found, "limit": 100, "more": False}
+        if method == "GET" and p[:1] == ["incident_workflows"] and len(p) == 2:
+            if p[1] not in self.workflows:
+                raise not_found()
+            return 200, {"incident_workflow": self.workflows[p[1]]}
         if p[:1] == ["incident_workflows"] and method != "GET":
             raise AssertionError(f"pd_setup.py never writes a workflow or a trigger: {method} {'/'.join(p)}")
         if method == "GET" and p == ["priorities"]:
