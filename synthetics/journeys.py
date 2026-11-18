@@ -68,9 +68,11 @@ TRUE = frozenset({"1", "true", "yes", "on"})
 DEFAULT_STEP_TIMEOUT_S = 15.0
 #: The job's task_timeout, 300 s (design §3, piece 5), holds the egress
 #: warm-up's budget (at most MOST_EGRESS_WAIT_S), then the run's deadline (at
-#: most MOST_DEADLINE_S), then the sign-out's own budget: 220 s with the
-#: defaults, 280 s at most, which leaves 20 s for what no budget bounds (one
-#: getaddrinfo at the warm-up's end, the task's own start).
+#: most MOST_DEADLINE_S, every dial inside it: client.CONNECT_BUDGET_S never
+#: passes it), then the sign-out's own budget, its dial included: 220 s with
+#: the defaults, 280 s at most, which leaves 20 s for what no budget bounds (one
+#: getaddrinfo at the warm-up's end, the task's own start). The sign-in robots'
+#: 240 s holds 120 + 80 + 10 the same way (tpa-platform signinrobots.tf).
 DEFAULT_DEADLINE_S = 90.0
 MOST_DEADLINE_S = 100.0
 #: The egress warm-up (`_egress`): its own budget, spent before the deadline
@@ -538,7 +540,7 @@ def _auth_sign_in(run: Run, session: Session, email: str, credentials: Credentia
             raise StepFailure("shape", session.last_status)
     code = totp.mint(credentials.totp_secret, now=tools.now, sleep=tools.sleep)
     with run.timed("mfa_verify"):
-        # Never past the code's accepted life, however long the connection takes (client.dial).
+        # Never past the code's accepted life, however long a new connection would take (client.dial).
         run.check(
             session.post(AUTH_VERIFY, payload={"challenge_id": challenge, "code": code},
                          at_most=totp.accepted_for(tools.now())),
@@ -607,21 +609,23 @@ def _json_read(run: Run, session: Session, step: str, path: str, *, bearer: str 
 
 def staff_sign_in(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> None:
     config, credentials, token, context, deadline = _prepare(run, env, use_iap=use_iap, tools=tools)
-    ops = _session(config.base_url, config, token, context, deadline)
-    _shell(run, ops, "ops_shell", OPS_SHELL, "/ops/")
-    with run.timed("ops_release"):
-        run.check(ops.get(OPS_RELEASE)).json_object()
-    with _signed_in_to_auth(run, ops, config, credentials, tools):
-        _json_read(run, ops, "me", AUTH_ME)
-        _json_read(run, ops, "desk_version", DESK_VERSION)
-    portal = _session(config.portal_base_url, config, token, context, deadline)
-    _shell(run, portal, "portal_shell", PORTAL_SHELL, "/tpa/")
+    with _session(config.base_url, config, token, context, deadline) as ops:
+        _shell(run, ops, "ops_shell", OPS_SHELL, "/ops/")
+        with run.timed("ops_release"):
+            run.check(ops.get(OPS_RELEASE)).json_object()
+        with _signed_in_to_auth(run, ops, config, credentials, tools):
+            _json_read(run, ops, "me", AUTH_ME)
+            _json_read(run, ops, "desk_version", DESK_VERSION)
+    # The portal host is a session of its own, so a connection of its own: never the ops host's, even where
+    # the two are one origin (single-origin, until R183), and no cookie of the ops host's.
+    with _session(config.portal_base_url, config, token, context, deadline) as portal:
+        _shell(run, portal, "portal_shell", PORTAL_SHELL, "/tpa/")
 
 
 def ops_desk(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> None:
     config, credentials, token, context, deadline = _prepare(run, env, use_iap=use_iap, tools=tools)
-    ops = _session(config.base_url, config, token, context, deadline)
-    with _signed_in_to_auth(run, ops, config, credentials, tools):
+    with _session(config.base_url, config, token, context, deadline) as ops, \
+            _signed_in_to_auth(run, ops, config, credentials, tools):
         _json_read(run, ops, "live_queue", LIVE_QUEUE)
         _json_read(run, ops, "desk_version_employers", DESK_VERSION_EMPLOYERS)
 
@@ -630,14 +634,14 @@ def crm(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> Non
     if not truthy(env, "SYNTHETICS_CRM_ENABLED"):
         raise Skip("not_configured")
     config, credentials, token, context, deadline = _prepare(run, env, use_iap=use_iap, tools=tools)
-    crm_host = _session(config.base_url, config, token, context, deadline)
-    _shell(run, crm_host, "crm_shell", CRM_SHELL, "/")
-    with _signed_in_to_crm(run, crm_host, config, credentials, tools) as bearer:
-        with run.timed("me"):
-            me = run.check(crm_host.get(CRM_ME, bearer=bearer)).json_object()
-            tenant = _crm_business(me, crm_host.last_status)
-        with run.timed("crm_tenant"):
-            run.check(crm_host.get(CRM_TENANT, bearer=bearer, tenant=tenant)).json_object()
+    with _session(config.base_url, config, token, context, deadline) as crm_host:
+        _shell(run, crm_host, "crm_shell", CRM_SHELL, "/")
+        with _signed_in_to_crm(run, crm_host, config, credentials, tools) as bearer:
+            with run.timed("me"):
+                me = run.check(crm_host.get(CRM_ME, bearer=bearer)).json_object()
+                tenant = _crm_business(me, crm_host.last_status)
+            with run.timed("crm_tenant"):
+                run.check(crm_host.get(CRM_TENANT, bearer=bearer, tenant=tenant)).json_object()
 
 
 def _crm_business(me: dict, status: int | None) -> str:
@@ -939,16 +943,18 @@ def _robot(run: Run, env: Mapping[str, str], robot: Robot, *, local: bool, tools
     deadline = client.Deadline(config.deadline, clock=tools.monotonic)
     with run.timed("secrets"):
         credentials = read_robot_credentials(config.credentials_file, robot, config.origin)
-    portal = Session(config.origin, iap_token=None, ssl_context=context, step_timeout=config.step_timeout,
-                     deadline=deadline)
-    script = _portal_shell(run, portal)
-    _portal_release(run, portal)
-    _portal_bundle(run, portal, script)
-    send = min(config.step_timeout, ROBOT_SEND_S)
-    with _auth_session(run, portal, _sign_out_budget(config),
-                       lambda: _robot_sign_in(run, portal, robot, credentials, tools, deadline, send)):
-        with run.timed("me"):
-            _robot_identity(run.check(portal.get(AUTH_ME)).json_object(), robot, portal.last_status)
+    # One connection for the whole run, as a browser's: the portal's three reads, the sign-in, `/auth/me` and
+    # the sign-out ride the connection `portal_shell` dials (client.Session).
+    with Session(config.origin, iap_token=None, ssl_context=context, step_timeout=config.step_timeout,
+                 deadline=deadline) as portal:
+        script = _portal_shell(run, portal)
+        _portal_release(run, portal)
+        _portal_bundle(run, portal, script)
+        send = min(config.step_timeout, ROBOT_SEND_S)
+        with _auth_session(run, portal, _sign_out_budget(config),
+                           lambda: _robot_sign_in(run, portal, robot, credentials, tools, deadline, send)):
+            with run.timed("me"):
+                _robot_identity(run.check(portal.get(AUTH_ME)).json_object(), robot, portal.last_status)
 
 
 def member_sign_in(run: Run, env: Mapping[str, str], *, use_iap: bool, tools: Tools) -> None:

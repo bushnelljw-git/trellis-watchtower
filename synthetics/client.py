@@ -1,7 +1,12 @@
-"""The journeys' HTTP client: urllib, one origin, a small cookie jar, no redirects.
+"""The journeys' HTTP client: http.client, one origin, one connection, a small cookie jar, no redirects.
 
-- **One origin per `Session`.** Every request goes to the base URL the session
-  was made with; paths only, never a URL from a response.
+- **One origin per `Session`, and one connection.** Every request goes to the
+  base URL the session was made with; paths only, never a URL from a response.
+  The session dials its origin once (TCP, then TLS) and every later request of
+  the run rides that connection (HTTP/1.1 keep-alive), as a browser's would: a
+  run makes one new connection through Cloud NAT where it made one per request
+  (`Session._connection`). A connection carries one origin's requests and
+  nothing else; J1's second host is a second session.
 - **No redirect is followed.** A 3xx comes back as a response, and the journey
   decides what it means (IAP's sign-in page, or a wrong route).
 - **IAP.** With a token, every request carries `Proxy-Authorization: Bearer`,
@@ -15,28 +20,47 @@
   (`__Host-tpa-csrf` into `X-CSRF-Token`, auth's double submit). Once a journey
   has read the portal's release (the sign-in robots), every request names it in
   `X-Client-Release`, as the portal's own requests do.
-- **Timeouts.** Each request has the smaller of its step timeout and what is
-  left of the run's deadline (a sign-out has its own budget instead: see
-  journeys.py). The connection takes what it needs of that (`dial`, below),
-  and the socket's timeout is then what is left, which bounds the wait for
-  the headers; the body is read with `read1`, one socket read at a time, the
-  socket's timeout shrunk before each to what the step has left, so neither a
-  stall nor a server trickling a byte at a time can outlast the step.
-- **Every connection is dialled; every request is written once.** Cloud NAT
-  can still drop a new connection's replies after the egress warm-up (beta,
-  2026-10-12: ops-desk's `mfa_verify` timed out at 15 s on a connection the
-  load balancer never saw), and urllib opens one connection per request. So
-  the TCP connection (`dial`) is tried with a fresh socket, at most
-  CONNECT_ATTEMPT_S each (the name resolved, then its addresses in turn, all
-  inside it), CONNECT_PAUSE_S apart, until one connects or the step's time is
-  spent. Only then is the request written, once: http.client
-  writes nothing before `connect()` returns, and nothing after that is ever
-  tried again, so no sign-in, code or sign-out is sent twice. TLS is not
-  retried: its handshake runs once on the connected socket.
-- **No proxy from the environment**, ever: `HTTP(S)_PROXY` is ignored.
+- **Timeouts: the dial has its own budget, the answer the step's.** A request
+  that needs a new connection dials it for at most CONNECT_BUDGET_S (`dial`,
+  below); the step timeout then starts, and bounds TLS's handshake, the write,
+  the wait for the headers and the body. The run's deadline bounds the two
+  together: a step's dial and answer never pass it. A request with a budget
+  of its own (the sign-out's: see journeys.py) spends it on both, outside the
+  deadline. `at_most` (a TOTP code's accepted life) caps either, so a code is
+  never written after auth would refuse it. The body is read with `read1`,
+  one socket read at a time, the socket's timeout shrunk before each to what
+  the step has left, so neither a stall nor a server trickling a byte at a
+  time can outlast the step.
+- **Dialling keeps trying; a request is written once.** Cloud NAT drops some
+  new connections' first packets after the egress warm-up (production,
+  2026-11-13 to 11-18: about one new connection in seven needed a second
+  attempt, and four in a row failing inside a 15 s step paged "Members cannot
+  sign in" twice, #161 and #176, while the load balancer saw none of those
+  requests). A member on the internet never meets our NAT, so a connect that
+  fails is ours, and a late or wrong answer is the site's. The TCP connection
+  is tried with a fresh socket, at most CONNECT_ATTEMPT_S each (the name
+  resolved, then its addresses in turn, all inside it), CONNECT_PAUSE_S apart,
+  until one connects or the dial's budget is spent. Only then is anything
+  written. A request is written once, on one connection, whatever happens
+  after its first byte: `Session._exchange` calls http.client's `request()`
+  once and has no loop around it, http.client never sends a request again,
+  and its connection (`_Wire`) cannot open a socket of its own, so nothing
+  is dialled in the middle of a request. No sign-in, code or sign-out is
+  sent twice. An open connection is used again only while it is known to be
+  usable before the request's first byte (`_idle`): the last answer was read
+  to its end and did not close it (`Connection: close`, HTTP/1.0, a body that
+  ends at the close), and nothing is waiting on it (an EOF, TLS's
+  close_notify, bytes nobody asked for). Otherwise the next request dials a
+  new one first. Any failure closes the connection, so the request after it
+  (the sign-out) starts on a new one. TLS is not retried: its handshake runs
+  once on each connected socket.
+- **No proxy from the environment**, ever: http.client reads none.
 - **The warm-up's connect** (`knock`, journeys.py's `egress` step): a bare TCP
   connection to one resolved address, closed at once. No byte is sent: no
   TLS, no HTTP, no header, no token.
+- **The metadata server** (iap.py) is asked through `send` and `opener`,
+  urllib with no proxy and no redirect: one request on a fresh connection
+  dialled inside its step's time. It is not behind Cloud NAT.
 
 Nothing here logs. A transport failure becomes a `StepFailure` carrying a code
 from result.CODES and nothing else: no URL, no exception text.
@@ -53,6 +77,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterator
 from dataclasses import dataclass
 from email.message import Message
 from email.utils import parsedate_to_datetime
@@ -70,6 +95,16 @@ CSRF_COOKIE = "__Host-tpa-csrf"
 #: Opening a TCP connection (`dial`): each attempt's longest wait, and the pause before the next.
 CONNECT_ATTEMPT_S = 3.0
 CONNECT_PAUSE_S = 0.5
+#: A session's dial, apart from its step's time: nine attempts (eight that time out, 3.5 s each with the pause, and
+#: 2 s for the ninth), where a 15 s step held four and 1 s of a fifth. Inside the run's deadline (80 s in
+#: production), which after a dial of up to about 29.5 s and the portal's three reads still holds the broker's
+#: 50.2 s. The sign-out's dial shares the sign-out's own 10 s instead.
+CONNECT_BUDGET_S = 30.0
+#: The most of an answer read past MAX_BODY and thrown away, so its connection can carry the next request.
+MAX_DRAIN = 4 * 1024 * 1024
+#: The content type urllib gave a write with no JSON body (the sign-outs), kept so nothing a request carries
+#: changes with the connection.
+EMPTY_BODY_TYPE = "application/x-www-form-urlencoded"
 
 
 class StepFailure(Exception):
@@ -183,13 +218,14 @@ def _connect_once(address: tuple[str, int], timeout: float) -> socket.socket:
 
 
 def dial(address: tuple[str, int], timeout: float) -> socket.socket:
-    """A TCP connection to host:port inside `timeout` (what the step has left).
+    """A TCP connection to host:port inside `timeout` (a session's dial budget, or
+    what the metadata call's step has left).
 
-    A fresh socket each attempt, for at most CONNECT_ATTEMPT_S and never past the
-    step, CONNECT_PAUSE_S apart, until one connects. When the time is spent the
+    A fresh socket each attempt, for at most CONNECT_ATTEMPT_S and never past
+    `timeout`, CONNECT_PAUSE_S apart, until one connects. When the time is spent the
     last attempt's error stands, so the step fails as it did before: `timeout`
     after attempts that timed out, `connect` after refusals. The socket comes back
-    with what is left of the step as its timeout. Nothing is written here.
+    with what is left of `timeout` as its timeout. Nothing is written here.
     """
     end = time.monotonic() + timeout
     while True:
@@ -212,8 +248,9 @@ def dial(address: tuple[str, int], timeout: float) -> socket.socket:
 
 
 class _Connection(http.client.HTTPConnection):
-    """http.client's connection, its TCP connection dialled. http.client calls
-    `connect()` before it writes a byte of the request, and only then."""
+    """http.client's connection for `opener` (the metadata call), its TCP connection
+    dialled. http.client calls `connect()` before it writes a byte of the request,
+    and only then."""
 
     def connect(self) -> None:
         self.sock = dial((self.host, self.port), self.timeout)
@@ -245,7 +282,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def opener(ssl_context: ssl.SSLContext | None) -> urllib.request.OpenerDirector:
-    """No proxy, no redirect, and every connection dialled (`dial`)."""
+    """The metadata call's (iap.py): no proxy, no redirect, and every connection dialled (`dial`)."""
     return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect(), _Http(),
                                        _Https(ssl_context or ssl.create_default_context()))
 
@@ -297,13 +334,93 @@ def _read_body(raw: Any, step_end: float) -> bytes:
     return b"".join(chunks)
 
 
+def _drain(raw: http.client.HTTPResponse, step_end: float) -> None:
+    """The rest of an answer longer than MAX_BODY, read and thrown away (at most MAX_DRAIN, never past the
+    step), so its connection can carry the next request. Whatever stops it leaves the answer unfinished, and
+    the session closes the connection instead: the step is never failed for bytes it does not read."""
+    sock = _socket_of(raw)
+    drained = 0
+    with contextlib.suppress(OSError, http.client.HTTPException, ValueError):
+        while drained < MAX_DRAIN and not raw.isclosed():
+            left = step_end - time.monotonic()
+            if left <= 0:
+                return
+            if sock is not None:
+                sock.settimeout(left)
+            chunk = raw.read1(CHUNK)
+            if not chunk:
+                return
+            drained += len(chunk)
+
+
+def _bound(sock: socket.socket | None, end: float) -> None:
+    """The socket's timeout cut to what is left before `end`, or TimeoutError when nothing is (and so
+    nothing is written)."""
+    left = end - time.monotonic()
+    if left <= 0:
+        raise TimeoutError
+    if sock is not None:
+        sock.settimeout(left)
+
+
+def _idle(sock: socket.socket) -> bool:
+    """True when an open connection has nothing waiting on it, so the next request may be written on it.
+
+    Anything waiting means it cannot carry one: an EOF (the server closed it), TLS's close_notify, a reset,
+    or bytes nobody asked for. A TLS record that holds no data (a TLS 1.3 session ticket) is taken in here
+    and leaves it idle. Looked at without waiting; nothing is written.
+    """
+    if sock.fileno() < 0:
+        return False
+    timeout = sock.gettimeout()
+    try:
+        sock.setblocking(False)
+        sock.recv(1)
+    except (BlockingIOError, ssl.SSLWantReadError):
+        return True
+    except OSError:
+        return False
+    finally:
+        with contextlib.suppress(OSError):
+            sock.settimeout(timeout)
+    return False  # b"" (the end) or a byte nobody asked for
+
+
+@contextlib.contextmanager
+def _transport_failures() -> Iterator[None]:
+    """Every transport failure as a closed code, with no exception text: `timeout`, `tls` or `connect`."""
+    try:
+        yield
+    except StepFailure:
+        raise
+    except TimeoutError:
+        raise StepFailure("timeout") from None
+    except ssl.SSLError:  # ssl.CertificateError among them
+        raise StepFailure("tls") from None
+    except (http.client.HTTPException, OSError):
+        raise StepFailure("connect") from None
+
+
+class _Wire(http.client.HTTPConnection):
+    """http.client's HTTP/1.1 over the socket a session dialled and handed it (`Session._connection`).
+
+    It never opens a connection of its own: with no socket, http.client raises NotConnected before
+    writing a byte, rather than dialling in the middle of a request. http.client never sends a request
+    again by itself, and reads each answer to its end before the next can be read."""
+
+    auto_open = 0
+
+    def connect(self) -> None:
+        raise http.client.NotConnected
+
+
 def send(
     open_: urllib.request.OpenerDirector,
     request: urllib.request.Request,
     *,
     timeout: float,
 ) -> Response:
-    """One request; every transport failure mapped to a closed code."""
+    """One request through `opener` (the metadata call); every transport failure mapped to a closed code."""
     if timeout <= 0:
         raise StepFailure("timeout")
     step_end = time.monotonic() + timeout
@@ -397,7 +514,9 @@ class CookieJar:
 
 
 class Session:
-    """Requests to one origin, through IAP when there is a token."""
+    """Requests to one origin, through IAP when there is a token, on one connection kept open between them.
+
+    A context manager: leaving it closes the connection."""
 
     def __init__(
         self,
@@ -409,8 +528,13 @@ class Session:
         deadline: Deadline,
     ) -> None:
         self.origin = origin_of(base_url)
+        parts = urllib.parse.urlsplit(self.origin)
+        self._address = host_port(self.origin)
+        #: The `Host` header, the origin's own host and port as written (what urllib sent).
+        self._host = parts.netloc
+        self._tls = (ssl_context or ssl.create_default_context()) if parts.scheme == "https" else None
+        self._wire: _Wire | None = None
         self._iap_token = iap_token
-        self._open = opener(ssl_context)
         self._step_timeout = step_timeout
         self._deadline = deadline
         self.cookies = CookieJar()
@@ -418,9 +542,86 @@ class Session:
         #: The portal release every later request names in `X-Client-Release`, as the portal's own interceptor
         #: stamps it (the sign-in robots set it from `/tpa/release.json`, already checked to be a plain token).
         self.release: str | None = None
+        #: How many connections this session has opened: one for a run, unless one could not carry on.
+        self.opened = 0
 
-    def _timeout(self) -> float:
-        return min(self._step_timeout, self._deadline.left())
+    def __enter__(self) -> Session:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Close the connection, if one is open. The next request, if any, dials a new one."""
+        wire, self._wire = self._wire, None
+        if wire is not None:
+            wire.close()
+
+    def _connection(self, end: float, connect: float, answer: float) -> tuple[_Wire, float]:
+        """The connection the next request is written on, and when its answer must be in by.
+
+        The open one while it is known to be usable before anything is written: the last answer was
+        read to its end and did not close it (http.client drops the socket of an answer that ends with
+        the connection: `Connection: close`, HTTP/1.0, a body read to the close), and nothing is waiting
+        on it (`_idle`). Otherwise, and the first time, a new one: dialled for at most `connect` (never
+        past `end`), then TLS's handshake, once, inside the answer's time, which starts once it is
+        connected. A socket connected with no time left is closed with nothing written.
+        """
+        wire = self._wire
+        if wire is not None and (wire.sock is None or not _idle(wire.sock)):
+            self.close()
+            wire = None
+        if wire is not None:
+            return wire, min(time.monotonic() + answer, end)
+        sock = dial(self._address, min(connect, end - time.monotonic()))
+        try:
+            answer_end = min(time.monotonic() + answer, end)
+            _bound(sock, answer_end)
+            if self._tls is not None:
+                sock = self._tls.wrap_socket(sock, server_hostname=self._address[0])
+        except BaseException:
+            sock.close()
+            raise
+        wire = _Wire(*self._address)
+        wire.sock = sock
+        self._wire = wire
+        self.opened += 1
+        return wire, answer_end
+
+    def _exchange(self, method: str, path: str, body: bytes | None, headers: dict[str, str], *,
+                  limit: float, connect: float, answer: float) -> Response:
+        """One request, written once: a connection (`_connection`), the request, its answer.
+
+        `limit` bounds it all; `connect` the dial, if one is needed; `answer` the rest, from the moment
+        it is connected. http.client's `request()` is the one write, called once and never again for
+        this request: whatever fails after it (a broken write, no answer, a dropped connection, a
+        trickle) closes the connection and fails the step, and nothing is sent again.
+        """
+        if limit <= 0:
+            raise StepFailure("timeout")
+        end = time.monotonic() + limit
+        with _transport_failures():
+            try:
+                wire, answer_end = self._connection(end, connect, answer)
+                _bound(wire.sock, answer_end)
+                wire.request(method, path, body=body, headers=headers)
+                _bound(wire.sock, answer_end)
+                raw = wire.getresponse()
+                try:
+                    status = raw.status
+                    content = _read_body(raw, answer_end)
+                    if not raw.isclosed():
+                        _drain(raw, answer_end)
+                    finished = raw.isclosed()
+                finally:
+                    raw.close()
+            except BaseException:
+                self.close()
+                raise
+            if not finished:
+                # Its end did not come inside the step: the connection cannot carry another request.
+                self.close()
+            return Response(status=status, headers=raw.msg, body=content)
 
     def request(
         self,
@@ -435,13 +636,16 @@ class Session:
         timeout: float | None = None,
         at_most: float | None = None,
     ) -> Response:
-        """One request to this origin. `timeout` replaces the step's timeout and the
-        run's deadline with a budget of its own (the sign-out's); `at_most` caps
+        """One request to this origin. A step's has CONNECT_BUDGET_S for a dial, if it
+        needs one, then the step timeout for its answer, and the run's deadline bounds
+        both. `timeout` replaces all three with a budget of its own, the dial's and the
+        answer's together, outside the deadline (the sign-out's); `at_most` caps
         whichever applies (a TOTP code's accepted life, for its `mfa_verify`). `tenant`
         is the CRM's `X-Tenant-Id`, which the caller has already checked is a UUID."""
         if not path.startswith("/") or path.startswith("//"):
             raise StepFailure("runner")
         headers = {
+            "Host": self._host,
             "User-Agent": USER_AGENT,
             "Accept": accept,
             "Sec-Fetch-Site": "same-origin",
@@ -466,16 +670,19 @@ class Session:
                 headers["Content-Type"] = "application/json"
             else:
                 data = b""
+                headers["Content-Type"] = EMPTY_BODY_TYPE
         if csrf:
             token = self.cookies.value(CSRF_COOKIE)
             if not token:
                 raise StepFailure("csrf")
             headers["X-CSRF-Token"] = token
-        request = urllib.request.Request(self.origin + path, data=data, headers=headers, method=method)
-        budget = self._timeout() if timeout is None else timeout
+        if timeout is None:
+            limit, connect, answer = self._deadline.left(), CONNECT_BUDGET_S, self._step_timeout
+        else:
+            limit = connect = answer = timeout
         if at_most is not None:
-            budget = min(budget, at_most)
-        response = send(self._open, request, timeout=budget)
+            limit = min(limit, at_most)
+        response = self._exchange(method, path, data, headers, limit=limit, connect=connect, answer=answer)
         self.last_status = response.status
         self.cookies.take(response.headers, cookie_path)
         return response

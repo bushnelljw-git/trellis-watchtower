@@ -1,6 +1,6 @@
 """The journeys against a local fake (synthetic_fakes.py): pass, each step failing, timeouts,
-transport failures, configuration, pausing, the egress warm-up, connections dialled and requests
-written once, and no secret on stdout or stderr on any path.
+transport failures, configuration, pausing, the egress warm-up, one connection per session, dialled
+inside its own budget, requests written once, and no secret on stdout or stderr on any path.
 
 Run: python3 -m unittest discover -s tests/synthetics -v   (make synthetics-test)
 """
@@ -95,6 +95,17 @@ class Network:
 
 
 @contextlib.contextmanager
+def dial_budget(seconds: float):
+    """client.CONNECT_BUDGET_S, a session's dial's own budget, set to `seconds` for the block."""
+    real = client.CONNECT_BUDGET_S
+    client.CONNECT_BUDGET_S = seconds
+    try:
+        yield
+    finally:
+        client.CONNECT_BUDGET_S = real
+
+
+@contextlib.contextmanager
 def dialling(attempt):
     """client._connect_once replaced by `attempt(address, timeout, real)` for the block; yields each
     attempt's timeout, in order."""
@@ -148,13 +159,14 @@ class Case(unittest.TestCase):
                            tools=tools or Tools(now=lambda: FIXED_NOW, sleep=lambda _s: None))
         return self.parse_clean(out.getvalue(), err.getvalue()), code
 
-    def assert_silent(self, fake: fakes.Fake, expected: int) -> None:
-        """The connections that closed with nothing sent (the warm-up's), once the server has read them."""
+    def assert_silent(self, fake: fakes.Fake, expected: int, *, carried: int) -> None:
+        """The connections that closed with nothing sent (the warm-up's), once the server has read them,
+        and the `carried` connections every request rode: one per session (and the metadata call's)."""
         settle = time.monotonic() + 2
         while fake.connections.count("silent") < expected and time.monotonic() < settle:
             time.sleep(0.01)
         self.assertEqual(fake.connections.count("silent"), expected)
-        self.assertEqual(fake.connections.count("request"), len(fake.requests))
+        self.assertEqual(fake.connections.count("request"), carried)
 
     def parse_clean(self, stdout: str, stderr: str) -> dict:
         """Exactly one line on stdout, nothing on stderr, no sentinel anywhere, closed values only."""
@@ -229,8 +241,9 @@ class StaffSignIn(Case):
         self.assertEqual((logout["csrf"], logout["origin"]), (fakes.CSRF, fake.base))
         self.assertEqual(len(fake.codes_received), 1)
         self.assert_no_received_code_printed(fake, line)
-        # The warm-up: two connections in a row to each host (127.0.0.1 and localhost), not a byte sent.
-        self.assert_silent(fake, 4)
+        # The warm-up: two connections in a row to each host (127.0.0.1 and localhost), not a byte sent. Then
+        # three that carry requests: the metadata call's, the ops host's seven requests on one, the portal's.
+        self.assert_silent(fake, 4, carried=3)
 
     def test_each_step_failing(self):
         for route, step in [("ops_shell", "ops_shell"), ("ops_release", "ops_release"), ("login", "login"),
@@ -429,11 +442,12 @@ class StaffSignIn(Case):
             closed = probe.getsockname()[1]
         with fakes.Fake() as fake:
             # Without the warm-up, which would wait out its budget here (Egress has that case). Refusals are
-            # dialled again until the step's second is spent; the last one stands.
+            # dialled again until the run's deadline (1 s here) is spent, which bounds the dial's own 30 s
+            # budget; the last one stands.
             started = time.monotonic()
             line, code = self.run_journey("staff-sign-in", self.env(
                 fake, SYNTHETICS_BASE_URL=f"http://127.0.0.1:{closed}", SYNTHETICS_EGRESS_WAIT_S="0",
-                SYNTHETICS_STEP_TIMEOUT_S="1"))
+                SYNTHETICS_STEP_TIMEOUT_S="1", SYNTHETICS_DEADLINE_S="1"))
             took = time.monotonic() - started
         self.assert_failed(line, code, step="ops_shell", code="connect", status_class="none")
         self.assertLess(took, 2.5)
@@ -857,29 +871,69 @@ class Egress(Case):
         finally:
             journeys.client.resolve = original
         self.assertEqual((line["outcome"], code), ("pass", 0))
-        # The warm-up's three (two failed, then kept for good), then one per connection the client dials.
-        self.assertEqual(asked, [("127.0.0.1", fake.port)] * (3 + len(J2_ROUTES)))
+        # The warm-up's three (two failed, then kept for good), then one per connection the client dials: the
+        # metadata call's and the session's one.
+        self.assertEqual(asked, [("127.0.0.1", fake.port)] * (3 + 2))
         self.assertEqual(len(net.connects), 2)
 
 
 class Connect(Case):
-    """Every connection dialled with a fresh socket until it connects or the step's time is spent; every
-    request written once, whatever happens after (beta, 2026-10-12: a connection opened after the warm-up
-    could still be dropped)."""
+    """One connection per session, dialled with a fresh socket each attempt until it connects or the dial's
+    own budget is spent, then kept for every request; every request written once, whatever happens after
+    (production, 2026-11-13 to 11-18: about one new connection in seven through Cloud NAT needed a second
+    attempt, and four in a row inside a 15 s step paged "Members cannot sign in")."""
 
     def test_a_request_lands_once_after_connects_that_failed(self):
-        # J2's connections in order: the metadata server's, login's, mfa_verify's, ...
-        for name, errors, extra in [("login, timed out twice", [None, TimeoutError, TimeoutError], 2),
-                                    ("mfa_verify, refused three times",
-                                     [None, None, ConnectionRefusedError, ConnectionRefusedError,
+        # J2's dials in order: the metadata server's, then the session's one, which every request rides.
+        for name, errors, extra in [("timed out twice", [None, TimeoutError, TimeoutError], 2),
+                                    ("refused three times",
+                                     [None, ConnectionRefusedError, ConnectionRefusedError,
                                       ConnectionRefusedError], 3)]:
             with self.subTest(name), fakes.Fake(clock=lambda: FIXED_NOW) as fake:
                 with dialling(failing_first(errors)) as timeouts:
                     line, code = self.run_journey("ops-desk", self.env(fake))
                 self.assertEqual((line["outcome"], code), ("pass", 0))
                 self.assertEqual(fake.routes(), J2_ROUTES, "each request sent once")
-                self.assertEqual(len(timeouts), len(J2_ROUTES) + extra)
+                self.assertEqual(len(timeouts), 2 + extra)
                 self.assertEqual(len(fake.codes_received), 1)
+                self.assertEqual(fake.connections.count("request"), 2)
+
+    def test_one_connection_carries_the_robots_whole_run(self):
+        for job in ("member-sign-in", "broker-sign-in"):
+            with self.subTest(job=job), fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
+                credentials = (member_credentials(self.tmp.name, fake.base) if job == "member-sign-in"
+                               else broker_credentials(self.tmp.name))
+                with dialling(failing_first([])) as timeouts:
+                    line, code = self.run_journey(job, {"SYNTHETICS_PORTAL_ORIGIN": fake.base,
+                                                        "SYNTHETICS_CREDENTIALS_FILE": credentials}, use_iap=False)
+                self.assertEqual((line["outcome"], code), ("pass", 0))
+                self.assertEqual(fake.routes(), ROBOT_ROUTES)
+                self.assertEqual(len(timeouts), 1, "one dial")
+                self.assertEqual(fake.connections.count("request"), 1, "seven requests on one connection")
+
+    def test_an_answer_that_closes_its_connection_is_followed_by_a_new_one(self):
+        # `Connection: close` (announced) or a close after the answer (not announced; the client sees it
+        # before writing): the next request dials a new connection, and every request still goes once.
+        for route in ("portal_release", "login", "me"):
+            with self.subTest(route=route), fakes.Fake(iap=False, fail={route: "close"},
+                                                       clock=lambda: FIXED_NOW) as fake:
+                line, code = self.run_journey("member-sign-in", {
+                    "SYNTHETICS_PORTAL_ORIGIN": fake.base,
+                    "SYNTHETICS_CREDENTIALS_FILE": member_credentials(self.tmp.name, fake.base)}, use_iap=False)
+                self.assertEqual((line["outcome"], code), ("pass", 0))
+                self.assertEqual(fake.routes(), ROBOT_ROUTES)
+                self.assertEqual(fake.connections.count("request"), 2)
+
+    def test_after_a_dropped_connection_the_sign_out_goes_on_a_new_one(self):
+        # `me` written and its connection dropped unanswered: never sent again; the sign-out dials anew.
+        with fakes.Fake(iap=False, fail={"me": "drop"}, clock=lambda: FIXED_NOW) as fake:
+            line, code = self.run_journey("member-sign-in", {
+                "SYNTHETICS_PORTAL_ORIGIN": fake.base,
+                "SYNTHETICS_CREDENTIALS_FILE": member_credentials(self.tmp.name, fake.base)}, use_iap=False)
+        self.assert_failed(line, code, step="me", code="connect", status_class="none")
+        self.assertEqual(fake.routes(), ROBOT_ROUTES)
+        self.assertEqual(fake.connections.count("request"), 2)
+        self.assertEqual(fake.requests[-1]["cookie"].count(fakes.ROBOT_SESSIONS["member"]), 1)
 
     def test_a_request_is_never_written_twice(self):
         # The sign-in, the code and the sign-out, each answered by nothing or a dropped connection.
@@ -893,24 +947,46 @@ class Connect(Case):
                 self.assertEqual(fake.routes().count(route), 1)
                 self.assertLessEqual(len(fake.codes_received), 1)
 
-    def test_the_step_bounds_every_attempt(self):
+    def test_the_dials_budget_bounds_every_attempt_and_the_step_does_not(self):
         # Local mode (no metadata call): login's every attempt is never answered and spends its whole timeout.
+        # The step is half a second; the dial has its own 4 s: one 3 s attempt, the pause, then the half second left.
         def stalled(address, timeout, real):
             time.sleep(timeout)
             raise TimeoutError
 
         with fakes.Fake(iap=False) as fake:
             started = time.monotonic()
-            with dialling(stalled) as timeouts:
-                line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="3.6"),
+            with dial_budget(4.0), dialling(stalled) as timeouts:
+                line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="0.5"),
                                               use_iap=False)
             took = time.monotonic() - started
         self.assert_failed(line, code, step="login", code="timeout", status_class="none")
         self.assertEqual(len(timeouts), 2)
         self.assertEqual(timeouts[0], 3.0, "an attempt waits 3 s at most")
-        self.assertLess(timeouts[1], 0.2, "then only what the step has left, after a half-second pause")
-        self.assertLess(took, 4.5)
+        self.assertTrue(0 < timeouts[1] <= 0.5, "then only what the dial has left, after a half-second pause")
+        self.assertGreater(took, 3.5)
+        self.assertLess(took, 5.0)
         self.assertEqual(fake.requests, [])
+
+    def test_a_dial_longer_than_the_step_still_lands_once(self):
+        # Four attempts never answered (3 s each, 0.5 s apart: 14 s, the old 15 s step's whole worth), then
+        # one that connects, inside the dial's 30 s; the answer then has its own step. Scripted, no real wait.
+        attempts = []
+
+        def blackholed_four(address, timeout, real):
+            attempts.append(timeout)
+            if len(attempts) <= 4:
+                raise TimeoutError
+            return real(address, timeout)
+
+        with fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
+            with dialling(blackholed_four):
+                line, code = self.run_journey("member-sign-in", {
+                    "SYNTHETICS_PORTAL_ORIGIN": fake.base,
+                    "SYNTHETICS_CREDENTIALS_FILE": member_credentials(self.tmp.name, fake.base)}, use_iap=False)
+        self.assertEqual((line["outcome"], code), ("pass", 0))
+        self.assertEqual(attempts, [3.0] * 5)
+        self.assertEqual(fake.routes(), ROBOT_ROUTES)
 
     def test_an_answer_has_the_rest_of_the_step_not_an_attempts_3_s(self):
         # The connected socket's timeout is what the step has left: a 3.5 s answer inside a 5 s step is a pass.
@@ -920,7 +996,7 @@ class Connect(Case):
         self.assertGreaterEqual(line["steps_ms"]["live_queue"], 3500)
 
     def test_a_connection_made_too_late_is_closed(self):
-        # Connected only after the step's half second: closed, never written to, and the step times out.
+        # Connected only after the dial's half second: closed, never written to, and the step times out.
         made = []
 
         def late(address, timeout, real):
@@ -930,9 +1006,8 @@ class Connect(Case):
             return sock
 
         with fakes.Fake(iap=False) as fake:
-            with dialling(late):
-                line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="0.5"),
-                                              use_iap=False)
+            with dial_budget(0.5), dialling(late):
+                line, code = self.run_journey("ops-desk", self.env(fake), use_iap=False)
         self.assert_failed(line, code, step="login", code="timeout", status_class="none")
         self.assertEqual(len(made), 1)
         self.assertEqual(made[0].fileno(), -1, "closed, not left open")
@@ -955,7 +1030,7 @@ class Connect(Case):
 
     def test_one_attempt_shares_its_time_across_the_addresses(self):
         # Two addresses: the first refuses after 1 s, the second is never answered. The second has the
-        # attempt's 2 s left, not 3 s of its own, and the step's 3.6 s is never overrun.
+        # attempt's 2 s left, not 3 s of its own, and the dial's 3.6 s is never overrun.
         opened = []
 
         def opening(family, address, timeout):
@@ -970,10 +1045,10 @@ class Connect(Case):
         client.resolve = lambda host, port: [(socket.AF_INET, ("127.0.0.1", 1)), (socket.AF_INET, ("127.0.0.1", 2))]
         client._open = opening
         try:
-            with fakes.Fake(iap=False) as fake:
+            with fakes.Fake(iap=False) as fake, dial_budget(3.6):
                 started = time.monotonic()
-                line, code = self.run_journey("ops-desk", self.env(
-                    fake, SYNTHETICS_STEP_TIMEOUT_S="3.6", SYNTHETICS_EGRESS_WAIT_S="0"), use_iap=False)
+                line, code = self.run_journey("ops-desk", self.env(fake, SYNTHETICS_EGRESS_WAIT_S="0"),
+                                              use_iap=False)
                 took = time.monotonic() - started
         finally:
             client.resolve, client._open = real_resolve, real_open
@@ -986,14 +1061,16 @@ class Connect(Case):
         self.assertEqual(fake.requests, [])
 
     def test_a_code_is_never_sent_after_auth_would_refuse_it(self):
-        # A 60 s step, but the code has 1 s of accepted life left: its connection, never answered, fails
-        # `timeout` inside that second, and the code is never sent (a stale one costs a lockout strike).
-        for job, nth, extra in [("ops-desk", 2, {}), ("crm", 3, {"SYNTHETICS_CRM_ENABLED": "1"})]:
+        # A 60 s step and a 30 s dial, but the code has 1 s of accepted life left. The login's answer closes
+        # its connection, so the code's request dials again; never answered, that dial fails `timeout` inside
+        # the second, and the code is never sent (a stale one costs a lockout strike).
+        for job, login, extra in [("ops-desk", "login", {}), ("crm", "crm_login", {"SYNTHETICS_CRM_ENABLED": "1"})]:
             calls = []
+            nth = 2  # local mode: the session's first dial (J2's login, J3's shell), then mfa_verify's
 
             def attempt(address, timeout, real):
                 calls.append(timeout)
-                if len(calls) == nth:  # local mode: J2's login then mfa_verify; J3's shell, login, mfa_verify
+                if len(calls) == nth:
                     time.sleep(timeout)
                     raise TimeoutError
                 return real(address, timeout)
@@ -1001,7 +1078,8 @@ class Connect(Case):
             real_accepted_for = journeys.totp.accepted_for
             journeys.totp.accepted_for = lambda _now: 1.0
             try:
-                with self.subTest(job=job), fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
+                with self.subTest(job=job), fakes.Fake(iap=False, fail={login: "close"},
+                                                       clock=lambda: FIXED_NOW) as fake:
                     started = time.monotonic()
                     with dialling(attempt):
                         line, code = self.run_journey(job, self.env(fake, SYNTHETICS_STEP_TIMEOUT_S="60", **extra),
@@ -1029,7 +1107,7 @@ class EntryPoint(Case):
     def test_pass(self):
         with fakes.Fake() as fake:
             line, code = self.spawn(fake, "staff-sign-in")
-            self.assert_silent(fake, 4)
+            self.assert_silent(fake, 4, carried=3)
         self.assertEqual((line["outcome"], code), ("pass", 0))
         self.assertEqual(list(line["steps_ms"]), J1_STEPS)
         self.assert_no_received_code_printed(fake, line)
@@ -1199,7 +1277,7 @@ class MemberSignIn(RobotCase):
     def test_pass(self):
         with fakes.Fake(iap=False, clock=lambda: FIXED_NOW) as fake:
             line, code = self.run_member(fake)
-            self.assert_silent(fake, 2)
+            self.assert_silent(fake, 2, carried=1)
         self.assertEqual((line["job"], line["outcome"], line["code"], line["step"], line["status_class"], code),
                          (self.JOB, "pass", "ok", "none", "2xx", 0))
         self.assertEqual(list(line["steps_ms"]), ROBOT_STEPS)

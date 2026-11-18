@@ -18,7 +18,8 @@
 #     - the sign-in robots: paused, `skipped`/`paused`, exit 0; no configuration, `error`/`config`, exit 1; the member
 #       robot with production's portal and the test passkey (tests/synthetics/fixtures), the warm-up given 2 s:
 #       `error`/`egress`, exit 1; the same with the warm-up off: its secret and passkey read (cryptography, after the
-#       strip), then no network for the portal's shell, `fail`/`connect`, exit 0;
+#       strip), then no network for the portal's shell, `fail`/`connect`, exit 0 (the run's deadline given 3 s, which
+#       bounds the dial's own 30 s);
 #     - no arguments: refused by argparse, exit 2, nothing on stdout.
 #     And nothing on stderr on any of them.
 #
@@ -116,7 +117,7 @@ expect 1 error config "$tag" journey broker-sign-in
 cp "$here/tests/synthetics/fixtures/member-credentials.json" "$work/member.json"
 chmod 0644 "$work/member.json"
 robot=(-v "$work/member.json:/secrets/credentials.json:ro" -e SYNTHETICS_PORTAL_ORIGIN=https://portal.trellistpa.com
-  -e SYNTHETICS_CREDENTIALS_FILE=/secrets/credentials.json -e SYNTHETICS_STEP_TIMEOUT_S=3)
+  -e SYNTHETICS_CREDENTIALS_FILE=/secrets/credentials.json -e SYNTHETICS_STEP_TIMEOUT_S=3 -e SYNTHETICS_DEADLINE_S=3)
 expect 1 error egress "${robot[@]}" -e SYNTHETICS_EGRESS_WAIT_S=2 "$tag" journey member-sign-in
 expect 0 fail connect "${robot[@]}" -e SYNTHETICS_EGRESS_WAIT_S=0 "$tag" journey member-sign-in
 grep -q sentinel-robot-password "$work/out" && fail "the robot's password reached stdout"

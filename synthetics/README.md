@@ -45,24 +45,60 @@ and that is no verdict on the service. Nothing but the configuration is read bef
 A paused run writes its `skipped` line at once, before any warm-up (tpa-platform's runbook relies on it); J3
 switched off, a bad setting and `SYNTHETICS_EGRESS_WAIT_S=0` do no warm-up either, and none records an `egress`.
 
-**Every connection is dialled, and every request is written once.** The warm-up is not always enough. On beta
-(2026-10-12, the runner at `6d652f6`, `task_timeout` 300 s, `SYNTHETICS_EGRESS_WAIT_S=120`) `staff-sign-in` passed
-(`egress` 22133 ms, then every step fast), but `ops-desk`'s `egress` took 38070 ms, its `login` reached the load
-balancer in 264 ms, and its `mfa_verify` then timed out at 15016 ms on a connection the load balancer never saw. A
-fresh connection can still be dropped for a while after the warm-up (the diagnosis saw one take 35.7 s in one task
-and 7.2 s in another, quiet about 60 s after the task started), and the client opens a new connection for every
-request. So each request's TCP connection is tried with a fresh socket, at most 3 s an attempt and 0.5 s apart, until
-one connects or the step's time is spent, as tpa-platform's jobs do since its P121. An attempt resolves the name
-(getaddrinfo, which no timeout bounds) and tries its addresses in turn, all inside the attempt's 3 s; the connected
-socket's timeout is then what the step has left, for the answer. Then the request is written, once: http.client
-writes nothing before the connection is made, and nothing after that is tried again, so `login`, `mfa_verify` and
-`logout` are each sent at most once, whatever their answer. A step whose time runs out fails as before, `timeout`
-after attempts that timed out and `connect` after refusals; a name that never resolves now spends the step, then
-fails `connect`. TLS is not retried: its handshake runs once on the connected socket, so a certificate refusal is
-`tls` at once. `mfa_verify` never outlives its code: auth and the CRM accept a code for the rest of its step and one
-step more (at least 38 s, as it is minted with 8 s left), and that caps the request's budget, so a connection made
-too late fails `timeout` rather than sending a stale code that costs a lockout strike. It can bind only when
-`SYNTHETICS_STEP_TIMEOUT_S` is above 38.
+**One connection per session, dialled inside its own budget; every request written once.** The warm-up is not
+always enough. On beta (2026-10-12, the runner at `6d652f6`) `ops-desk`'s `login` reached the load balancer in 264 ms
+after a 38 s warm-up, and its `mfa_verify` then timed out at 15016 ms on a connection the load balancer never saw. In
+production (2026-11-13 to 11-18) about one new connection in seven through Cloud NAT needed a second attempt (a
+step of about 3.5 s is one failed attempt, 7 s two), worst on a run's first connections (`portal_shell` 22%,
+`portal_release` 19%, `portal_bundle` 18%, `login` 16%, down to `logout` 7%), and a step failed `timeout` only when
+about four attempts in a row failed inside its 15 s: 16 times in four days, and twice in a row on two runs, which
+paged "Members cannot sign in" (#161, 11-16 11:22 and 11:27Z; #176, 11-18 19:17Z at `portal_shell` 15002 ms and
+19:22Z at `logout` 10004 ms) while the load balancer saw none of those requests, answered everything that arrived
+in under 0.25 s, and the broker robot passed throughout. Cloud NAT reported no drops. The runner opened a new
+connection for every request, about seven a run, so:
+
+- **One connection per session** (`client.Session`). The session dials its origin once, TCP then TLS, and every
+  later request of the run rides that connection (HTTP/1.1 keep-alive), as a browser's would: the sign-in robots'
+  seven requests, J2's five, J3's six, J1's seven on the ops host. J1's portal host is a session of its own, so a
+  connection of its own, even where the two hosts are one origin; the metadata call is its own request on its own
+  connection (it is not behind NAT). So a run makes one new connection through NAT where it made about seven.
+- **A connection is used again only while it is known to be usable, before the request's first byte**: the last
+  answer was read to its end (a body past the 512 KiB the runner reads is read on and thrown away, up to 4 MiB,
+  inside the step) and did not close it (`Connection: close`, HTTP/1.0, a body that ends at the close), and nothing
+  is waiting on it (an EOF, TLS's close_notify, a reset, bytes nobody asked for; a TLS 1.3 session ticket is not a
+  reason). Otherwise the next request dials a new connection first. Any failure closes the connection, so the
+  sign-out after a failed step starts on a new one.
+- **The dial has its own budget, 30 s** (`client.CONNECT_BUDGET_S`), apart from the step's: a fresh socket each
+  attempt, at most 3 s an attempt and 0.5 s apart: nine attempts, where a 15 s step held four and 1 s of a fifth. An attempt resolves the
+  name (getaddrinfo, which no timeout bounds) and tries its addresses in turn, all inside the attempt's 3 s. A
+  member on the internet never meets our NAT, so a connect that fails is ours, and a late or wrong answer is the
+  site's: once connected, the step timeout starts and bounds TLS's handshake, the write and the whole answer. The
+  run's deadline bounds a step's dial and answer together, so the worst case is unchanged (below). The sign-out's
+  dial, if it needs one, shares the sign-out's own budget (at most 10 s), never 30 s more. A dial whose budget runs
+  out fails as before, `timeout` after attempts that timed out and `connect` after refusals; a name that never
+  resolves spends the dial, then fails `connect`.
+- **Every request is written once.** http.client's `request()` is called once per request (`Session._exchange`,
+  no loop around it), http.client never sends a request again, and the session's connection cannot open a socket
+  of its own, so nothing is dialled in the middle of a request: whatever fails after a request's first byte (a
+  broken write, no answer, a dropped connection) fails the step, and `login`, `mfa_verify` and `logout` are each
+  sent at most once, whatever their answer. TLS is not retried: its handshake runs once on each connected socket,
+  so a certificate refusal is `tls` at once. A server that closes an idle connection at the moment a request is
+  written on it fails that step (`connect`); the robots' longest idle is the broker's TOTP wait (at most 30.2 s),
+  far inside the load balancer's keep-alive.
+- **`mfa_verify` never outlives its code**: auth and the CRM accept a code for the rest of its step and one step
+  more (at least 38 s, as it is minted with 8 s left), and that caps the request, its dial included, so a connection
+  made too late fails `timeout` rather than sending a stale code that costs a lockout strike. `mfa_verify` normally
+  rides the login's connection; the cap binds when it must dial again and the dial and the answer together would
+  pass the code's life.
+
+The worst case, as the robots' jobs run (`SYNTHETICS_EGRESS_WAIT_S` 120, `SYNTHETICS_DEADLINE_S` 80, the step's 15 s,
+`task_timeout` 240 s): the warm-up at most 120 s; then the deadline's 80 s, which holds every dial (at most 30 s
+each, never past the deadline), every answer and the broker's wait for a fresh step (at most 30.2 s); then the
+sign-out's own 10 s, its dial included: 210 s, and the 30 s left of the task's 240 for what no budget bounds (the
+task's start, a name lookup). The same as before the dial had a budget of its own. The broker still sends its
+password only with 50.2 s of the deadline left: after a dial of up to about 29.5 s and three fast portal reads, 80 s
+still holds it. Only a dial that connects in its last half second (after eight attempts in a row failed) leaves less,
+and the broker then fails `timeout` at `login` with nothing sent.
 
 | Job | Severity (design §5) | Steps, in order |
 |---|---|---|
@@ -130,9 +166,9 @@ they read no data.
   the one place the runner spells it; a `403` whose `error.code` is that word reads the same). The run is `skipped`
   / `disabled`, exit 0, and pages nothing. Any other `403` at sign-in (`audience_not_held`, `member_access_ended`)
   is `fail` / `denied`.
-- **Never retried.** One password and one second factor per run; every request is written once (the dialled
-  connection, above, is a TCP connect, never a request sent again); the sign-out is always tried once a session
-  cookie is in the jar, whatever ended the run; the job runs with `max_retries` 0.
+- **Never retried.** One password and one second factor per run; every request is written once (the dial, above,
+  is a TCP connect, never a request sent again, and a request rides one connection); the sign-out is always tried
+  once a session cookie is in the jar, whatever ended the run; the job runs with `max_retries` 0.
 
 ## The result line
 
@@ -368,10 +404,18 @@ deep, configuration (a credentials file that is a folder, a FIFO or a device; a 
 loopback), pausing, J3's flag, the warm-up (ready only after two fresh connections in a row to every host and port, a
 success then a failure starting over; its budget spent before anything is read or sent, and its bounds; `0` and a
 pause doing none; the run's deadline starting after it; a name that does not resolve tried again; not a byte sent),
-connections dialled again after timeouts and refusals with each request still sent once, no sign-in, code or sign-out
-sent twice when its answer hangs or its connection drops, each attempt cut to what the step has left and shared
-across the name's addresses, which are tried in turn, a 3.5 s answer inside a 5 s step, a connection made too late
-closed, `mfa_verify` never past its code's accepted life (J2 and J3), and a TLS failure never dialled again, J3's
+one connection per session (`test_client.py`, against a fake edge, a raw server and a TLS one: every request of a
+session on one connection, over TLS too; a new one after `Connection: close`, after a close the server never
+announced, after bytes nobody asked for, after an answer too long to drain, and after any failure; a long answer
+drained and its connection kept; the request on the wire as urllib wrote it but for `Connection: close`), the dial
+dialled again after timeouts and refusals for longer than the step and inside its own budget, then `timeout` or
+`connect` past it with nothing sent, the step still bounding the answer after a slow dial and on a reused
+connection, the run's deadline, the sign-out's budget and a code's life each bounding the dial, no request sent
+again once a byte of it was written (a reset after it, a reset in the middle of an 8 MiB write, a dropped request on
+a reused connection), no sign-in, code or sign-out sent twice when its answer hangs or its connection drops, each
+attempt shared across the name's addresses, which are tried in turn, a 3.5 s answer inside a 5 s step, a connection
+made too late closed, `mfa_verify` never past its code's accepted life (J2 and J3), and a TLS failure never dialled
+again, J3's
 business read (the id `me` names, sent as `X-Tenant-Id` only when it is a UUID) and a CRM login that answers the
 password alone; the sign-out sent after any exception once signed in, with its own budget, and never repeated; the
 exit status of a failed check (0), and of a broken configuration, a warm-up that ran out, a metadata server with no

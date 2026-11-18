@@ -20,13 +20,18 @@ memory and recording every request. It models what the runner relies on:
   `X-Tenant-Id`.
 - **Connections**: each one the server accepts is recorded as `request`, or as
   `silent` when it closes before its first byte (the egress warm-up's), which
-  never reaches a route.
+  never reaches a route. The server speaks HTTP/1.1 and keeps a connection open
+  for the next request (as the load balancer does), so a run's requests share
+  one; `closed` counts the connections it has closed (`wait_closed`).
 
 Every secret here is a sentinel the tests then look for in the runner's output.
 `fail` maps a route name to a behaviour: an int status; "hang" (no answer for
 `hang_s`); "slow_body" (headers, then nothing); "trickle" (headers, then one
 byte every 0.3 s for up to a minute); "deep_json" (the route's normal answer,
-cookies included, with a body nested 100,000 deep); "drop" (close the connection);
+cookies included, with a body nested 100,000 deep); "drop" (close the connection,
+the request read and never answered); "close" (the route's normal answer with
+`Connection: close`, then the connection closed); "hangup" (the route's normal
+answer, then the connection closed without a word, as an idle server may);
 "redirect_google"; "redirect_other"; "iap_refuse"; "not_json"; "no_base_href";
 "enrol"; "no_cookies"; "password_only" (the CRM's login hands back a token with
 no second factor); "no_memberships" and "bad_tenant" (the CRM's me names no
@@ -263,6 +268,7 @@ class Fake:
         self.hang_s = hang_s
         self.requests: list[dict] = []
         self.connections: list[str] = []
+        self.closed = 0
         self.current = ""
         self.codes_received: list[str] = []
         self.assertions_received: list[dict] = []
@@ -301,6 +307,14 @@ class Fake:
         # A handler still sleeping ("hang") when its client has gone fails to write; socketserver
         # would print that to whatever sys.stderr is by then, which may be a later test's capture.
         self.server.handle_error = lambda request, client_address: None
+        shutdown_request = self.server.shutdown_request
+
+        def counted_shutdown(request) -> None:
+            shutdown_request(request)
+            with fake.lock:
+                fake.closed += 1
+
+        self.server.shutdown_request = counted_shutdown
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
 
@@ -329,6 +343,14 @@ class Fake:
     def routes(self) -> list[str]:
         return [r["route"] for r in self.requests]
 
+    def wait_closed(self, count: int, within: float = 2.0) -> None:
+        """Until the server has closed `count` connections (it closes each after its handler ends)."""
+        settle = time.monotonic() + within
+        while self.closed < count and time.monotonic() < settle:
+            time.sleep(0.01)
+        if self.closed < count:
+            raise AssertionError(f"the server closed {self.closed} connections, not {count}")
+
     # -- answering --
 
     def reply(self, h: BaseHTTPRequestHandler, status: int, body: bytes = b"", *,
@@ -339,6 +361,11 @@ class Fake:
         h.send_header("Content-Length", str(len(body)))
         for name, value in (headers or {}).items():
             h.send_header(name, value)
+        ending = self.fail.get(self.current)
+        if ending == "close":
+            h.send_header("Connection", "close")  # http.server then closes it after this answer
+        elif ending == "hangup":
+            h.close_connection = True
         for cookie in cookies or []:
             h.send_header("Set-Cookie", cookie)
         h.end_headers()
