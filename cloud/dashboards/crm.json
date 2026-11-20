@@ -6543,6 +6543,104 @@
       "id": 49
     },
     {
+      "type": "timeseries",
+      "title": "Test admin's exemption used, by door",
+      "description": "One per use of the owner's named second-factor exemption on the CRM's engine: the test admin in, or a door or act passed, with the password alone, by the kind of door (`gate`: a sign-in, an invitation accepted, a factor turned off or removed, a step-up act, a write to the TPA) (`crm_second_factor_exempt_used`; `crm-second-factor-exemption-used`, can wait). Never who.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 86
+      },
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "cloud-crm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-crm"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_CRM_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
+              "logging.googleapis.com/user/crm_second_factor_exempt_used",
+              "AND",
+              "resource.type",
+              "=",
+              "cloud_run_revision"
+            ],
+            "groupBys": [
+              "metric.label.gate"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "{{metric.label.gate}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "None in this range",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 50
+    },
+    {
       "type": "row",
       "title": "Database and jobs",
       "collapsed": false,
@@ -6551,9 +6649,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 86
+        "y": 93
       },
-      "id": 50
+      "id": 51
     },
     {
       "type": "stat",
@@ -6563,7 +6661,7 @@
         "h": 7,
         "w": 6,
         "x": 0,
-        "y": 87
+        "y": 94
       },
       "datasource": {
         "type": "stackdriver",
@@ -6769,7 +6867,7 @@
         "wideLayout": true,
         "showPercentChange": false
       },
-      "id": 51
+      "id": 52
     },
     {
       "type": "timeseries",
@@ -6779,7 +6877,7 @@
         "h": 7,
         "w": 18,
         "x": 6,
-        "y": 87
+        "y": 94
       },
       "datasource": {
         "type": "stackdriver",
@@ -6872,7 +6970,7 @@
           "sort": "desc"
         }
       },
-      "id": 52
+      "id": 53
     }
   ]
 }

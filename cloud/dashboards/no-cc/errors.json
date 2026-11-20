@@ -1983,7 +1983,7 @@
     {
       "type": "timeseries",
       "title": "App project",
-      "description": "Changes from the project's Admin Activity audit log, by method: an IAM policy or custom role (`iam-changed`), an audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created (`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public (`service-made-public`), IAP's settings (`iap-changed`), a security change by a service account that is not Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). Who and on what stay in the entry.",
+      "description": "Changes from the project's Admin Activity audit log, by method: an IAM policy or custom role (`iam-changed`), an audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created (`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public (`service-made-public`), IAP's settings (`iap-changed`), who may pass a backend's IAP (`iam-changed-backends`; on the app project's chart alone, where the load balancer's backends are; the CRM's three backends left out while its host is open), a security change by a service account that is not Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). Who and on what stay in the entry.",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -2207,6 +2207,31 @@
             "filters": [
               "metric.type",
               "=",
+              "logging.googleapis.com/user/backend_iam_changes"
+            ],
+            "groupBys": [
+              "metric.label.operation"
+            ],
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "alignmentPeriod": "grafana-auto",
+            "view": "FULL",
+            "preprocessor": "none"
+          },
+          "aliasBy": "who may pass IAP: {{metric.label.operation}}"
+        },
+        {
+          "refId": "J",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "cloud-app"
+          },
+          "queryType": "timeSeriesList",
+          "timeSeriesList": {
+            "projectName": "__TPA_APP_PROJECT_ID__",
+            "filters": [
+              "metric.type",
+              "=",
               "logging.googleapis.com/user/security_changes_by_robot"
             ],
             "groupBys": [
@@ -2221,7 +2246,7 @@
           "aliasBy": "by a service account: {{metric.label.operation}}"
         },
         {
-          "refId": "J",
+          "refId": "K",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -2246,7 +2271,7 @@
           "aliasBy": "SQL export by hand: {{metric.label.operation}}"
         },
         {
-          "refId": "K",
+          "refId": "L",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -2271,7 +2296,7 @@
           "aliasBy": "alerts: {{metric.label.operation}}"
         },
         {
-          "refId": "L",
+          "refId": "M",
           "datasource": {
             "type": "stackdriver",
             "uid": "cloud-app"
@@ -2352,7 +2377,7 @@
     {
       "type": "timeseries",
       "title": "PHI project",
-      "description": "Changes from the project's Admin Activity audit log, by method: an IAM policy or custom role (`iam-changed`), an audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created (`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public (`service-made-public`), IAP's settings (`iap-changed`), a security change by a service account that is not Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). Who and on what stay in the entry.",
+      "description": "Changes from the project's Admin Activity audit log, by method: an IAM policy or custom role (`iam-changed`), an audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created (`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public (`service-made-public`), IAP's settings (`iap-changed`), who may pass a backend's IAP (`iam-changed-backends`; on the app project's chart alone, where the load balancer's backends are; the CRM's three backends left out while its host is open), a security change by a service account that is not Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). Who and on what stay in the entry.",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -2721,7 +2746,7 @@
     {
       "type": "timeseries",
       "title": "CRM",
-      "description": "Changes from the project's Admin Activity audit log, by method: an IAM policy or custom role (`iam-changed`), an audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created (`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public (`service-made-public`), IAP's settings (`iap-changed`), a security change by a service account that is not Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). Who and on what stay in the entry.",
+      "description": "Changes from the project's Admin Activity audit log, by method: an IAM policy or custom role (`iam-changed`), an audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created (`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public (`service-made-public`), IAP's settings (`iap-changed`), who may pass a backend's IAP (`iam-changed-backends`; on the app project's chart alone, where the load balancer's backends are; the CRM's three backends left out while its host is open), a security change by a service account that is not Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). Who and on what stay in the entry.",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -3053,7 +3078,7 @@
     {
       "type": "timeseries",
       "title": "App project",
-      "description": "Cloud Armor in this project: requests a preconfigured attack rule refused (`armor_waf_refused`; `armor-waf-refusals`), requests a rule in preview would have refused (`armor_waf_previewed`, the watch-only period's hits), and Adaptive Protection's alerts of a layer-7 attack building (`armor_adaptive_alerts`; `armor-adaptive-protection`). Counted, not by the rule's set: the catalogue's extractor for it is not anchored. Nothing of a request is read.",
+      "description": "Cloud Armor in this project: requests a preconfigured attack rule refused (`armor_waf_refused`; no alert of its own since D-427, a burst of refusals opens `armor-deny-spike`), requests a rule in preview would have refused (`armor_waf_previewed`, the watch-only period's hits), and Adaptive Protection's alerts of a layer-7 attack building (`armor_adaptive_alerts`; `armor-adaptive-protection`). Counted, not by the rule's set: the catalogue's extractor for it is not anchored. Nothing of a request is read.",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -3191,7 +3216,7 @@
     {
       "type": "timeseries",
       "title": "PHI project",
-      "description": "Cloud Armor in this project: requests a preconfigured attack rule refused (`armor_waf_refused`; `armor-waf-refusals`), requests a rule in preview would have refused (`armor_waf_previewed`, the watch-only period's hits), and Adaptive Protection's alerts of a layer-7 attack building (`armor_adaptive_alerts`; `armor-adaptive-protection`). Counted, not by the rule's set: the catalogue's extractor for it is not anchored. Nothing of a request is read.",
+      "description": "Cloud Armor in this project: requests a preconfigured attack rule refused (`armor_waf_refused`; no alert of its own since D-427, a burst of refusals opens `armor-deny-spike`), requests a rule in preview would have refused (`armor_waf_previewed`, the watch-only period's hits), and Adaptive Protection's alerts of a layer-7 attack building (`armor_adaptive_alerts`; `armor-adaptive-protection`). Counted, not by the rule's set: the catalogue's extractor for it is not anchored. Nothing of a request is read.",
       "gridPos": {
         "h": 7,
         "w": 8,
@@ -3329,7 +3354,7 @@
     {
       "type": "timeseries",
       "title": "CRM",
-      "description": "Cloud Armor in this project: requests a preconfigured attack rule refused (`armor_waf_refused`; `armor-waf-refusals`), requests a rule in preview would have refused (`armor_waf_previewed`, the watch-only period's hits), and Adaptive Protection's alerts of a layer-7 attack building (`armor_adaptive_alerts`; `armor-adaptive-protection`). Counted, not by the rule's set: the catalogue's extractor for it is not anchored. Nothing of a request is read.",
+      "description": "Cloud Armor in this project: requests a preconfigured attack rule refused (`armor_waf_refused`; no alert of its own since D-427, a burst of refusals opens `armor-deny-spike`), requests a rule in preview would have refused (`armor_waf_previewed`, the watch-only period's hits), and Adaptive Protection's alerts of a layer-7 attack building (`armor_adaptive_alerts`; `armor-adaptive-protection`). Counted, not by the rule's set: the catalogue's extractor for it is not anchored. Nothing of a request is read.",
       "gridPos": {
         "h": 7,
         "w": 8,

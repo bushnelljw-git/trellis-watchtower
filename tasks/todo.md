@@ -512,6 +512,22 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   `NOT_RUN` reason.
   - [ ] Follow-up: valteva-web (the public marketing site, running in the app project since 2026-11-14, min 0, max 2)
     gets a tile and a page if the owner wants it watched here; no TPA policy reads it today.
+- [x] (2026-11-20) The catalogue re-vendored at tpa-platform origin/master dd0690bb (production window 44's merge of
+  e8497c0d; blob 6155f507, the same as e8497c0d's): D-445's CRM backends left out of `iap_setting_changes`, D-446's
+  third `iap-changed` condition (gce_backend_service) and fourth `logging-changed` one (logging_exclusion), D-447's new
+  `backend_iam_changes` and `iam-changed-backends`, D-427's `armor-waf-refusals` gone (the Armor words now name
+  `armor-deny-spike`), and the CRM's `crm_second_factor_exempt_used`. Charted: `backend_iam_changes` with the security
+  changes ("who may pass IAP") on the app project's chart alone (`APP_ONLY_SECURITY_CHANGES`: the load balancer's
+  backends are there; window 44 made the counter in the app project alone, and the PHI project's query answered 404
+  read only, so on the other charts it would be an error); the exemption on the CRM page's sign-in row, by door, the
+  whole width under the three (at four to a line every title but the first was cut at 1280 px).
+  - [x] Read only, 22:50Z: `backend_iam_changes` and `crm_second_factor_exempt_used` answer 200 to timeSeries.list in
+    the app project (where the CRM is); PHI's `backend_iam_changes` 404 (not charted).
+  - [x] Pixels: a throwaway Grafana 12.4.14 (the cloud image's base, by digest; testdata, removed after) rendered the
+    CRM sign-in row and the Errors page's security and Armor rows (with and without the call centre) at 1470 and
+    1280 px, calm, warning, busy and no data; no error badge, titles whole.
+  - [ ] The security row's legends cut long method names at 1280 px (`who may pass IAP: goog…`, as `IAP: goog…`
+    and its other neighbours already were; the hover shows them whole): a row-wide legend change, not this one.
 
 ## Review
 

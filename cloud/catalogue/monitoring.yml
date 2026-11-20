@@ -362,6 +362,13 @@ shared:
         updates from 2026-10-29 to 2026-11-13, every match of this counter once
         D-340 made it count), which would page p1 on each deploy. The exclusion
         assumes portal_public_enabled; remove it where that switch is false.
+        The CRM's three backends (bes-crm-web, bes-crm-api and its sign-in
+        callback's) are left out the same way once the CRM host is open (crm_public_enabled,
+        window B2; the B2 review, 2026-11-20): every later apply that touches
+        one writes `iap { enabled = false }` again. Applied after B2, so the
+        opening itself pages once; remove them if the host goes back behind IAP.
+        IAP's own settings changing (UpdateIapSettings) still counts for every
+        backend.
       filter: |
         log_id("cloudaudit.googleapis.com/activity")
         AND ((protoPayload.serviceName="iap.googleapis.com"
@@ -369,7 +376,34 @@ shared:
           OR (protoPayload.serviceName="compute.googleapis.com"
             AND protoPayload.methodName=~"^(v1|beta)[.]compute[.]backendServices[.](patch|update)$"
             AND protoPayload.request.iap.enabled=false
-            AND NOT protoPayload.resourceName=~"/backendServices/bes-web$"))
+            AND NOT protoPayload.resourceName=~"/backendServices/(bes-web|bes-crm-(web|api|sso-callback))$"))
+        AND NOT protoPayload.status.code>0
+      labels:
+        operation: 'EXTRACT(protoPayload.methodName)'
+
+    # D-447 (D-446's owed policy): iam_policy_changes counts a backend's IAM
+    # too, but its series land on gce_backend_service, which iam-changed (six
+    # conditions, Google's most) cannot also read. This counter is that half
+    # alone, for iam-changed-backends, with the CRM's backends left out as
+    # iap_setting_changes leaves them out.
+    backend_iam_changes:
+      description: >-
+        An IAM policy set on a backend service, from the Admin Activity audit
+        log: who may pass a backend's IAP (IAP's SetIamPolicy on
+        iap_web/compute/services/<backend>) or the backend's own compute IAM.
+        By method alone; the entry says who, on which backend and which
+        binding. The CRM's three backends (bes-crm-web, bes-crm-api and its
+        sign-in callback's) are left out once the CRM host is open
+        (crm_public_enabled, window B2, which took their IAP accessors off at
+        20:23:33Z on 2026-11-20): no one passes IAP there, so a binding on
+        them opens nothing. Remove them if the host goes back behind IAP,
+        with iap_setting_changes' exclusion. iam_policy_changes still counts
+        every one.
+      filter: |
+        log_id("cloudaudit.googleapis.com/activity")
+        AND resource.type="gce_backend_service"
+        AND protoPayload.methodName=~"(?i)(^|[.])setiampolicy$"
+        AND NOT protoPayload.resourceName=~"/(iap_web/compute/services|backendServices)/bes-crm-(web|api|sso-callback)$"
         AND NOT protoPayload.status.code>0
       labels:
         operation: 'EXTRACT(protoPayload.methodName)'
@@ -480,6 +514,14 @@ shared:
     # is what a preview rule would have done. Never the path, the query, the
     # address or the host: the load balancer's url map is the resource's label
     # (um-app holds both web hosts, um-crm the CRM's).
+    #
+    # D-427 (the owner, 2026-11-17, of "Website firewall blocked attack-like
+    # requests: lfi · check it's not real people": "We do not need to be
+    # alerted on these. remove the alert to slack and pager duty"): no policy
+    # reads either counter. They feed the monitoring website's Errors page
+    # (trellis-watchtower charts both) alone; a burst of refusals still opens
+    # `armor-deny-spike`, which reads Cloud Armor's own count. Their
+    # descriptions stay as written, so no log metric moves in a plan.
     armor_waf_refused:
       description: >-
         One per request a preconfigured attack rule refused (enforced, DENY),
@@ -863,37 +905,10 @@ shared:
             alignment_period: "600s"
             group_by_fields: ["resource.label.policy_name"]
 
-    # R572: the attack rules' refusals by set, on the load balancer they
-    # refused on. Silent until a set enforces (armor_web_waf_mode and
-    # armor_crm_waf_mode at "enforce"); then twenty from one set in ten minutes
-    # is an attack worth reading or a rule refusing real people.
-    armor-waf-refusals:
-      display_name: "Cloud Armor's attack rules are refusing requests"
-      tier: p2
-      subject: "Website firewall blocked attack-like requests: ${metric_or_resource.label.class}"
-      action: "check it's not real people"
-      documentation: >-
-        More than twenty requests in ten minutes were refused by one set of
-        Cloud Armor's preconfigured attack rules (the incident's `class`: sqli,
-        xss, lfi, rfi, rce, scannerdetection, protocolattack or
-        sessionfixation) on one load balancer (um-app holds the portal and ops
-        hosts, um-crm the CRM). Either an attack or a scan (read the refused
-        requests in the load balancer's request log), or a rule refusing real
-        people: a set that refuses a real page goes back to preview, its own
-        apply (infra/README.md, "armor-web's attack rules").
-      # The counter's own filter reads Logging's resource, `http_load_balancer`;
-      # Monitoring has no such resource and files the counter's series under
-      # `l7_lb_rule` (which carries `url_map_name`). A policy that names
-      # Logging's type is refused: "The resource name does not represent a
-      # known descriptor."
-      conditions:
-        - name: "more than twenty refused by one set in ten minutes"
-          threshold:
-            filter: >-
-              metric.type = "logging.googleapis.com/user/armor_waf_refused" AND resource.type = "l7_lb_rule"
-            threshold_value: 20
-            alignment_period: "600s"
-            group_by_fields: ["metric.label.class", "resource.label.url_map_name"]
+    # R572's `armor-waf-refusals` (twenty refused by one attack-rule set in ten
+    # minutes on one load balancer) is removed by D-427, the owner's word: the
+    # attack rules' refusals alert nobody. `armor_waf_refused` and
+    # `armor_waf_previewed` stay for the dashboards (above).
 
     # Cloud NAT maps app-run-egress (auth's messenger), phi-run-egress
     # (connectors) and, with R189, cc-voice-run-egress (svc-voice): SendGrid,
@@ -1205,6 +1220,15 @@ shared:
               metric.type = "logging.googleapis.com/user/logging_config_changes" AND resource.type = "logging_sink"
             alignment_period: "1800s"
             group_by_fields: ["metric.label.operation"]
+        # D-446, the same class: an exclusion's create, update or delete is logged on the exclusion,
+        # logging_exclusion (the app project's counter held two such series, read 2026-11-20), which no
+        # condition above watched, so an exclusion that drops entries before they are kept paged nobody.
+        - name: "logging changed (on an exclusion)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/logging_config_changes" AND resource.type = "logging_exclusion"
+            alignment_period: "1800s"
+            group_by_fields: ["metric.label.operation"]
 
     network-control-changed:
       display_name: "a firewall or Cloud Armor rule changed"
@@ -1275,6 +1299,49 @@ shared:
           threshold:
             filter: >-
               metric.type = "logging.googleapis.com/user/iap_setting_changes" AND resource.type = "audited_resource"
+            alignment_period: "1800s"
+            group_by_fields: ["metric.label.operation"]
+        # D-446 (window 41, 2026-11-20): a backend service updated with IAP off (backendServices.patch or
+        # update, the counter's compute half) is logged on the backend, gce_backend_service, and no condition
+        # above watched it: B2 took IAP off bes-crm-web, -api and -sso-callback at 20:23:38Z, the counter wrote
+        # one point on each of their three gce_backend_service series, and this p1 never opened (the policy
+        # enabled, two channels; its two conditions read only global and audited_resource, where no point
+        # fell). Every match since D-340 made the counter count (36 on bes-web, 2026-10-29 to 2026-11-13) had
+        # gone the same way. The CRM's backends stay out of the counter itself (D-445).
+        - name: "IAP turned off (on a backend service)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/iap_setting_changes" AND resource.type = "gce_backend_service"
+            alignment_period: "1800s"
+            group_by_fields: ["metric.label.operation"]
+
+    # D-447 (D-446's owed policy, window 41, 2026-11-20): B2 took the IAP
+    # accessors off bes-crm-web, -api and -sso-callback at 20:23:33Z; the IAM
+    # counter wrote one point on each of their three gce_backend_service
+    # series, and iam-changed, which never reads that type and already holds
+    # Google's six conditions, could not open. Its own policy, at iap-changed's
+    # tier: who may pass IAP is the same front door as IAP itself.
+    iam-changed-backends:
+      display_name: "URGENT who may pass a backend's IAP gate changed"
+      tier: p1
+      urgent: true
+      subject: "Who may pass the Google sign-in gate (IAP) in front of a portal changed: ${metric_or_resource.label.operation}"
+      documentation: >-
+        An IAM policy was set on a backend service (the Admin Activity log;
+        the label is the method): most often IAP's accessor list, the people
+        and groups the Google sign-in gate lets through to the portal, ops,
+        watchtower or another backend behind it. A member added there passes
+        IAP to that backend, so it pages; an apply changes it only when the
+        edge's bindings do (infra/bindings.json). The CRM's three backends
+        are left out while the CRM host is open. Read the entry for who,
+        which backend and which binding; a binding nobody applied is removed
+        at once, the next apply puts Terraform's back, and the backend's
+        request lines say who passed meanwhile.
+      conditions:
+        - name: "who may pass IAP changed (on a backend service)"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/backend_iam_changes" AND resource.type = "gce_backend_service"
             alignment_period: "1800s"
             group_by_fields: ["metric.label.operation"]
 
@@ -1397,7 +1464,8 @@ shared:
         it did since.
       # Six conditions, Google's most. The counter is also written on cloud_run_job (a job's IAM) and
       # gce_backend_service (a backend's Armor policy), which no condition here names (2026-11-13). A robot's change
-      # there still opens iam-changed or network-control-changed, which name both, at their tier (p2, or p1 for IAM in
+      # there still opens iam-changed or network-control-changed, which name cloud_run_job and gce_backend_service respectively (a backend's IAM: since
+      # D-447 iam-changed-backends, p1, the CRM's three left out), at their tier (p2, or p1 for IAM in
       # the PHI project), never this page. Naming them here needs a second policy or one PromQL condition over every type.
       conditions:
         - name: "a robot's change (on global)"
@@ -4112,7 +4180,7 @@ projects:
         description: >-
           A member read records served to staff (`operation served` at a staff
           door, `door_internal`, `door_agent`, `door_compliance` or
-          `door_finance`, for one of the thirteen operations whose records entry
+          `door_finance`, for one of the fourteen operations whose records entry
           decides a read or a list of a member), by operation: the hosted
           security page's reads by hour, where night activity shows. Never
           the member, the person or the tenant; an after-hours flag on a
@@ -4122,9 +4190,9 @@ projects:
           AND jsonPayload.service="records"
           AND jsonPayload.message="operation served"
           AND jsonPayload.door=~"^door_(internal|agent|compliance|finance)$"
-          AND jsonPayload.op=~"^(eligibility[.]get_member|eligibility[.]list_members|eligibility[.]search_members|eligibility[.]member_coverage|eligibility[.]member_id_card|eligibility[.]member_card_view|claims[.]accumulators|claims[.]list_other_coverages|contactcenter[.]member|contactcenter[.]member_coverage|contactcenter[.]member_balances|contactcenter[.]member_card_view|implementations[.]enrollment_provenance)$"
+          AND jsonPayload.op=~"^(eligibility[.]get_member|eligibility[.]list_members|eligibility[.]search_members|eligibility[.]member_coverage|eligibility[.]member_id_card|eligibility[.]member_card_view|claims[.]accumulators|claims[.]list_other_coverages|contactcenter[.]member|contactcenter[.]member_coverage|contactcenter[.]member_balances|contactcenter[.]member_card_view|contactcenter[.]family_card_view|implementations[.]enrollment_provenance)$"
         labels:
-          operation: 'REGEXP_EXTRACT(jsonPayload.op, "^(eligibility\\.get_member|eligibility\\.list_members|eligibility\\.search_members|eligibility\\.member_coverage|eligibility\\.member_id_card|eligibility\\.member_card_view|claims\\.accumulators|claims\\.list_other_coverages|contactcenter\\.member|contactcenter\\.member_coverage|contactcenter\\.member_balances|contactcenter\\.member_card_view|implementations\\.enrollment_provenance)$")'
+          operation: 'REGEXP_EXTRACT(jsonPayload.op, "^(eligibility\\.get_member|eligibility\\.list_members|eligibility\\.search_members|eligibility\\.member_coverage|eligibility\\.member_id_card|eligibility\\.member_card_view|claims\\.accumulators|claims\\.list_other_coverages|contactcenter\\.member|contactcenter\\.member_coverage|contactcenter\\.member_balances|contactcenter\\.member_card_view|contactcenter\\.family_card_view|implementations\\.enrollment_provenance)$")'
 
       connectors_passes:
         description: >-
@@ -5124,6 +5192,38 @@ projects:
           AND jsonPayload.logger="network.auth"
           AND jsonPayload.message="failed login"
 
+      # D-441 (the CRM-public review's H1): the owner's named second-factor
+      # exemption, used. While NETWORK_REQUIRE_SECOND_FACTOR is on, the one
+      # exempted login (the test admin, an owner of the estate business) still
+      # signs in with its password alone and passes the step-up and TPA-writer
+      # doors without a factor, and once the host leaves IAP that is from
+      # anywhere. The engine writes one line per use (its
+      # app/services/step_up.py, `_exempt_use`): logger `app.services.step_up`,
+      # WARNING, beside the audit chain's `account.second_factor_exempt_used`
+      # row, with `door` (the door or act, a constant of the code or a route's
+      # template) and `user_id`. Only the door's kind is read, a closed
+      # alternation: a password-only sign-in, an invitation accepted, a factor
+      # turned off or removed, a step-up act, a write to the TPA. The id is
+      # never read.
+      crm_second_factor_exempt_used:
+        description: >-
+          One per use of the owner's named second-factor exemption on the
+          CRM's serving engine: a session opened, or a door or act passed,
+          with the password alone while the second factor is required. Which
+          kind of door (`gate`), a closed alternation; never who.
+        filter: |
+          resource.type="cloud_run_revision"
+          AND resource.labels.service_name="engine"
+          AND jsonPayload.logger="app.services.step_up"
+          AND jsonPayload.message="the owner's second-factor exemption was used"
+        # D-441 round 3 (L-b): `estate.password_policy` is a belt that should
+        # never fire: since the CRM's c4eef7b1 the exempt login is refused at
+        # the policy editor with its password alone (step_up's
+        # EXEMPTION_NEVER_COVERS), so a count under it means that refusal
+        # regressed.
+        labels:
+          gate: 'REGEXP_EXTRACT(jsonPayload.door, "^(POST /auth/login|POST /auth/accept-invite|POST /auth/mfa/disable|POST /auth/mfa/passkeys/\\{passkey_id\\}/remove|account\\.(?:tpa_agency|mfa_off|passkey_remove|factor_change|recovery_codes)|contract\\.withdraw|estate\\.password_policy|tpa_writer|(?:POST|PUT|PATCH|DELETE) /api/v1/)")'
+
     error_metrics:
       errors:
         group_by: [class]
@@ -5325,6 +5425,37 @@ projects:
                 metric.type = "logging.googleapis.com/user/crm_login_failures" AND resource.type = "cloud_run_revision"
               threshold_value: 30
               alignment_period: "600s"
+
+      # D-441 (the CRM-public review's H1): every use of the test admin's
+      # second-factor exemption, told. p2, not p1: the owner signs in as it on
+      # purpose, so a page at night for each of his own sign-ins would teach
+      # the page to be ignored; #202's p1 kinds are compromise in progress, and
+      # its spray is crm-password-spray's (p1). A security signal, so it stays
+      # open until a person says the use was theirs (OPENED alone).
+      crm-second-factor-exemption-used:
+        display_name: "The CRM test admin got in without a second factor"
+        subject: "The CRM test admin got in with a password alone (its exemption): ${metric_or_resource.label.gate}"
+        tier: p2
+        documentation: >-
+          The CRM let its one exempted login, the test admin (an owner of the
+          main CRM business), in without a second factor: a sign-in with the
+          password alone, an invitation accepted, a factor turned off or
+          removed, a step-up act or a write to the TPA, as the door in the
+          title says ("POST /auth/login" is a sign-in; "POST /api/v1/" a write
+          to the TPA). Once the CRM host is off IAP this works from anywhere
+          on the internet. If the owner or a tester did it, note who and close
+          this. If nobody did, treat the password as stolen: change the test
+          admin's password, end its sessions, and read the engine's "the
+          owner's second-factor exemption was used" lines and the audit
+          chain's `account.second_factor_exempt_used` rows for the door and
+          the time. The lasting fix is a passkey on the test admin, or the
+          exemption list emptied.
+        conditions:
+          - name: "the exemption used"
+            threshold:
+              filter: >-
+                metric.type = "logging.googleapis.com/user/crm_second_factor_exempt_used" AND resource.type = "cloud_run_revision"
+              group_by_fields: ["metric.label.gate"]
 
       # crm-db exists whatever beta's crm_enabled says (main.tf, sql_crm), so
       # its signals are read whether or not the copy runs. Beta drops the
@@ -7668,6 +7799,23 @@ sso_crm:
         AND protoPayload.resourceName=~"/secrets/crm-sso-client-key(/|$)"
         AND NOT protoPayload.authenticationInfo.principalEmail=~"^sa-crm-beta-engine@"
 
+    # SSO-OR-11 (CONTRACT r211; D-434): auth's day of CRM-only logins, the logins
+    # a CRM invitation's create makes (auth-notary auth/domain/crm_signups.py,
+    # logger `auth.domain.crm_signups`). One ERROR `crm_logins_estate_ceiling`
+    # line when the UTC day's 50th login is made (`reason` daily_alert) and when
+    # its 200th is (daily_alert again), and one for every create refused past
+    # 200 (`reason` daily_ceiling). It names no address and no person; nothing
+    # of it is extracted. Built with sso_crm_new_logins_enabled alone (sso.tf's
+    # sso_crm_new_logins_parts), so a plan with that switch off is today's.
+    sso_crm_logins_ceiling:
+      description: >-
+        One per crm_logins_estate_ceiling line: the day's 50th or 200th CRM-only login made from a CRM invitation, or a create refused past 200 in the UTC day. A counter alone; the reason and count on the line are not read.
+      filter: |
+        resource.type="cloud_run_revision"
+        AND resource.labels.service_name="auth"
+        AND jsonPayload.logger="auth.domain.crm_signups"
+        AND jsonPayload.msg="crm_logins_estate_ceiling"
+
   alert_policies:
     sso-assertion-replayed-paging:
       display_name: "URGENT TPA sign-in: a client assertion replayed from a new place"
@@ -7875,6 +8023,21 @@ sso_crm:
           threshold:
             filter: >-
               metric.type = "logging.googleapis.com/user/sso_client_key_foreign_read" AND resource.type = "secretmanager.googleapis.com/Secret"
+
+    # SSO-OR-11: an abuse ceiling (a CRM engine or a CRM administrator pushing
+    # invitations at scale), so p2 that waits for a person (OPENED alone).
+    sso-crm-logins-ceiling:
+      display_name: "TPA sign-in: many new logins made from CRM invitations today"
+      subject: "New TPA logins from CRM invitations: 50 made today, or today's limit of 200 reached and new ones paused"
+      tier: p2
+      documentation: >-
+        auth made the UTC day's 50th or 200th new login from a CRM invitation (a person invited in the CRM creates their TPA login on the portal's create page), or refused a new one past 200 (auth's `crm_logins_estate_ceiling`). Past 200, nobody newly invited can create a login until the day turns at midnight UTC; people who already have a login, and invitations to them, are not affected. A real rush of invitations is fine. If nobody sent that many: read the CRM's invitations sent today (who sent them and to which domains), auth's `crm_login_created` lines, and its `crm_login_address_cap` lines. To stop new logins at once, turn sso_crm_invite_creates_login_enabled off, then sso_crm_new_logins_enabled (the logins already made keep signing in); the read-only check `deploy/readonly/crm_only_logins_was_it_used.sql` in auth-notary lists every login made.
+      conditions:
+        - name: "a CRM-only login ceiling line in ten minutes"
+          threshold:
+            filter: >-
+              metric.type = "logging.googleapis.com/user/sso_crm_logins_ceiling" AND resource.type = "cloud_run_revision"
+            alignment_period: "600s"
 
 # D-287: TPA sign-in for the CRM, the CRM beta copy's engine's half (SPEC §12),
 # read into the CRM role's project while var.sso_crm_enabled. The engine's own

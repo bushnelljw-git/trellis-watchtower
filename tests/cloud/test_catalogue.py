@@ -231,7 +231,8 @@ class CatalogueTest(unittest.TestCase):
                                                       "audit_config_changes", "org_policy_changes",
                                                       "network_control_changes", "logging_config_changes",
                                                       "service_account_key_changes", "run_public_invokers",
-                                                      "iap_setting_changes", "security_changes_by_robot",
+                                                      "iap_setting_changes", "backend_iam_changes",
+                                                      "security_changes_by_robot",
                                                       "sql_exports_by_hand", "armor_waf_refused",
                                                       "armor_waf_previewed", "armor_adaptive_alerts"})
         # The synthetic journeys' section is read, as the app role's (their result lines land in the app project).
@@ -387,10 +388,18 @@ class CatalogueTest(unittest.TestCase):
             if facts["metric"].startswith(LOG_PREFIX):
                 base = facts["metric"][len(LOG_PREFIX):]
                 charted[ROLE[uid]].add(self.valid[ROLE[uid]].get(base, base))
+        # A shared counter charted on the app project alone (the generator's APP_ONLY_SECURITY_CHANGES): a backend
+        # service's IAM, and the load balancer's backends are in the app project; tpa-platform made the counter there
+        # alone (production window 44), and a query to a project without it is a 404 the panel shows as an error.
+        app_only = {"backend_iam_changes"}
+        self.assertEqual(set(gen.APP_ONLY_SECURITY_CHANGES), app_only)
+        self.assertLessEqual(app_only, charted["app"])
         missing = [f"{role}: {name}" for role in ROLE.values()
                    for name in sorted(set(self.catalogue.roles[role]) | set(self.catalogue.shared))
-                   if name not in charted[role]]
+                   if name not in charted[role] and not (role != "app" and name in app_only)]
         self.assertEqual(missing, [], "catalogue metrics no cloud dashboard charts:\n" + "\n".join(missing))
+        for role in set(ROLE.values()) - {"app"}:
+            self.assertFalse(app_only & charted[role], f"{role} charts {sorted(app_only & charted[role])}")
 
     def test_phi_metrics_are_read_with_cloud_phi_alone(self):
         phi_only = set(self.catalogue.roles["phi"]) - set().union(

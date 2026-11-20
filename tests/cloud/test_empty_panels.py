@@ -76,7 +76,9 @@ BAD = {LOG + m for m in (
     # sign-up's alarms and its logins' texted codes refused at their ceiling, and records' member-connection findings
     # (OWNER-UEL-1).
     "auth_dry_run_refusals", "auth_member_signup_alarms", "auth_sms_codes_self_signup_ceiling",
-    "records_connection_alarms")}
+    "records_connection_alarms",
+    # The catalogue at tpa-platform D-447: who may pass a backend's IAP (every project's, the Errors page's).
+    "backend_iam_changes")}
 # Heartbeats: written every pass or run, so nothing at all is the signal missing, said as missing.
 HEARTBEATS = {LOG + "connectors_passes", LOG + "auth_audit_reconciled", LOG + "auth_events_publisher_alive",
               LOG + "auth_events_outbox_lag"}

@@ -3672,6 +3672,15 @@ def crm() -> dict:
                "`crm-reset-drain` (`crm_sign_in_protection`; `crm-sign-in-repeated`, `crm-sign-in-list` and "
                "`crm-sign-in-staff-codes` urgent, the others can wait). Nothing about who.", bars=True, w=8, h=7,
                no_value=NONE),
+        # The whole width under the three: at four to a line (w=6) every title but the first was cut at 1280 px
+        # and the door names (`POST /auth/mfa/passkeys/{passkey_id}/remove`) pushed the legend's values off.
+        series("Test admin's exemption used, by door", CRM,
+               q(log("crm_second_factor_exempt_used"), REV, by=("gate",)),
+               "One per use of the owner's named second-factor exemption on the CRM's engine: the test admin in, or "
+               "a door or act passed, with the password alone, by the kind of door (`gate`: a sign-in, an invitation "
+               "accepted, a factor turned off or removed, a step-up act, a write to the TPA) "
+               "(`crm_second_factor_exempt_used`; `crm-second-factor-exemption-used`, can wait). Never who.",
+               bars=True, w=24, h=7, no_value=NONE),
         row("Database and jobs"),
         db_stat("crm-db", CRM, "crm-db", w=6, h=7),
         series("CRM job executions", CRM, executions(CRM_JOBS),
@@ -3763,6 +3772,7 @@ SECURITY_CHANGES = (("iam_policy_changes", "IAM", "iam-changed"),
                     ("service_account_key_changes", "service account key", "service-key-created"),
                     ("run_public_invokers", "made public", "service-made-public"),
                     ("iap_setting_changes", "IAP", "iap-changed"),
+                    ("backend_iam_changes", "who may pass IAP", "iam-changed-backends"),
                     ("security_changes_by_robot", "by a service account", "security-change-by-robot"),
                     ("sql_exports_by_hand", "SQL export by hand", "sql-export-by-hand"),
                     ("monitoring_changes", "alerts", "monitoring-changed"),
@@ -3772,23 +3782,35 @@ SECURITY_CHANGES_WORDS = (
     "audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor "
     "rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created "
     "(`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public "
-    "(`service-made-public`), IAP's settings (`iap-changed`), a security change by a service account that is not "
+    "(`service-made-public`), IAP's settings (`iap-changed`), who may pass a backend's IAP "
+    "(`iam-changed-backends`; on the app project's chart alone, where the load balancer's backends are; the CRM's "
+    "three backends left out while its host is open), a security change by a service account that is not "
     "Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the "
     "project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). "
     "Who and on what stay in the entry.")
 ARMOR_WORDS = (
-    "Cloud Armor in this project: requests a preconfigured attack rule refused (`armor_waf_refused`; "
-    "`armor-waf-refusals`), requests a rule in preview would have refused (`armor_waf_previewed`, the watch-only "
+    "Cloud Armor in this project: requests a preconfigured attack rule refused (`armor_waf_refused`; no alert of "
+    "its own since D-427, a burst of refusals opens `armor-deny-spike`), requests a rule in preview would have refused (`armor_waf_previewed`, the watch-only "
     "period's hits), and Adaptive Protection's alerts of a layer-7 attack building (`armor_adaptive_alerts`; "
     "`armor-adaptive-protection`). Counted, not by the rule's set: the catalogue's extractor for it is not anchored. "
     "Nothing of a request is read.")
+
+
+# The counters charted on the app project's chart alone. `backend_iam_changes` counts a gce_backend_service's IAM, and
+# the load balancer's backend services (tpa-platform's edge module) live in the app project, the CRM's too where it
+# shares that project; where the CRM has a project of its own, its three backends are the ones the counter leaves out.
+# tpa-platform made it in the app project alone (production window 44, module.monitoring_app); the other projects'
+# copies come with their next monitoring applies, and a query for a counter a project lacks is Cloud Monitoring's 404,
+# which the panel shows as an error.
+APP_ONLY_SECURITY_CHANGES = frozenset({"backend_iam_changes"})
 
 
 def security_changes(ds: str) -> list[dict]:
     """One project's security and configuration change counters, those its role's catalogue holds, by method."""
     role = {APP: "app", PHI: "phi", CC: "cc", CRM: "crm"}[ds]
     return [q(log(metric), None, by=("operation",), name=alias("operation", prefix=f"{word}: "))
-            for metric, word, _policy in SECURITY_CHANGES if CATALOGUE.metric(role, metric)]
+            for metric, word, _policy in SECURITY_CHANGES if CATALOGUE.metric(role, metric)
+            and (role == "app" or metric not in APP_ONLY_SECURITY_CHANGES)]
 
 
 def databases(cc: bool = True) -> dict:
