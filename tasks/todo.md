@@ -526,8 +526,17 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
   - [x] Pixels: a throwaway Grafana 12.4.14 (the cloud image's base, by digest; testdata, removed after) rendered the
     CRM sign-in row and the Errors page's security and Armor rows (with and without the call centre) at 1470 and
     1280 px, calm, warning, busy and no data; no error badge, titles whole.
-  - [ ] The security row's legends cut long method names at 1280 px (`who may pass IAP: goog…`, as `IAP: goog…`
-    and its other neighbours already were; the hover shows them whole): a row-wide legend change, not this one.
+  - [x] (2026-11-20) The security row's legends cut long method names at 1280 px (`who may pass IAP: goog…`, as
+    `IAP: goog…` and its other neighbours already were), and the app project's eighth name was out of sight. Now two
+    charts to a line (the last alone the whole width without the call centre), 14 high, a right-hand legend of names
+    alone (its max and last columns never had room), and two `renameByRegex` steps (`SHORT_METHOD_NAMES`) shortening
+    `v1.compute.firewalls.patch` to `firewalls.patch` and `google.<package>.v<N>.<Name>Service.<Method>` to
+    `<Method>`. `tests/cloud/test_security_legend.py` (2 tests, mutation-checked). Rendered in a throwaway Grafana
+    12.4.14 with test data at 1470 and 1280 px, calm, warning, busy (19 series on the app chart) and no data, with and
+    without the call centre: every name whole and in sight, no error badge.
+  - [ ] Follow-up: the crash row's `secret:` and `key:` names are Google's whole method names too
+    (`google.cloud.secretmanager.v1.SecretManagerService.DisableSecretVersion`); `SHORT_METHOD_NAMES` would shorten
+    them if that row's legend is cut in a real incident.
 
 ## Review
 

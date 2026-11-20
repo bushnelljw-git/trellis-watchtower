@@ -3742,10 +3742,7 @@ def errors(cc: bool = True) -> dict:
           for where, ds in (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
                             ("CRM", CRM))],
         row("Security and configuration changes (Admin Activity audit log), by project"),
-        *[series(where, ds, security_changes(ds), SECURITY_CHANGES_WORDS, bars=True, w=24 // (4 if cc else 3), h=7,
-                 no_value=NONE)
-          for where, ds in (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
-                            ("CRM", CRM))],
+        *security_charts(cc),
         row("Cloud Armor: attack rules and Adaptive Protection, by project"),
         *[series(where, ds, [q(log("armor_waf_refused"), None, name="attack rule refused"),
                              q(log("armor_waf_previewed"), None, name="attack rule in preview would refuse"),
@@ -3803,6 +3800,37 @@ ARMOR_WORDS = (
 # copies come with their next monitoring applies, and a query for a counter a project lacks is Cloud Monitoring's 404,
 # which the panel shows as an error.
 APP_ONLY_SECURITY_CHANGES = frozenset({"backend_iam_changes"})
+
+
+# Google's method names, shortened in the security charts' legends to the part that says what was done: the
+# compute API's `v1.compute.firewalls.patch` to `firewalls.patch`, and `google.<package>.v<N>.<Name>Service.<Method>` to
+# `<Method>` (a service that is not named `...Service`, such as Cloud Run's `Services` or `OrgPolicy`, stays in front
+# of it). The counter's word stays in front (`IAP: UpdateIapSettings`); the method's whole name is in the entry. Left
+# whole, a name like `google.cloud.iap.v1.IdentityAwareProxyAdminService.UpdateIapSettings` was cut to `IAP: goog...`.
+SHORT_METHOD_NAMES = (
+    {"id": "renameByRegex", "options": {"regex": r"^(.+: )(?:v1|beta)[.]compute[.](.+)$", "renamePattern": "$1$2"}},
+    {"id": "renameByRegex", "options": {
+        "regex": r"^(.+: )google[.](?:[a-z0-9]+[.])+(?:[A-Z][A-Za-z0-9]*Service(?:V[0-9]+)?[.])?(.+)$",
+        "renamePattern": "$1$2"}})
+
+
+def security_charts(cc: bool = True) -> list[dict]:
+    """Each project's security changes, two to a line (the last alone takes the whole line): the legend a table on
+    the right of names alone, tall enough for 19 (every counter the app project holds, 14 with the two ways past
+    IAP, and five more methods), so a new series is seen without scrolling the legend. At four to a line (w=6, h=7)
+    it held seven names at 1280 px and the eighth, `who may pass IAP`, was out of sight, and names were cut to
+    `goog...`. No value columns: at half the width a total or max is pushed out of sight by the names (rendered at
+    1280 px), as the four-to-a-line rows' max and last columns are; the hover gives each bar's count."""
+    charts = (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
+              ("CRM", CRM))
+    out = []
+    for i, (where, ds) in enumerate(charts):
+        p = series(where, ds, security_changes(ds), SECURITY_CHANGES_WORDS, bars=True,
+                   w=24 if i == len(charts) - 1 and len(charts) % 2 else 12, h=14, no_value=NONE,
+                   transformations=list(SHORT_METHOD_NAMES))
+        p["options"]["legend"]["calcs"] = []
+        out.append(p)
+    return out
 
 
 def security_changes(ds: str) -> list[dict]:

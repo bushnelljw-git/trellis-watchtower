@@ -2489,8 +2489,8 @@
       "title": "App project",
       "description": "Changes from the project's Admin Activity audit log, by method: an IAM policy or custom role (`iam-changed`), an audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created (`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public (`service-made-public`), IAP's settings (`iap-changed`), who may pass a backend's IAP (`iam-changed-backends`; on the app project's chart alone, where the load balancer's backends are; the CRM's three backends left out while its host is open), a security change by a service account that is not Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). Who and on what stay in the entry.",
       "gridPos": {
-        "h": 7,
-        "w": 6,
+        "h": 14,
+        "w": 12,
         "x": 0,
         "y": 59
       },
@@ -2866,16 +2866,29 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )(?:v1|beta)[.]compute[.](.+)$",
+            "renamePattern": "$1$2"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )google[.](?:[a-z0-9]+[.])+(?:[A-Z][A-Za-z0-9]*Service(?:V[0-9]+)?[.])?(.+)$",
+            "renamePattern": "$1$2"
+          }
+        }
+      ],
       "id": 22
     },
     {
@@ -2883,9 +2896,9 @@
       "title": "PHI project",
       "description": "Changes from the project's Admin Activity audit log, by method: an IAM policy or custom role (`iam-changed`), an audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created (`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public (`service-made-public`), IAP's settings (`iap-changed`), who may pass a backend's IAP (`iam-changed-backends`; on the app project's chart alone, where the load balancer's backends are; the CRM's three backends left out while its host is open), a security change by a service account that is not Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). Who and on what stay in the entry.",
       "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 6,
+        "h": 14,
+        "w": 12,
+        "x": 12,
         "y": 59
       },
       "datasource": {
@@ -3235,16 +3248,29 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )(?:v1|beta)[.]compute[.](.+)$",
+            "renamePattern": "$1$2"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )google[.](?:[a-z0-9]+[.])+(?:[A-Z][A-Za-z0-9]*Service(?:V[0-9]+)?[.])?(.+)$",
+            "renamePattern": "$1$2"
+          }
+        }
+      ],
       "id": 23
     },
     {
@@ -3252,10 +3278,10 @@
       "title": "Call-centre project",
       "description": "Changes from the project's Admin Activity audit log, by method: an IAM policy or custom role (`iam-changed`), an audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created (`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public (`service-made-public`), IAP's settings (`iap-changed`), who may pass a backend's IAP (`iam-changed-backends`; on the app project's chart alone, where the load balancer's backends are; the CRM's three backends left out while its host is open), a security change by a service account that is not Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). Who and on what stay in the entry.",
       "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 12,
-        "y": 59
+        "h": 14,
+        "w": 12,
+        "x": 0,
+        "y": 73
       },
       "datasource": {
         "type": "stackdriver",
@@ -3604,16 +3630,29 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )(?:v1|beta)[.]compute[.](.+)$",
+            "renamePattern": "$1$2"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )google[.](?:[a-z0-9]+[.])+(?:[A-Z][A-Za-z0-9]*Service(?:V[0-9]+)?[.])?(.+)$",
+            "renamePattern": "$1$2"
+          }
+        }
+      ],
       "id": 24
     },
     {
@@ -3621,10 +3660,10 @@
       "title": "CRM",
       "description": "Changes from the project's Admin Activity audit log, by method: an IAM policy or custom role (`iam-changed`), an audit config (`audit-config-changed`), an organization policy (`org-policy-changed`), a firewall or Cloud Armor rule (`network-control-changed`), the project's logging (`logging-changed`), a service account key created (`service-key-created`: none exists anywhere, so any is the finding), a Cloud Run service or job made public (`service-made-public`), IAP's settings (`iap-changed`), who may pass a backend's IAP (`iam-changed-backends`; on the app project's chart alone, where the load balancer's backends are; the CRM's three backends left out while its host is open), a security change by a service account that is not Google's (`security-change-by-robot`), a Cloud SQL export or clone by hand (`sql-export-by-hand`), and the project's alert policies, channels, snoozes and log counters (`monitoring-changed`, `log-counters-changed`). Who and on what stay in the entry.",
       "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 18,
-        "y": 59
+        "h": 14,
+        "w": 12,
+        "x": 12,
+        "y": 73
       },
       "datasource": {
         "type": "stackdriver",
@@ -3923,16 +3962,29 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )(?:v1|beta)[.]compute[.](.+)$",
+            "renamePattern": "$1$2"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )google[.](?:[a-z0-9]+[.])+(?:[A-Z][A-Za-z0-9]*Service(?:V[0-9]+)?[.])?(.+)$",
+            "renamePattern": "$1$2"
+          }
+        }
+      ],
       "id": 25
     },
     {
@@ -3944,7 +3996,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 66
+        "y": 87
       },
       "id": 26
     },
@@ -3956,7 +4008,7 @@
         "h": 7,
         "w": 6,
         "x": 0,
-        "y": 67
+        "y": 88
       },
       "datasource": {
         "type": "stackdriver",
@@ -4094,7 +4146,7 @@
         "h": 7,
         "w": 6,
         "x": 6,
-        "y": 67
+        "y": 88
       },
       "datasource": {
         "type": "stackdriver",
@@ -4232,7 +4284,7 @@
         "h": 7,
         "w": 6,
         "x": 12,
-        "y": 67
+        "y": 88
       },
       "datasource": {
         "type": "stackdriver",
@@ -4370,7 +4422,7 @@
         "h": 7,
         "w": 6,
         "x": 18,
-        "y": 67
+        "y": 88
       },
       "datasource": {
         "type": "stackdriver",
