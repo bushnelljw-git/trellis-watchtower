@@ -540,9 +540,16 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     most 25 characters, `ARMOR_NAMES`) and the legend is names alone. `tests/cloud/test_armor_legend.py`
     (mutation-checked). Rendered in a throwaway Grafana 12.4.14 with test data at 1470 and 1280 px, calm, warning,
     busy and no data, with and without the call centre: every name whole, no error badge.
-  - [ ] Follow-up: the crash row's `secret:` and `key:` names are Google's whole method names too
+  - [x] (2026-11-21) Follow-up: the crash row's `secret:` and `key:` names are Google's whole method names too
     (`google.cloud.secretmanager.v1.SecretManagerService.DisableSecretVersion`); `SHORT_METHOD_NAMES` would shorten
-    them if that row's legend is cut in a real incident.
+    them if that row's legend is cut in a real incident. Done: at four to a line the legend showed about 25
+    characters of a name at 1280 px (`crashed: auth-outbox-pu`) and seven names, so the methods were cut or out of
+    sight. The row is now two charts to a line like the security row (`two_to_a_line`, the last alone the whole width
+    without the call centre), 12 high, a right-hand legend of names alone holding 14 (the five secret and key
+    methods and nine services and jobs), and `SHORT_METHOD_NAMES` renames `secret: DisableSecretVersion`,
+    `key: DestroyCryptoKeyVersion` and the rest. `tests/cloud/test_crash_legend.py` (2 tests, mutation-checked).
+    Rendered in a throwaway Grafana 12.4.14 with test data at 1470 and 1280 px, calm, warning, busy (14 series a
+    chart) and no data, with and without the call centre: every name whole and in sight, no error badge.
 
 ## Review
 

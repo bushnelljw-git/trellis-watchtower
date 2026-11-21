@@ -3727,20 +3727,7 @@ def errors(cc: bool = True) -> dict:
         series("ERROR lines, by service", CRM, crm_errors(by=("service_name",)),
                "The CRM's ERROR lines per interval.", bars=True, w=8, h=9, no_value=NONE),
         row("Crashes, out-of-memory kills, and secret or key versions taken away"),
-        *[series(f"{where}", ds,
-                 [q(log("run_crash_exits"), REV, by=("service_name",), name=alias("service_name", prefix="crashed: ")),
-                  q(log("run_oom_kills"), REV, by=("service_name",), name=alias("service_name", prefix="OOM: ")),
-                  q(log("run_oom_kills"), JOB, by=("job_name",), name=alias("job_name", prefix="OOM: ")),
-                  q(log("secret_version_changes"), None, by=("operation",), name=alias("operation", prefix="secret: ")),
-                  q(log("kms_version_changes"), None, by=("operation",), name=alias("operation", prefix="key: "))],
-                 "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL "
-                 "(`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret "
-                 "Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, "
-                 "`kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the "
-                 "method alone; who and which stay in the entry.", bars=True, w=24 // (4 if cc else 3), h=7,
-                 no_value=NONE)
-          for where, ds in (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
-                            ("CRM", CRM))],
+        *crash_charts(cc),
         row("Security and configuration changes (Admin Activity audit log), by project"),
         *security_charts(cc),
         row("Cloud Armor: attack rules and Adaptive Protection, by project"),
@@ -3816,7 +3803,7 @@ def armor_charts(cc: bool = True) -> list[dict]:
 APP_ONLY_SECURITY_CHANGES = frozenset({"backend_iam_changes"})
 
 
-# Google's method names, shortened in the security charts' legends to the part that says what was done: the
+# Google's method names, shortened in the security and crash charts' legends to the part that says what was done: the
 # compute API's `v1.compute.firewalls.patch` to `firewalls.patch`, and `google.<package>.v<N>.<Name>Service.<Method>` to
 # `<Method>` (a service that is not named `...Service`, such as Cloud Run's `Services` or `OrgPolicy`, stays in front
 # of it). The counter's word stays in front (`IAP: UpdateIapSettings`); the method's whole name is in the entry. Left
@@ -3828,23 +3815,57 @@ SHORT_METHOD_NAMES = (
         "renamePattern": "$1$2"}})
 
 
-def security_charts(cc: bool = True) -> list[dict]:
-    """Each project's security changes, two to a line (the last alone takes the whole line): the legend a table on
-    the right of names alone, tall enough for 19 (every counter the app project holds, 14 with the two ways past
-    IAP, and five more methods), so a new series is seen without scrolling the legend. At four to a line (w=6, h=7)
-    it held seven names at 1280 px and the eighth, `who may pass IAP`, was out of sight, and names were cut to
-    `goog...`. No value columns: at half the width a total or max is pushed out of sight by the names (rendered at
-    1280 px), as the four-to-a-line rows' max and last columns are; the hover gives each bar's count."""
+def two_to_a_line(cc: bool, h: int, chart) -> list[dict]:
+    """Each project's chart, `chart(where, ds, w=, h=, transformations=)`, two to a line (the last alone takes the
+    whole line), the legend a table on the right of names alone, and Google's method names shortened
+    (`SHORT_METHOD_NAMES`). No value columns: at half the width a total or max is pushed out of sight by the names
+    (rendered at 1280 px), as the four-to-a-line rows' max and last columns were; the hover gives each bar's count."""
     charts = (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
               ("CRM", CRM))
     out = []
     for i, (where, ds) in enumerate(charts):
-        p = series(where, ds, security_changes(ds), SECURITY_CHANGES_WORDS, bars=True,
-                   w=24 if i == len(charts) - 1 and len(charts) % 2 else 12, h=14, no_value=NONE,
-                   transformations=list(SHORT_METHOD_NAMES))
+        p = chart(where, ds, w=24 if i == len(charts) - 1 and len(charts) % 2 else 12, h=h,
+                  transformations=list(SHORT_METHOD_NAMES))
         p["options"]["legend"]["calcs"] = []
         out.append(p)
     return out
+
+
+def security_charts(cc: bool = True) -> list[dict]:
+    """Each project's security changes, two to a line, 14 high: the legend holds 19 names (every counter the app
+    project holds, 14 with the two ways past IAP, and five more methods), so a new series is seen without scrolling
+    the legend. At four to a line (w=6, h=7) it held seven names at 1280 px and the eighth, `who may pass IAP`, was out
+    of sight, and names were cut to `goog...`."""
+    return two_to_a_line(cc, 14, lambda where, ds, **kw: series(where, ds, security_changes(ds), SECURITY_CHANGES_WORDS,
+                                                                  bars=True, no_value=NONE, **kw))
+
+
+# The crash row's height: its legend holds 14 names at 1470 and 1280 px (rendered 2026-11-21), every secret and key
+# method the two counters count (five) and nine crashed or out-of-memory services and jobs, without scrolling.
+CRASH_H = 12
+CRASH_WORDS = (
+    "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; "
+    "`run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version "
+    "disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each "
+    "breaks what reads it at its next deploy or restart. By the method alone (shortened: "
+    "`google.cloud.secretmanager.v1.SecretManagerService.DisableSecretVersion` to `DisableSecretVersion`); who and "
+    "which stay in the entry.")
+
+
+def crash_charts(cc: bool = True) -> list[dict]:
+    """Each project's crashes, out-of-memory kills and secret or key versions taken away, two to a line, CRASH_H high.
+    At four to a line (w=6, h=7) the legend showed about 25 characters of a name at 1280 px (`crashed:
+    auth-outbox-pu`) and seven names, so Google's whole method names (`secret: google.cloud.secretmanager.v1.
+    SecretManagerService.DisableSecretVersion`) were cut or out of sight; they are shortened as on the security row."""
+    def chart(where, ds, **kw):
+        return series(where, ds, [
+            q(log("run_crash_exits"), REV, by=("service_name",), name=alias("service_name", prefix="crashed: ")),
+            q(log("run_oom_kills"), REV, by=("service_name",), name=alias("service_name", prefix="OOM: ")),
+            q(log("run_oom_kills"), JOB, by=("job_name",), name=alias("job_name", prefix="OOM: ")),
+            q(log("secret_version_changes"), None, by=("operation",), name=alias("operation", prefix="secret: ")),
+            q(log("kms_version_changes"), None, by=("operation",), name=alias("operation", prefix="key: "))],
+            CRASH_WORDS, bars=True, no_value=NONE, **kw)
+    return two_to_a_line(cc, CRASH_H, chart)
 
 
 def security_changes(ds: str) -> list[dict]:

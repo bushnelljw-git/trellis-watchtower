@@ -1650,10 +1650,10 @@
     {
       "type": "timeseries",
       "title": "App project",
-      "description": "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the method alone; who and which stay in the entry.",
+      "description": "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the method alone (shortened: `google.cloud.secretmanager.v1.SecretManagerService.DisableSecretVersion` to `DisableSecretVersion`); who and which stay in the entry.",
       "gridPos": {
-        "h": 7,
-        "w": 6,
+        "h": 12,
+        "w": 12,
         "x": 0,
         "y": 51
       },
@@ -1841,26 +1841,39 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )(?:v1|beta)[.]compute[.](.+)$",
+            "renamePattern": "$1$2"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )google[.](?:[a-z0-9]+[.])+(?:[A-Z][A-Za-z0-9]*Service(?:V[0-9]+)?[.])?(.+)$",
+            "renamePattern": "$1$2"
+          }
+        }
+      ],
       "id": 17
     },
     {
       "type": "timeseries",
       "title": "PHI project",
-      "description": "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the method alone; who and which stay in the entry.",
+      "description": "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the method alone (shortened: `google.cloud.secretmanager.v1.SecretManagerService.DisableSecretVersion` to `DisableSecretVersion`); who and which stay in the entry.",
       "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 6,
+        "h": 12,
+        "w": 12,
+        "x": 12,
         "y": 51
       },
       "datasource": {
@@ -2047,27 +2060,40 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )(?:v1|beta)[.]compute[.](.+)$",
+            "renamePattern": "$1$2"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )google[.](?:[a-z0-9]+[.])+(?:[A-Z][A-Za-z0-9]*Service(?:V[0-9]+)?[.])?(.+)$",
+            "renamePattern": "$1$2"
+          }
+        }
+      ],
       "id": 18
     },
     {
       "type": "timeseries",
       "title": "Call-centre project",
-      "description": "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the method alone; who and which stay in the entry.",
+      "description": "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the method alone (shortened: `google.cloud.secretmanager.v1.SecretManagerService.DisableSecretVersion` to `DisableSecretVersion`); who and which stay in the entry.",
       "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 12,
-        "y": 51
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 63
       },
       "datasource": {
         "type": "stackdriver",
@@ -2253,27 +2279,40 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )(?:v1|beta)[.]compute[.](.+)$",
+            "renamePattern": "$1$2"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )google[.](?:[a-z0-9]+[.])+(?:[A-Z][A-Za-z0-9]*Service(?:V[0-9]+)?[.])?(.+)$",
+            "renamePattern": "$1$2"
+          }
+        }
+      ],
       "id": 19
     },
     {
       "type": "timeseries",
       "title": "CRM",
-      "description": "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the method alone; who and which stay in the entry.",
+      "description": "Cloud Run containers that exited non-zero or by a signal other than SIGTERM and SIGKILL (`run_crash_exits`; `run-crash-loop`), killed for memory (`run_oom_kills`; `run-oom`), and a Secret Manager or KMS key version disabled or destroyed (Admin Activity audit log; `secret-version-disabled`, `kms-version-disabled` urgent): each breaks what reads it at its next deploy or restart. By the method alone (shortened: `google.cloud.secretmanager.v1.SecretManagerService.DisableSecretVersion` to `DisableSecretVersion`); who and which stay in the entry.",
       "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 18,
-        "y": 51
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 63
       },
       "datasource": {
         "type": "stackdriver",
@@ -2459,16 +2498,29 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )(?:v1|beta)[.]compute[.](.+)$",
+            "renamePattern": "$1$2"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.+: )google[.](?:[a-z0-9]+[.])+(?:[A-Z][A-Za-z0-9]*Service(?:V[0-9]+)?[.])?(.+)$",
+            "renamePattern": "$1$2"
+          }
+        }
+      ],
       "id": 20
     },
     {
@@ -2480,7 +2532,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 75
       },
       "id": 21
     },
@@ -2492,7 +2544,7 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 59
+        "y": 76
       },
       "datasource": {
         "type": "stackdriver",
@@ -2899,7 +2951,7 @@
         "h": 14,
         "w": 12,
         "x": 12,
-        "y": 59
+        "y": 76
       },
       "datasource": {
         "type": "stackdriver",
@@ -3281,7 +3333,7 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 73
+        "y": 90
       },
       "datasource": {
         "type": "stackdriver",
@@ -3663,7 +3715,7 @@
         "h": 14,
         "w": 12,
         "x": 12,
-        "y": 73
+        "y": 90
       },
       "datasource": {
         "type": "stackdriver",
@@ -3996,7 +4048,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 87
+        "y": 104
       },
       "id": 26
     },
@@ -4008,7 +4060,7 @@
         "h": 7,
         "w": 6,
         "x": 0,
-        "y": 88
+        "y": 105
       },
       "datasource": {
         "type": "stackdriver",
@@ -4143,7 +4195,7 @@
         "h": 7,
         "w": 6,
         "x": 6,
-        "y": 88
+        "y": 105
       },
       "datasource": {
         "type": "stackdriver",
@@ -4278,7 +4330,7 @@
         "h": 7,
         "w": 6,
         "x": 12,
-        "y": 88
+        "y": 105
       },
       "datasource": {
         "type": "stackdriver",
@@ -4413,7 +4465,7 @@
         "h": 7,
         "w": 6,
         "x": 18,
-        "y": 88
+        "y": 105
       },
       "datasource": {
         "type": "stackdriver",
