@@ -3744,12 +3744,7 @@ def errors(cc: bool = True) -> dict:
         row("Security and configuration changes (Admin Activity audit log), by project"),
         *security_charts(cc),
         row("Cloud Armor: attack rules and Adaptive Protection, by project"),
-        *[series(where, ds, [q(log("armor_waf_refused"), None, name="attack rule refused"),
-                             q(log("armor_waf_previewed"), None, name="attack rule in preview would refuse"),
-                             q(log("armor_adaptive_alerts"), None, name="Adaptive Protection alert")],
-                 ARMOR_WORDS, bars=True, w=24 // (4 if cc else 3), h=7, no_value=NONE)
-          for where, ds in (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
-                            ("CRM", CRM))],
+        *armor_charts(cc),
     ]
     return dashboard("tw-cloud-errors", "Errors (cloud)",
                      "Error groups from the log-based error counters, by the labels the catalogue allows: the "
@@ -3791,6 +3786,25 @@ ARMOR_WORDS = (
     "period's hits), and Adaptive Protection's alerts of a layer-7 attack building (`armor_adaptive_alerts`; "
     "`armor-adaptive-protection`). Counted, not by the rule's set: the catalogue's extractor for it is not anchored. "
     "Nothing of a request is read.")
+# Each Armor counter's legend name. At four to a line a right-hand legend shows about 25 characters of a name at
+# 1280 px (rendered 2026-11-21): `attack rule in preview would refuse` was cut to `attack rule in preview wo`.
+ARMOR_NAMES = (("armor_waf_refused", "attack rule refused"),
+               ("armor_waf_previewed", "preview: would refuse"),
+               ("armor_adaptive_alerts", "Adaptive Protection alert"))
+
+
+def armor_charts(cc: bool = True) -> list[dict]:
+    """Each project's Cloud Armor counters, four to a line (three without the call centre), each name at most 25
+    characters. The legend is names alone: at a quarter of the width the max and last columns were out of sight to
+    the right of the names (rendered at 1280 px); the hover gives each bar's count."""
+    out = []
+    for where, ds in (("App project", APP), ("PHI project", PHI), *((("Call-centre project", CC),) if cc else ()),
+                      ("CRM", CRM)):
+        p = series(where, ds, [q(log(counter), None, name=name) for counter, name in ARMOR_NAMES], ARMOR_WORDS,
+                   bars=True, w=24 // (4 if cc else 3), h=7, no_value=NONE)
+        p["options"]["legend"]["calcs"] = []
+        out.append(p)
+    return out
 
 
 # The counters charted on the app project's chart alone. `backend_iam_changes` counts a gce_backend_service's IAM, and

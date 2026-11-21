@@ -3173,7 +3173,7 @@
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "attack rule in preview would refuse"
+          "aliasBy": "preview: would refuse"
         },
         {
           "refId": "C",
@@ -3240,10 +3240,7 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
           "mode": "multi",
@@ -3311,7 +3308,7 @@
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "attack rule in preview would refuse"
+          "aliasBy": "preview: would refuse"
         },
         {
           "refId": "C",
@@ -3378,10 +3375,7 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
           "mode": "multi",
@@ -3449,7 +3443,7 @@
             "view": "FULL",
             "preprocessor": "none"
           },
-          "aliasBy": "attack rule in preview would refuse"
+          "aliasBy": "preview: would refuse"
         },
         {
           "refId": "C",
@@ -3516,10 +3510,7 @@
           "displayMode": "table",
           "placement": "right",
           "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
           "mode": "multi",

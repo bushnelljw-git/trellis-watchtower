@@ -534,6 +534,12 @@ The spec is [docs/SPEC.md](../docs/SPEC.md). Owner-gated items are listed at the
     `<Method>`. `tests/cloud/test_security_legend.py` (2 tests, mutation-checked). Rendered in a throwaway Grafana
     12.4.14 with test data at 1470 and 1280 px, calm, warning, busy (19 series on the app chart) and no data, with and
     without the call centre: every name whole and in sight, no error badge.
+  - [x] (2026-11-21) The Armor row (four to a line, untouched above) cut `attack rule in preview would refuse` to
+    `attack rule in preview wo` at 1280 px with the call centre (whole without it, at three to a line), and its max and
+    last columns were out of sight. Still four to a line, 7 high: the name is now `preview: would refuse` (each name at
+    most 25 characters, `ARMOR_NAMES`) and the legend is names alone. `tests/cloud/test_armor_legend.py`
+    (mutation-checked). Rendered in a throwaway Grafana 12.4.14 with test data at 1470 and 1280 px, calm, warning,
+    busy and no data, with and without the call centre: every name whole, no error badge.
   - [ ] Follow-up: the crash row's `secret:` and `key:` names are Google's whole method names too
     (`google.cloud.secretmanager.v1.SecretManagerService.DisableSecretVersion`); `SHORT_METHOD_NAMES` would shorten
     them if that row's legend is cut in a real incident.
