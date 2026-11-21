@@ -16,7 +16,7 @@ host, the perimeter rule and the IAM rows. Nothing here is pushed or deployed fr
 
 | File | What it does |
 |---|---|
-| `Dockerfile` | `grafana/grafana:12.4.14` pinned by digest, with Grafana's three Go binaries rebuilt from the v12.4.14 source with Go 1.26.10 (go-jose v4 raised to v4.1.6), curl and libcurl 8.23.0-r0, zlib 1.3.2-r1, musl 1.2.6-r3 and brotli 1.2.1-r0 held to exactly those versions, config, IAP's pinned keys, provisioning and dashboards baked in, root's and read-only, no plugins. Runs as `10001:10001` (below, "The image's user and what it writes"). Its entrypoint is `render-dashboards.sh`. Build context is `cloud/`. |
+| `Dockerfile` | `grafana/grafana:12.4.14` pinned by digest, with Grafana's three Go binaries rebuilt from the v12.4.14 source with Go 1.26.10 (go-jose v4 raised to v4.1.6), curl and libcurl 8.23.0-r0, zlib 1.4-r0, musl 1.2.6-r3, brotli 1.2.1-r0 and openssl (libssl3, libcrypto3) 3.5.9-r1 held to exactly those versions, config, IAP's pinned keys, provisioning and dashboards baked in, root's and read-only, no plugins. Runs as `10001:10001` (below, "The image's user and what it writes"). Its entrypoint is `render-dashboards.sh`. Build context is `cloud/`. |
 | `grafana.ini` | Sign-in by the IAP assertion only (`[auth.jwt]` on `X-Goog-Iap-Jwt-Assertion`, Google's IAP keys from the pinned `iap_keys.json`, `aud` and `iss` checked, email claim, auto sign-up as Viewer). Login form, basic auth and anonymous access off. No initial admin. Alerting, snapshots, public dashboards, Explore, query history, plugin downloads, update checks and reporting off. The home page is the cloud overview; no refresh faster than a minute. |
 | `provisioning/datasources/cloud-monitoring.yml` | Four Cloud Monitoring datasources, `cloud-app`, `cloud-crm`, `cloud-phi` and `cloud-cc`, using the attached identity (`authenticationType: gce`). Each sets both `defaultProject` and `gceDefaultProject`: under `gce` Grafana's browser side reads only the second, and without it all four would read the app project. `cloud-phi` works only once the perimeter rule admits `sa-watchtower` to the PHI project's Monitoring read. |
 | `iap_keys.json` | IAP's public keys (Google's JWK set from `https://www.gstatic.com/iap/verify/public_key-jwk`), pinned on the day it names, read by `grafana.ini`'s `jwk_set_file`. `scripts/refresh_iap_keys.sh` re-pins it (below, "IAP's keys"). |
@@ -551,10 +551,11 @@ this image meets it:
   sum.golang.org lists them). Grafana's official binaries are stamped with its private mirror's commit (`500a5450`),
   these with the public commit they were built from. Everything else in the image (the frontend, the bundled plugins,
   Alpine 3.24.3) is Grafana's. curl and libcurl 8.23.0-r0 (24 findings in build ef0194fb, on 12.4.12's Alpine 3.24.2),
-  zlib 1.3.2-r1, musl and musl-utils 1.2.6-r3 and brotli-libs 1.2.1-r0 are what 12.4.14's base already carries; the
-  Dockerfile still installs each from Alpine 3.24's own package by its sha256 (no repository, no network; apk checks
-  each signature) and requires every installed package of the origins curl, zlib, musl and brotli to be exactly those,
-  so a base that falls behind Alpine fails the build here. When a Grafana release carries go-jose v4.1.6, the rebuild
+  musl and musl-utils 1.2.6-r3 and brotli-libs 1.2.1-r0 are what 12.4.14's base already carries; zlib 1.4-r0 and
+  libssl3 and libcrypto3 3.5.9-r1 (the four HIGH openssl findings of production window 48, at the base's 3.5.9-r0) are
+  newer than it. The Dockerfile installs each from Alpine 3.24's own package by its sha256 (no repository, no network;
+  apk checks each signature) and requires every installed package of the origins curl, zlib, musl, brotli and openssl
+  to be exactly those, so a base that falls behind Alpine fails the build here. When a Grafana release carries go-jose v4.1.6, the rebuild
   goes.
 - **A shell stays.** The builder's no-shell rule covers tpa-platform's own Python images and `web`, not this one:
   its start check for `watchtower` builds the image, requires the user above, starts it with no network as beta's
@@ -599,8 +600,8 @@ network, checks it, and removes the containers and the image. It never pushes.
 
 0. **The image's configuration.** Its configured user is exactly `10001:10001`, and every `FROM` is pinned by digest
    or is an earlier stage. Grafana's three binaries are Go 1.26.9 builds, and `grafana`'s kin-openapi is v0.149.0 and
-   its jsonschema/v6 v6.0.3 (read from each binary's build information); every installed package of the origins zlib,
-   musl and brotli is the fixed one.
+   its jsonschema/v6 v6.0.3 (read from each binary's build information); every installed package of the origins curl,
+   zlib, musl, brotli and openssl is the fixed one.
 1. **As it ships, set up as production-full.** Grafana starts and `render-dashboards` writes the production
    pages. Four datasources are inserted and `/api/search` answers 401 without an IAP assertion. Grafana is PID 1, as
    uid 10001 and gid 10001. The baked files are root's and read-only to it, and nothing in the image is writable by

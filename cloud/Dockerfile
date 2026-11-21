@@ -83,14 +83,20 @@ RUN set -eu; \
     echo "grafana, grafana-server, grafana-cli: 12.4.14 (3c98af3b), go1.26.10, the official module list but" \
       "go-jose v4.1.6, checked"
 
-# --- curl 8.23.0-r0, zlib 1.4-r0, musl 1.2.6-r3, brotli 1.2.1-r0 ------------------------------------------------------------------
+# --- curl 8.23.0-r0, zlib 1.4-r0, musl 1.2.6-r3, brotli 1.2.1-r0, openssl 3.5.9-r1 ---------------------------------------------
 #
 # curl: tpa-platform's build ef0194fb (2026-10-29, trellis-watchtower f6f79cb, Grafana 12.4.12 on Alpine 3.24.2) was
 # refused with 24 findings in curl (package curl, which also covers libcurl): 2 CRITICAL, 6 HIGH and 16 with no severity
 # yet, all fixed in curl 8.23.0-r0 (Alpine 3.24 main). Grafana 12.4.14's own base is Alpine 3.24.3 and already ships
 # curl and libcurl 8.23.0-r0, musl r3, zlib r1 and brotli-libs 1.2.1-r0, so the install below changes nothing in it
-# today. It stays as the guard: the RUN requires exactly these versions of the four origins, so a base that regresses
+# today. It stays as the guard: the RUN requires exactly these versions of the five origins, so a base that regresses
 # (or a Grafana release that falls behind Alpine again) fails this build here, not in Cloud Build.
+#
+# openssl 3.5.9-r1: production window 48 (2026-11-21, trellis-watchtower bb0eaeb) found the live image's four HIGH openssl
+# findings at Alpine 3.5.9-r0, the base's (Grafana 12.4.14 on Alpine 3.24.3), and Container Analysis names the fix as
+# 3.5.9-r1 (Alpine 3.24 main). The base installs two packages of the origin openssl, libssl3 and libcrypto3 (no openssl
+# binary), so both are raised; until this, they were renewed exceptions in security/scan-exceptions.yaml, which now hold
+# only for watchtower-synthetics' Debian base.
 #
 # zlib 1.4-r0: tpa-platform's build of trellis-watchtower 1bc38361 passed the build, start check and push, then its policy
 # step refused CVE-2026-4738 in zlib (no severity yet, fix available; a missing severity counts as a breach). Alpine 3.24
@@ -104,9 +110,10 @@ RUN set -eu; \
 # 1.2.0-r1 (package brotli-libs, which libcurl links), fixed in 1.2.1-r0 (2026-10-22). Container Scanning names each by
 # its origin, as /lib/apk/db/installed records it. Both architectures' packages, by sha256, from Alpine's own
 # repository; the RUN below installs this machine's with no repository and no network (apk still checks each
-# package's own signature against the base's Alpine keys), then requires every installed package of the three origins
-# to be exactly the fixed one (curl and libcurl for the origin curl). The stage keeps its name, zlib: tpa-platform's start check
-# (scripts/image_start_check.sh) holds this Dockerfile to exactly these five stages, by name.
+# package's own signature against the base's Alpine keys), then requires every installed package of the five origins
+# to be exactly the fixed one (curl and libcurl for the origin curl, libssl3 and libcrypto3 for the origin openssl).
+# The stage keeps its name, zlib: tpa-platform's start check (scripts/image_start_check.sh) holds this Dockerfile to
+# exactly these five stages, by name.
 FROM scratch AS zlib
 ADD --checksum=sha256:7b05bc778b8b25cd880835b40114182bd4d1581717504d0129c810c0a14291cb \
     https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/zlib-1.4-r0.apk /x86_64/zlib-1.4-r0.apk
@@ -132,6 +139,14 @@ ADD --checksum=sha256:1f70ca404818805a6465b615bbfe84ef861488a963d7e630108ebd7fba
     https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libcurl-8.23.0-r0.apk /x86_64/libcurl-8.23.0-r0.apk
 ADD --checksum=sha256:64ae89f6e5d318ed5209778232191806ce49644ce9e09540b7d7830a5330d127 \
     https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/libcurl-8.23.0-r0.apk /aarch64/libcurl-8.23.0-r0.apk
+ADD --checksum=sha256:18c5778cbe52e1991303f8531970b05d4e6e036ea08349322f7422f42a689dc7 \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libssl3-3.5.9-r1.apk /x86_64/libssl3-3.5.9-r1.apk
+ADD --checksum=sha256:4aff30f84e7ac922b026f8b2dd574d91bb3bb01d22767a8a9a0a10c5ef64a44b \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/libssl3-3.5.9-r1.apk /aarch64/libssl3-3.5.9-r1.apk
+ADD --checksum=sha256:042026082cc9bc7872d1baa81755c50efa70b05f03b5369fdc5f0a1303009720 \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libcrypto3-3.5.9-r1.apk /x86_64/libcrypto3-3.5.9-r1.apk
+ADD --checksum=sha256:58ea027d8bd64fffac7d2106a9034341d6735387298a5e01b551429c73a13c71 \
+    https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/libcrypto3-3.5.9-r1.apk /aarch64/libcrypto3-3.5.9-r1.apk
 
 # --- the image -------------------------------------------------------------------------------------------------------
 FROM grafana
@@ -156,10 +171,11 @@ RUN --mount=type=bind,from=zlib,target=/mnt/apk \
     apk --repositories-file=/dev/null add --no-cache "/mnt/apk/$arch/zlib-1.4-r0.apk" \
       "/mnt/apk/$arch/musl-1.2.6-r3.apk" "/mnt/apk/$arch/musl-utils-1.2.6-r3.apk" \
       "/mnt/apk/$arch/brotli-libs-1.2.1-r0.apk" "/mnt/apk/$arch/curl-8.23.0-r0.apk" \
-      "/mnt/apk/$arch/libcurl-8.23.0-r0.apk"; \
-    test "$(awk -F: '/^P:/ { p = $2 }; /^V:/ { v = $2 }; /^o:(brotli|curl|musl|zlib)$/ { print p "-" v }' \
+      "/mnt/apk/$arch/libcurl-8.23.0-r0.apk" "/mnt/apk/$arch/libssl3-3.5.9-r1.apk" \
+      "/mnt/apk/$arch/libcrypto3-3.5.9-r1.apk"; \
+    test "$(awk -F: '/^P:/ { p = $2 }; /^V:/ { v = $2 }; /^o:(brotli|curl|musl|openssl|zlib)$/ { print p "-" v }' \
       /lib/apk/db/installed | sort | tr '\n' ' ')" \
-      = "brotli-libs-1.2.1-r0 curl-8.23.0-r0 libcurl-8.23.0-r0 musl-1.2.6-r3 musl-utils-1.2.6-r3 zlib-1.4-r0 "
+      = "brotli-libs-1.2.1-r0 curl-8.23.0-r0 libcrypto3-3.5.9-r1 libcurl-8.23.0-r0 libssl3-3.5.9-r1 musl-1.2.6-r3 musl-utils-1.2.6-r3 zlib-1.4-r0 "
 COPY --from=grafana-build /out/grafana /out/grafana-server /out/grafana-cli /usr/share/grafana/bin/
 COPY grafana.ini /etc/grafana/grafana.ini
 COPY iap_keys.json /etc/grafana/iap_keys.json

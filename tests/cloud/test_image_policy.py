@@ -17,10 +17,10 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = ROOT / "cloud" / "Dockerfile"
 #: Grafana's public v12.4.14 release commit (git ls-remote: refs/tags/v12.4.14^{}).
 GRAFANA_COMMIT = "3c98af3ba0773ad12a8a54b1faec7dc62d8d6725"
-#: The Alpine 3.24 packages installed over the base's (tpa-platform's builds 4122c0b2, b5453d1f and ef0194fb), each fetched for
-#: both architectures by its sha256 from Alpine's own repository.
+#: The Alpine 3.24 packages installed over the base's (tpa-platform's builds 4122c0b2, b5453d1f and ef0194fb, and production
+#: window 48 for openssl), each fetched for both architectures by its sha256 from Alpine's own repository.
 PACKAGES = ("zlib-1.4-r0", "musl-1.2.6-r3", "musl-utils-1.2.6-r3", "brotli-libs-1.2.1-r0",
-            "curl-8.23.0-r0", "libcurl-8.23.0-r0")
+            "curl-8.23.0-r0", "libcurl-8.23.0-r0", "libssl3-3.5.9-r1", "libcrypto3-3.5.9-r1")
 ARCHES = ("x86_64", "aarch64")
 #: The module raised in grafana (build ef0194fb: go-jose v4 HIGH, fixed in v4.1.6): the official binary's version, the
 #: fixed one, and the fixed one's go.sum hashes as sum.golang.org lists them (its zip, then its go.mod).
@@ -168,11 +168,12 @@ class Image(unittest.TestCase):
         self.assertIn(("COPY", "--from=grafana-build /out/grafana /out/grafana-server /out/grafana-cli "
                                "/usr/share/grafana/bin/"), steps)
 
-    def test_every_package_of_the_four_origins_is_the_fixed_one(self):
-        # As the scan reads them: by origin (brotli for brotli-libs), from apk's installed database.
+    def test_every_package_of_the_five_origins_is_the_fixed_one(self):
+        # As the scan reads them: by origin (brotli for brotli-libs, openssl for libssl3 and libcrypto3), from apk's
+        # installed database.
         run = [args for name, args in stages()["image"] if name == "RUN"][0]
         expected = " ".join(sorted(PACKAGES)) + " "
-        self.assertIn("""test "$(awk -F: '/^P:/ { p = $2 }; /^V:/ { v = $2 }; /^o:(brotli|curl|musl|zlib)$/ """
+        self.assertIn("""test "$(awk -F: '/^P:/ { p = $2 }; /^V:/ { v = $2 }; /^o:(brotli|curl|musl|openssl|zlib)$/ """
                       """{ print p "-" v }' /lib/apk/db/installed | sort | tr '\\n' ' ')" = """
                       f'"{expected}"', run)
         self.assertTrue(run.endswith(f'= "{expected}"'))
